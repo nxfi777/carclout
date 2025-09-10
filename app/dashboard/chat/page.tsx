@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef, useMemo } from "react";
+import { Suspense, useEffect, useState, useRef, useMemo } from "react";
 // Removed Stream chat; bespoke Surreal chat implementation
 import { useRouter, useSearchParams } from "next/navigation";
 import { DashboardWorkspacePanel } from "@/components/dashboard-workspace-panel";
@@ -31,7 +31,7 @@ type ForgeView = "chat" | "forge" | "livestream";
 type NonChatView = Exclude<ForgeView, "chat">;
 type ChannelPerms = { slug: string; name?: string; requiredReadRole?: 'user' | 'staff' | 'admin'; requiredReadPlan?: 'base' | 'premium' | 'ultra'; locked?: boolean; locked_until?: string | null };
 
-export default function DashboardChatPage() {
+function DashboardChatPageInner() {
   const [loading, setLoading] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
   const [channels, setChannels] = useState<ChannelPerms[]>([]);
@@ -429,6 +429,8 @@ export default function DashboardChatPage() {
     if (s === 'base' || s === 'basic' || s === 'minimum') return 'base';
   return null;
 }
+
+// default export placed at end of module
   function canAccessByPlan(userPlan?: string | null, required?: 'base' | 'premium' | 'ultra') {
     if (!required) return true;
     const p = canonicalPlan(userPlan);
@@ -1300,3 +1302,10 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
 
 
 
+export default function DashboardChatPage() {
+  return (
+    <Suspense fallback={<div className="w-full h-full" />}> 
+      <DashboardChatPageInner />
+    </Suspense>
+  );
+}

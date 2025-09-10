@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { signIn } from "next-auth/react";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export default function SignUpPage() {
+function SignUpPageInner() {
   const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -84,6 +84,14 @@ export default function SignUpPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={<div className="w-full h-full" />}>
+      <SignUpPageInner />
+    </Suspense>
   );
 }
 

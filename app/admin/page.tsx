@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { DashboardWorkspacePanel } from "@/components/dashboard-workspace-panel";
 import MusicSuggestions from "@/components/music/music-suggestions";
@@ -37,7 +37,7 @@ import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
 // Disable SSR for Lottie
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
-export default function AdminPage() {
+function AdminPageInner() {
   const [tab, setTab] = useState<"analytics" | "workspace" | "templates" | "music" | "channels" | "moderation" | "announcements">("analytics");
   const [me, setMe] = useState<{ role?: string } | null>(null);
   const searchParams = useSearchParams();
@@ -66,6 +66,14 @@ export default function AdminPage() {
       {tab === 'moderation' && <ModerationTab />}
       {tab === 'announcements' && <AnnouncementsTab />}
     </main>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <Suspense fallback={<div className="w-full h-full" />}> 
+      <AdminPageInner />
+    </Suspense>
   );
 }
 function AdminAnalyticsTab() {

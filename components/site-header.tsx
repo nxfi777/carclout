@@ -16,6 +16,7 @@ import HeaderNavLink from "./header-nav-link";
 import HeaderCredits from "./header-credits";
 import HeaderNotifications from "@/components/header-notifications";
 import { Home } from "lucide-react";
+import { Suspense } from "react";
 
 export default async function SiteHeader() {
   const session = await auth();
@@ -48,7 +49,9 @@ export default async function SiteHeader() {
       <div className="px-2 md:px-3 relative">
         {/* Desktop floating dock */}
         <div className="hidden md:block">
-          <HeaderDock />
+          <Suspense fallback={null}>
+            <HeaderDock />
+          </Suspense>
         </div>
         <div className="w-full h-16 rounded-full border border-[color:var(--border)] bg-[var(--popover)]/70 backdrop-blur grid grid-cols-[auto_1fr_auto] items-center px-3 md:px-4 relative overflow-visible">
           {/* subtle primary-tinted gradient wash */}
@@ -88,7 +91,9 @@ export default async function SiteHeader() {
                 <HeaderNotifications />
                 {/* Mobile burger to open vertical dock */}
                 <div className="block md:hidden">
-                  <HeaderDockMenu />
+                  <Suspense fallback={null}>
+                    <HeaderDockMenu />
+                  </Suspense>
                 </div>
                 {/* Show credits inline only on md+; on smaller screens, credits will render inside profile menu */}
                 <div className="hidden md:block">

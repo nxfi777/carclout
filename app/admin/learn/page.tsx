@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -24,7 +24,7 @@ type LearnItem = {
   isPublic?: boolean;
 };
 
-export default function AdminLearnPage() {
+function AdminLearnPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [tab, setTab] = useState<'tutorials' | 'ebooks' | 'recordings'>('tutorials');
@@ -394,6 +394,14 @@ export default function AdminLearnPage() {
         </TabsContent>
       </Tabs>
     </main>
+  );
+}
+
+export default function AdminLearnPage() {
+  return (
+    <Suspense fallback={<div className="w-full h-full" />}> 
+      <AdminLearnPageInner />
+    </Suspense>
   );
 }
 

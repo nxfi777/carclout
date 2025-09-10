@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import fireAnimation from '@/public/fire.json';
@@ -23,7 +23,7 @@ function computeTrailingStreak(points: StreakPoint[]): number {
   return s;
 }
 
-export default function DashboardHomePage() {
+function DashboardHomePageInner() {
   const search = useSearchParams();
   const [name, setName] = useState<string>('');
   const [streak, setStreak] = useState<number>(0);
@@ -258,6 +258,14 @@ export default function DashboardHomePage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function DashboardHomePage() {
+  return (
+    <Suspense fallback={<div className="w-full h-full" />}> 
+      <DashboardHomePageInner />
+    </Suspense>
   );
 }
 

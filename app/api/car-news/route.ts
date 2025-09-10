@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
-import { createChatCompletion } from "../../../../soranyt/lib/openrouter";
+import { createChatCompletion } from "@/lib/openrouter";
 
 export async function POST(req: Request) {
   const { url } = await req.json();
