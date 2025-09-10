@@ -22,7 +22,12 @@ export default function WelcomePage() {
     let mounted = true;
     (async () => {
       try {
-        const me: MeResponse = await fetch('/api/me', { cache: 'no-store' }).then(r=>r.json());
+        const meRes = await fetch('/api/me', { cache: 'no-store' });
+        if (meRes.status === 401) {
+          router.replace('/auth/signin');
+          return;
+        }
+        const me: MeResponse = await meRes.json();
         const plan = (me as any)?.plan as string | null | undefined;
         const displayName = ((me as any)?.name || (me as any)?.email || "").toString();
         if (mounted) setName(displayName);
