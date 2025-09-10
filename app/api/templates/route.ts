@@ -1,0 +1,326 @@
+import { NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/user";
+import { getSurreal } from "@/lib/surrealdb";
+import { RecordId } from "surrealdb";
+
+type TemplateDoc = {
+  id?: unknown;
+  name: string;
+  slug?: string;
+  description?: string;
+  prompt: string;
+  falModelSlug?: string;
+  thumbnailKey?: string; // admin storage key for preview
+  adminImageKeys?: string[]; // optional admin-scope image keys to prepend
+  imageSize?: { width: number; height: number } | null;
+  fixedAspectRatio?: boolean;
+  aspectRatio?: number;
+  allowedImageSources?: Array<'vehicle' | 'user'>; // 'user' covers upload + workspace
+  variables?: Array<{ key: string; label?: string; type?: string; required?: boolean; defaultValue?: string | number | boolean }>;
+  categories?: string[];
+  // Foreground masking config (BiRefNet / rembg)
+  rembg?: {
+    enabled?: boolean;
+    model?: 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait';
+    operating_resolution?: '1024x1024' | '2048x2048';
+    output_format?: 'png' | 'webp';
+    refine_foreground?: boolean;
+    output_mask?: boolean;
+  } | null;
+  created_at?: string;
+  created_by?: string;
+};
+
+function toIdString(id: unknown): string | undefined {
+  try {
+    if (typeof id === "object" && id !== null && "toString" in (id as object)) {
+      const s = (id as { toString(): string }).toString();
+      if (typeof s === "string" && s.length > 0) return s;
+    }
+  } catch {}
+  if (typeof id === "string") return id;
+  return undefined;
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const sortParam = String(searchParams.get('sort') || '').toLowerCase();
+  const filterParam = String(searchParams.get('filter') || '').toLowerCase();
+  const limit = Math.max(1, Math.min(500, parseInt(String(searchParams.get('limit') || '500')) || 500));
+  const db = await getSurreal();
+
+  // Optional user context for per-user "favorited" flag
+  let email: string | null = null;
+  try { const u = await getSessionUser(); email = u?.email || null; } catch {}
+
+  // Load templates (recent by default)
+  const res = await db.query(`SELECT * FROM template ORDER BY created_at DESC LIMIT ${limit};`);
+  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as TemplateDoc[]) : [];
+
+  // Map to string ids first for easier joins
+  const base = rows.map((t) => ({ ...t, id: toIdString((t as any)?.id) }));
+
+  // Load favorite counts for all templates in one go
+  let counts: Record<string, number> = {};
+  try {
+    const favAgg = await db.query("SELECT template, count() AS n FROM template_favorite GROUP BY template;");
+    const arr = Array.isArray(favAgg) && Array.isArray(favAgg[0]) ? (favAgg[0] as Array<{ template?: unknown; n?: number }>) : [];
+    for (const r of arr) {
+      const key = toIdString((r as any)?.template);
+      if (key) counts[key] = Number(r?.n || 0);
+    }
+  } catch {}
+
+  // Load current user's favorites set
+  let favSet = new Set<string>();
+  if (email) {
+    try {
+      const uidRes = await db.query("SELECT id FROM user WHERE email = $email LIMIT 1;", { email });
+      const row = Array.isArray(uidRes) && Array.isArray(uidRes[0]) ? (uidRes[0][0] as { id?: unknown } | undefined) : undefined;
+      const uid = row?.id instanceof RecordId ? (row.id as RecordId<'user'>) : (row?.id ? new RecordId('user', String((row as any).id)) : null);
+      if (uid) {
+        const f = await db.query("SELECT template FROM template_favorite WHERE user = $uid LIMIT 10000;", { uid });
+        const favRows = Array.isArray(f) && Array.isArray(f[0]) ? (f[0] as Array<{ template?: unknown }>) : [];
+        for (const r of favRows) {
+          const key = toIdString((r as any)?.template);
+          if (key) favSet.add(key);
+        }
+      }
+    } catch {}
+  }
+
+  // Optional filtering by current user's favourites
+  let filtered = base;
+  const wantFavs = filterParam === 'favorites' || filterParam === 'favourites';
+  if (wantFavs) {
+    if (email) {
+      filtered = base.filter(t => t.id ? favSet.has(String(t.id)) : false);
+    } else {
+      filtered = [];
+    }
+  }
+
+  let list = filtered.map((t) => ({
+    ...t,
+    favoriteCount: counts[t.id as string] || 0,
+    isFavorited: t.id ? favSet.has(String(t.id)) : false,
+  }));
+
+  // Sorting
+  const byFav = sortParam === 'most_favorited' || sortParam === 'most_favourited' || sortParam === 'favorites' || sortParam === 'favourites';
+  if (byFav) {
+    list = [...list].sort((a, b) => {
+      const da = Number((a as any).favoriteCount || 0);
+      const dbv = Number((b as any).favoriteCount || 0);
+      if (dbv !== da) return dbv - da;
+      const at = (a as any)?.created_at ? new Date(String((a as any).created_at)).getTime() : 0;
+      const bt = (b as any)?.created_at ? new Date(String((b as any).created_at)).getTime() : 0;
+      return bt - at;
+    });
+  }
+
+  return NextResponse.json({ templates: list });
+}
+
+export async function POST(req: Request) {
+  const user = await getSessionUser();
+  if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if ((user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const body = await req.json().catch(() => ({} as Partial<TemplateDoc>));
+  const name = String(body?.name || "").trim();
+  const prompt = String(body?.prompt || "").trim();
+  if (!name || !prompt) return NextResponse.json({ error: "Missing name or prompt" }, { status: 400 });
+  const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const createdIso = new Date().toISOString();
+  const payload: TemplateDoc = {
+    name,
+    slug: slugBase,
+    description: body?.description || "",
+    prompt,
+    falModelSlug: body?.falModelSlug || "fal-ai/gemini-25-flash-image/edit", // default; admin can override
+    thumbnailKey: body?.thumbnailKey || undefined,
+    adminImageKeys: Array.isArray(body?.adminImageKeys) ? (body!.adminImageKeys as string[]).filter((x) => typeof x === "string") : [],
+    imageSize: ((): TemplateDoc['imageSize'] => {
+      try {
+        const sz = (body as any)?.imageSize as any;
+        const w = Math.round(Number(sz?.width));
+        const h = Math.round(Number(sz?.height));
+        if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return { width: w, height: h };
+      } catch {}
+      // sensible default for Bytedance if client didn't send
+      return { width: 1280, height: 1280 };
+    })(),
+    fixedAspectRatio: !!body?.fixedAspectRatio,
+    aspectRatio: typeof body?.aspectRatio === 'number' ? Number(body?.aspectRatio) : undefined,
+    allowedImageSources: Array.isArray((body as any)?.allowedImageSources)
+      ? ((body as any).allowedImageSources as unknown[])
+          .map((s) => String(s || '').trim().toLowerCase())
+          .filter((s) => s === 'vehicle' || s === 'user')
+          .filter((v, i, a) => a.indexOf(v) === i)
+      : ['vehicle', 'user'],
+    variables: Array.isArray(body?.variables) ? (body!.variables as any[]).filter(Boolean) : [],
+    categories: Array.isArray((body as any)?.categories)
+      ? ((body as any).categories as unknown[])
+          .filter((x) => typeof x === "string")
+          .map((s) => (s as string).trim())
+          .filter((s) => s.length > 0)
+          .slice(0, 20)
+      : [],
+    rembg: ((): TemplateDoc['rembg'] => {
+      try {
+        const incoming = (body as any)?.rembg as TemplateDoc['rembg'];
+        const def = {
+          enabled: false,
+          model: 'General Use (Heavy)' as const,
+          operating_resolution: '2048x2048' as const,
+          output_format: 'png' as const,
+          refine_foreground: true,
+          output_mask: false,
+        };
+        if (incoming && typeof incoming === 'object') {
+          return {
+            enabled: !!incoming.enabled,
+            model: (incoming.model as any) || def.model,
+            operating_resolution: (incoming.operating_resolution as any) || def.operating_resolution,
+            output_format: (incoming.output_format as any) || def.output_format,
+            refine_foreground: typeof incoming.refine_foreground === 'boolean' ? incoming.refine_foreground : def.refine_foreground,
+            output_mask: typeof incoming.output_mask === 'boolean' ? incoming.output_mask : def.output_mask,
+          };
+        }
+        return def;
+      } catch { return {
+        enabled: false,
+        model: 'General Use (Heavy)',
+        operating_resolution: '2048x2048',
+        output_format: 'png',
+        refine_foreground: true,
+        output_mask: false,
+      }; }
+    })(),
+    created_at: createdIso,
+    created_by: user.email,
+  };
+  const db = await getSurreal();
+  // Surreal datetime cast
+  const query = `CREATE template SET 
+    name = $name,
+    slug = $slug,
+    description = $description,
+    prompt = $prompt,
+    falModelSlug = $falModelSlug,
+    thumbnailKey = $thumbnailKey,
+    adminImageKeys = $adminImageKeys,
+    imageSize = $imageSize,
+    fixedAspectRatio = $fixedAspectRatio,
+    aspectRatio = $aspectRatio,
+    allowedImageSources = $allowedImageSources,
+    variables = $variables,
+    categories = $categories,
+    rembg = $rembg,
+    created_by = $created_by,
+    created_at = d"${createdIso}";`;
+  const res = await db.query(query, payload as Record<string, unknown>);
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as TemplateDoc) : (Array.isArray(res) ? (res[0] as TemplateDoc) : null);
+  return NextResponse.json({ template: row ? { ...row, id: toIdString((row as any)?.id) } : null });
+}
+
+export async function DELETE(req: Request) {
+  const user = await getSessionUser();
+  if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if ((user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get('id');
+  const slug = searchParams.get('slug');
+  if (!id && !slug) return NextResponse.json({ error: 'Missing id or slug' }, { status: 400 });
+  const db = await getSurreal();
+  if (id) {
+    let rid: any = id;
+    try {
+      // Parse RecordId e.g. template:... and pass as RecordId instance
+      const parts = String(id).split(":");
+      const tb = parts[0];
+      const raw = parts.slice(1).join(":");
+      rid = new RecordId(tb as any, raw);
+    } catch {}
+    await db.query("DELETE $rid;", { rid });
+  } else if (slug) {
+    await db.query("DELETE template WHERE slug = $slug;", { slug });
+  }
+  return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(req: Request) {
+  const user = await getSessionUser();
+  if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if ((user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = (await req.json().catch(() => ({}))) as Partial<TemplateDoc> & { id?: string; slug?: string };
+  const idRaw = body?.id;
+  const slug = body?.slug;
+  if (!idRaw && !slug) return NextResponse.json({ error: "Missing id or slug" }, { status: 400 });
+
+  // Build dynamic SET clause only for provided properties
+  const fields: Array<keyof TemplateDoc | 'slug'> = [
+    'name',
+    'slug',
+    'description',
+    'prompt',
+    'falModelSlug',
+    'thumbnailKey',
+    'adminImageKeys',
+    'imageSize',
+    'fixedAspectRatio',
+    'aspectRatio',
+    'allowedImageSources',
+    'variables',
+    'categories',
+    'rembg',
+  ];
+  const sets: string[] = [];
+  const params: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (Object.prototype.hasOwnProperty.call(body, f)) {
+      sets.push(`${f} = $${f}`);
+      params[f] = (body as Record<string, unknown>)[f as keyof typeof body] as unknown;
+    }
+  }
+
+  // Always set updated_* fields
+  const updatedIso = new Date().toISOString();
+  sets.push(`updated_by = $updated_by`);
+  params.updated_by = user.email as string;
+  // Use Surreal datetime cast for updated_at
+  // We'll inject the d"..." literal for updated_at to ensure correct type
+  sets.push(`updated_at = d"${updatedIso}"`);
+
+  if (!sets.length) return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+
+  const db = await getSurreal();
+  let result: TemplateDoc | null = null;
+
+  if (idRaw) {
+    let rid: string | RecordId<string> = idRaw;
+    try {
+      const parts = String(idRaw).split(":");
+      const tb = parts[0];
+      const raw = parts.slice(1).join(":");
+      rid = new RecordId(tb as any, raw);
+    } catch {}
+    params.rid = rid as unknown as Record<string, unknown>;
+    const query = `UPDATE $rid SET ${sets.join(", ")};`;
+    const res = await db.query(query, params);
+    result = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as TemplateDoc) : (Array.isArray(res) ? (res[0] as TemplateDoc) : null);
+  } else if (slug) {
+    params.slugParam = slug;
+    const query = `UPDATE template SET ${sets.join(", ")}
+      WHERE slug = $slugParam
+      LIMIT 1;`;
+    const res = await db.query(query, params);
+    result = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as TemplateDoc) : (Array.isArray(res) ? (res[0] as TemplateDoc) : null);
+  }
+
+  if (!result) return NextResponse.json({ error: "Not found or not updated" }, { status: 404 });
+  return NextResponse.json({ template: { ...result, id: toIdString((result as unknown as { id?: unknown })?.id) } });
+}
+
+
