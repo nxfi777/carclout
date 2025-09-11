@@ -17,13 +17,13 @@ async function sendEmail({ to, subject, html, text }: { to: string; subject: str
 
 export async function POST() {
   const session = await auth().catch(() => null);
-  const role = (session?.user as any)?.role || "user";
+  const role = session?.user?.role || "user";
   if (role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const db = await getSurreal();
   const nowIso = new Date().toISOString();
   const res = await db.query<[
-    { id: any; user: RecordId<"user"> | string; title?: string; caption?: string; scheduled_at?: string; sent_at?: string | null }[]
+    { id: unknown; user: RecordId<"user"> | string; title?: string; caption?: string; scheduled_at?: string; sent_at?: string | null }[]
   ]>(
     `SELECT id, user, title, caption, scheduled_at, sent_at FROM reminder WHERE (sent_at = NONE OR sent_at = NULL) AND scheduled_at <= d"${nowIso}" ORDER BY scheduled_at ASC LIMIT 200;`
   );
@@ -34,7 +34,7 @@ export async function POST() {
     try {
       const userRid = row.user instanceof RecordId ? row.user : new RecordId("user", String(row.user));
       // Look up user email and name for personalization
-      const ures = await db.query<[ { email?: string; name?: string }[] ]>(
+      const ures = await db.query<[{ email?: string; name?: string }[]]>(
         "SELECT email, name FROM user WHERE id = $rid LIMIT 1;",
         { rid: userRid }
       );
@@ -46,7 +46,14 @@ export async function POST() {
       const bodyText = `Reminder: ${subject}\n\n${caption ? `Caption:\n${caption}\n\n` : ""}Open Instagram and post.\n\n— Ignition`;
       const bodyHtml = `<div style=\"font-family:Arial,Helvetica,sans-serif;\"><h2 style=\"margin:0 0 .5rem\">Reminder: ${subject}</h2><p style=\"margin:.2rem 0\">${caption ? "<b>Caption:</b><br/>" + caption.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br/>") : ""}</p><p style=\"margin:1rem 0 0;color:#555\">Open Instagram and post. ✨</p></div>`;
       await sendEmail({ to: email, subject, html: bodyHtml, text: bodyText });
-      await db.merge(row.id, { sent_at: nowIso });
+      const ridString = ((): string => {
+        const anyId = row.id as unknown;
+        if (anyId && typeof (anyId as { toString?: () => string }).toString === 'function') {
+          return (anyId as { toString: () => string }).toString();
+        }
+        return String(anyId);
+      })();
+      await db.merge(ridString, { sent_at: nowIso });
       sent++;
     } catch {}
   }

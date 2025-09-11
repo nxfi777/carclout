@@ -7,7 +7,7 @@ export async function GET() {
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const db = await getSurreal();
   const res = await db.query("SELECT id, targetEmail FROM block WHERE userEmail = $email;", { email: user.email });
-  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : [];
+  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ targetEmail?: unknown }>) : [];
   const blocked = rows.map((r) => String(r?.targetEmail || "")).filter(Boolean);
   return NextResponse.json({ blocked });
 }
@@ -15,7 +15,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { targetEmail } = await req.json().catch(() => ({}));
+  const { targetEmail } = (await req.json().catch(() => ({} as Record<string, unknown>))) as { targetEmail?: unknown };
   if (!targetEmail || typeof targetEmail !== "string") return NextResponse.json({ error: "Invalid target" }, { status: 400 });
   if (targetEmail.toLowerCase() === user.email.toLowerCase()) return NextResponse.json({ error: "Cannot block self" }, { status: 400 });
   const db = await getSurreal();
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { targetEmail } = await req.json().catch(() => ({}));
+  const { targetEmail } = (await req.json().catch(() => ({} as Record<string, unknown>))) as { targetEmail?: unknown };
   if (!targetEmail || typeof targetEmail !== "string") return NextResponse.json({ error: "Invalid target" }, { status: 400 });
   const db = await getSurreal();
   await db.query("DELETE block WHERE userEmail = $email AND targetEmail = $target;", { email: user.email, target: targetEmail.toLowerCase() });

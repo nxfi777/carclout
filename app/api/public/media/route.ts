@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
 import crypto from "node:crypto";
 import { r2, bucket } from "@/lib/r2";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -29,11 +28,23 @@ export async function GET(req: Request) {
     }
     const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
     const res = await r2.send(cmd);
-    const body = res.Body as any;
+    const body = res.Body as unknown;
     const chunks: Uint8Array[] = [];
-    if (body && typeof body[Symbol.asyncIterator] === 'function') {
-      for await (const chunk of body) {
-        chunks.push(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : new Uint8Array(chunk));
+    const asyncIterable = body as { [Symbol.asyncIterator]?: () => AsyncIterator<unknown> } | undefined;
+    if (asyncIterable && typeof asyncIterable[Symbol.asyncIterator] === 'function') {
+      for await (const chunk of (asyncIterable as unknown as AsyncIterable<unknown>)) {
+        if (typeof chunk === 'string') {
+          chunks.push(new TextEncoder().encode(chunk));
+        } else if (chunk instanceof Uint8Array) {
+          chunks.push(chunk);
+        } else if (ArrayBuffer.isView(chunk)) {
+          chunks.push(new Uint8Array((chunk as ArrayBufferView).buffer));
+        } else if (chunk && typeof (chunk as ArrayBuffer).byteLength === 'number') {
+          chunks.push(new Uint8Array(chunk as ArrayBuffer));
+        } else {
+          // best-effort stringify
+          chunks.push(new TextEncoder().encode(String(chunk)));
+        }
       }
     }
     const out = Buffer.concat(chunks);

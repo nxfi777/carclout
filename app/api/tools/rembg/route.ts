@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
   // Attempt cache hit: when r2_key is provided, reuse a previously saved masked image
-  const r2KeyRawForCache = String((body as any)?.r2_key || "").replace(/^\/+/, "");
+  const r2KeyRawForCache = String(body?.r2_key || "").replace(/^\/+/, "");
   const isAdminR2Key = r2KeyRawForCache.startsWith("admin/");
   const normalizedSourceKey = r2KeyRawForCache
     ? (isAdminR2Key
@@ -65,20 +65,22 @@ export async function POST(req: Request) {
   }
 
   async function toFalUrl(): Promise<string | null> {
-    const direct = String((body as any)?.image_url || "").trim();
+    const direct = String(body?.image_url || "").trim();
     if (direct) return direct;
     // R2 key path
-    const r2KeyRaw = String((body as any)?.r2_key || "").replace(/^\/+/, "");
-    const dataUrlRaw = String((body as any)?.data_url || "").trim();
+    const r2KeyRaw = String(body?.r2_key || "").replace(/^\/+/, "");
+    const dataUrlRaw = String(body?.data_url || "").trim();
     async function upload(bytes: Uint8Array, mimeType: string): Promise<string | null> {
       try {
-        const u = await (fal as any)?.storage?.upload?.(bytes, { mimeType });
-        const url = u?.url || (typeof u === 'string' ? u : null);
+        const storage = (fal as unknown as { storage?: { upload?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string>; put?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string> } }).storage;
+        const u = await storage?.upload?.(bytes, { mimeType });
+        const url = (u as { url?: string } | string | undefined && typeof u !== 'undefined' && typeof (u as string) === 'string') ? (u as string) : (u && typeof u === 'object' ? (u as { url?: string }).url || null : null);
         if (url) return url as string;
       } catch {}
       try {
-        const p = await (fal as any)?.storage?.put?.(bytes, { mimeType });
-        const url = p?.url || (typeof p === 'string' ? p : null);
+        const storage = (fal as unknown as { storage?: { upload?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string>; put?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string> } }).storage;
+        const p = await storage?.put?.(bytes, { mimeType });
+        const url = (p as { url?: string } | string | undefined && typeof p !== 'undefined' && typeof (p as string) === 'string') ? (p as string) : (p && typeof p === 'object' ? (p as { url?: string }).url || null : null);
         if (url) return url as string;
       } catch {}
       return null;
@@ -88,9 +90,10 @@ export async function POST(req: Request) {
         const key = r2KeyRaw.startsWith('admin/') ? r2KeyRaw : (r2KeyRaw.startsWith('users/') ? r2KeyRaw : `users/${sanitizeUserId(userEmail)}/${r2KeyRaw}`);
         const obj = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
         const chunks: Uint8Array[] = [];
-        if (obj.Body && typeof (obj.Body as any)[Symbol.asyncIterator] === 'function') {
-          for await (const chunk of (obj.Body as any)) {
-            chunks.push(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : new Uint8Array(chunk));
+        const bodyStream = obj.Body as { [Symbol.asyncIterator]?: () => AsyncIterator<unknown> } | undefined;
+        if (bodyStream && typeof bodyStream[Symbol.asyncIterator] === 'function') {
+          for await (const chunk of (obj.Body as unknown as AsyncIterable<unknown>)) {
+            chunks.push(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : new Uint8Array(chunk as ArrayBufferLike));
           }
         }
         const bytes = Buffer.concat(chunks);
@@ -115,7 +118,14 @@ export async function POST(req: Request) {
   const falUrl = await toFalUrl();
   if (!falUrl) return NextResponse.json({ error: "Missing image_url" }, { status: 400 });
 
-  const input: any = {
+  const input: {
+    image_url: string;
+    model?: RembgRequest['model'];
+    operating_resolution?: RembgRequest['operating_resolution'];
+    output_format?: RembgRequest['output_format'];
+    refine_foreground?: boolean;
+    output_mask?: boolean;
+  } = {
     image_url: falUrl,
     model: body?.model || "General Use (Heavy)",
     operating_resolution: body?.operating_resolution || "2048x2048",
@@ -127,25 +137,28 @@ export async function POST(req: Request) {
   try {
     try {
       await requireAndReserveCredits(userEmail, REMBG_CREDITS_PER_CALL, "rembg", normalizedSourceKey || null);
-    } catch (e) {
+    } catch {
       return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
     }
     const result = await fal.subscribe("fal-ai/birefnet/v2", {
       input,
       logs: true,
-      onQueueUpdate: (update: any) => {
+      onQueueUpdate: (update: { status?: string; logs?: Array<{ message?: string } | undefined> }) => {
         try {
           if (update?.status === "IN_PROGRESS") {
-            (update.logs || []).map((l: any) => l?.message).filter(Boolean).forEach((m: string) => console.log(`[REMBG] ${m}`));
+            (update.logs || [])
+              .map((l) => l?.message)
+              .filter(Boolean)
+              .forEach((m) => console.log(`[REMBG] ${String(m)}`));
           }
         } catch {}
       },
     });
-    const data = (result?.data || {}) as any;
+    const data = (result as { data?: { image?: { url?: string }; mask_image?: { url?: string } } | null; requestId?: string | null } | null)?.data || {};
     const out = {
       image: data?.image || null,
       mask_image: data?.mask_image || null,
-      requestId: result?.requestId || null,
+      requestId: (result as { requestId?: string | null } | null)?.requestId || null,
     } as { image: { url?: string } | null; mask_image: { url?: string } | null; requestId: string | null };
 
     // Persist masked image (and mask when present) for future reuse under designer_masks
@@ -181,19 +194,21 @@ export async function POST(req: Request) {
         // Replace outgoing URLs with our signed view URLs for consistency
         try {
           const { url: fgSigned } = await createViewUrl(fgKey, 60 * 10);
-          (out as any).image = { url: fgSigned };
+          out.image = { url: fgSigned };
         } catch {}
         try {
           const { url: maskSigned } = await createViewUrl(`${maskPrefix}${digest}.mask.png`, 60 * 10);
-          (out as any).mask_image = { url: maskSigned };
+          out.mask_image = { url: maskSigned };
         } catch {}
       }
     } catch {}
 
     return NextResponse.json(out);
-  } catch (e: any) {
-    const msg = e?.body?.message || e?.message || "Rembg failed";
-    return NextResponse.json({ error: msg, detail: e?.body || null }, { status: typeof e?.status === 'number' ? e.status : 502 });
+  } catch (e: unknown) {
+    const err = e as { body?: { message?: unknown } | null; message?: unknown; status?: unknown };
+    const msg = (err?.body?.message as string | undefined) || (err?.message as string | undefined) || "Rembg failed";
+    const st = typeof err?.status === 'number' ? (err.status as number) : 502;
+    return NextResponse.json({ error: msg, detail: err?.body || null }, { status: st });
   }
 }
 

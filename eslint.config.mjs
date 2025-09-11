@@ -19,19 +19,20 @@ const eslintConfig = [
       "build/**",
       "next-env.d.ts",
     ],
-    linterOptions: {
-      // Disable warnings for unused eslint-disable comments across the codebase
-      reportUnusedDisableDirectives: "off",
-    },
     rules: {
       // Relax strict rules to reduce noise and unblock development
-      "@typescript-eslint/no-explicit-any": "off",
-      // Disable noisy rules across the app for now
-      "react/no-unescaped-entities": "off",
-      "prefer-const": "off",
-      "@next/next/no-img-element": "off",
-      "react-hooks/exhaustive-deps": "off",
-      "@typescript-eslint/no-unused-vars": "off",
+      "@typescript-eslint/no-explicit-any": "warn",
+      "react/no-unescaped-entities": "warn",
+      "prefer-const": "warn",
+      // Many files intentionally use <img> for fine control; keep as warn
+      "@next/next/no-img-element": "warn",
+      // Hook deps warnings should be addressed gradually
+      "react-hooks/exhaustive-deps": "warn",
+      // Allow unused vars if prefixed with underscore
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
     },
   },
 ];

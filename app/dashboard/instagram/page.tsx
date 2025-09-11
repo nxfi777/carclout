@@ -7,7 +7,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { signIn } from "next-auth/react";
 import { DropZone } from "@/components/ui/drop-zone";
 
 interface Status {
@@ -18,6 +17,14 @@ interface Status {
 interface InsightPoint { value: number; end_time?: string }
 interface Insight { name: string; period?: string; values?: InsightPoint[] }
 interface FbPage { id: string; name: string }
+interface RecentMediaItem {
+  id: string;
+  media_type: "IMAGE" | "VIDEO" | "CAROUSEL_ALBUM" | string;
+  media_url: string;
+  thumbnail_url?: string;
+  permalink?: string;
+  caption?: string;
+}
 
 export default function InstagramDashboardPage() {
   const [status, setStatus] = useState<Status>({ connected: false });
@@ -27,7 +34,7 @@ export default function InstagramDashboardPage() {
   const [when, setWhen] = useState(""); // ISO datetime-local
   const [loading, setLoading] = useState(false);
   const [analytics, setAnalytics] = useState<Insight[]>([]);
-  const [recentMedia, setRecentMedia] = useState<any[]>([]);
+  const [recentMedia, setRecentMedia] = useState<RecentMediaItem[]>([]);
   const [pages, setPages] = useState<FbPage[]>([]);
   const [selectedPageId, setSelectedPageId] = useState<string>("");
   const [uploading, setUploading] = useState(false);
@@ -44,7 +51,6 @@ export default function InstagramDashboardPage() {
 
   async function presignAndUpload(file: File): Promise<string> {
     const isVideo = (file.type || "").startsWith("video/");
-    const isImage = (file.type || "").startsWith("image/");
     const ext = file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
     const path = isVideo ? 'instagram/videos' : 'instagram/images';
     const ps = await fetch('/api/storage/presign', {
@@ -72,8 +78,9 @@ export default function InstagramDashboardPage() {
         setImageUrl(url);
       }
       toast.success('Uploaded');
-    } catch (e: any) {
-      toast.error(e?.message || 'Upload failed');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Upload failed';
+      toast.error(msg);
     } finally {
       setUploading(false);
     }
@@ -99,8 +106,9 @@ export default function InstagramDashboardPage() {
       setVideoUrl("");
       setCaption("");
       setWhen("");
-    } catch (e: any) {
-      toast.error(e.message || "Failed to schedule");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to schedule';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -114,8 +122,9 @@ export default function InstagramDashboardPage() {
       if (!res.ok) throw new Error(json.error || "analytics_failed");
       setAnalytics((json.data || []) as Insight[]);
       setRecentMedia(Array.isArray(json.media) ? json.media : []);
-    } catch (e: any) {
-      toast.error(e.message || "Failed to load analytics");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to load analytics';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -145,8 +154,9 @@ export default function InstagramDashboardPage() {
       if (!res.ok) throw new Error(json.error || "link_failed");
       toast.success("Instagram linked");
       await refreshStatus();
-    } catch (e: any) {
-      toast.error(e.message || "Failed to link");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to link';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

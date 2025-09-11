@@ -12,18 +12,18 @@ export async function GET() {
   const res = await db.query(
     "SELECT email, name, image, presence_status, presence_updated_at, last_seen, role, plan FROM user LIMIT 1000;"
   );
-  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : [];
+  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
   const now = Date.now();
   // Derive effective status with grace window. Self defaults to online unless explicitly idle/dnd/invisible.
   const GRACE_MS = 180_000; // 3 minutes to avoid flapping with 60s heartbeat
   const users = rows.map((u) => {
-    const last = Date.parse(u?.presence_updated_at || u?.last_seen || 0);
+    const last = Date.parse((u as { presence_updated_at?: string; last_seen?: string }).presence_updated_at || (u as { last_seen?: string }).last_seen || "");
     const ageMs = isFinite(last) ? now - last : Number.POSITIVE_INFINITY;
-    const base: PresenceStatus | undefined = u?.presence_status;
+    const base: PresenceStatus | undefined = (u as { presence_status?: PresenceStatus }).presence_status as PresenceStatus | undefined;
     let derived: PresenceStatus | "offline";
     if (base === "invisible") {
       derived = "invisible";
-    } else if (u?.email && meEmail && u.email === meEmail) {
+    } else if ((u as { email?: string })?.email && meEmail && (u as { email?: string }).email === meEmail) {
       // Self: default to online unless explicitly idle/dnd/invisible
       derived = base === "idle" || base === "dnd" ? base : "online";
     } else {
@@ -33,7 +33,7 @@ export async function GET() {
         derived = "offline";
       }
     }
-    return { email: u?.email, name: u?.name, image: u?.image, status: derived, role: u?.role, plan: u?.plan };
+    return { email: (u as { email?: string })?.email, name: (u as { name?: string })?.name, image: (u as { image?: string })?.image, status: derived, role: (u as { role?: string })?.role, plan: (u as { plan?: string })?.plan };
   });
   return NextResponse.json({ users });
 }

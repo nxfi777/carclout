@@ -1,6 +1,9 @@
 import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
 
-export async function getSessionUser() {
+export type SessionUser = Session["user"];
+
+export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await auth();
   return session?.user || null;
 }

@@ -5,7 +5,7 @@ import { getUserFacebookAccessToken, scheduleInstagramPost, getUserLinkedInstagr
 export async function POST(req: Request) {
   const session = await auth().catch(() => null);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userId = String((session as any)?.user?.id || "");
+  const userId = String(session.user.id || "");
   const { imageUrl, videoUrl, caption, scheduledPublishTime } = await req.json().catch(() => ({}));
   if (!imageUrl && !videoUrl) return NextResponse.json({ error: "media_required" }, { status: 400 });
   try {
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       access
     );
     return NextResponse.json({ ok: true, creationId: result.creationId });
-  } catch (_e) {
+  } catch {
     return NextResponse.json({ error: "publish_failed" }, { status: 400 });
   }
 }

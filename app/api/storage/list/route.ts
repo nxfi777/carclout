@@ -3,6 +3,7 @@ import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { listAllObjects, listObjectsShallow, bucket, ensureFolder } from "@/lib/r2";
 import { createHash } from "crypto";
 export const runtime = "nodejs";
+type BundleEntry = { name: string; key: string; thumbKey?: string; videoKey?: string; videoEtag?: string };
 
 export async function GET(req: Request) {
   const user = await getSessionUser();
@@ -11,7 +12,7 @@ export async function GET(req: Request) {
   const path = (searchParams.get("path") || "").replace(/^\/+|\/+$/g, "");
   const scope = (searchParams.get("scope") || "user").toString();
   const isAdminScope = scope === "admin";
-  if (isAdminScope && (user as any)?.role !== "admin") {
+  if (isAdminScope && user.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const root = isAdminScope ? `admin` : `users/${sanitizeUserId(user.email)}`;
@@ -50,12 +51,12 @@ export async function GET(req: Request) {
       const key = o.Key || "";
       const name = key.slice(normalized.length);
       if (!name) continue;
-      childrenMap.set(name, { type: "file", name, key, size: o.Size, lastModified: o.LastModified?.toISOString?.(), etag: (o as any).ETag ? String((o as any).ETag).replace(/\"/g, "") : undefined });
+      childrenMap.set(name, { type: "file", name, key, size: o.Size, lastModified: o.LastModified?.toISOString?.(), etag: o.ETag ? String(o.ETag).replace(/\"/g, "") : undefined });
     }
   } else {
     // Admin scope: keep deep list because some views flatten bundle contents
     const objects = await listAllObjects(normalized);
-    objectsForBundles = objects as any;
+    objectsForBundles = objects as Array<{ Key?: string; Size?: number; LastModified?: Date; ETag?: string }>;
     const baseLen = normalized.length;
     for (const o of objects) {
       const key = o.Key || "";
@@ -63,7 +64,7 @@ export async function GET(req: Request) {
       const firstSlash = rest.indexOf("/");
       if (firstSlash === -1) {
         if (!rest) continue; // folder marker
-        childrenMap.set(rest, { type: "file", name: rest, key, size: o.Size, lastModified: o.LastModified?.toISOString?.(), etag: (o as any).ETag ? String((o as any).ETag).replace(/\"/g, "") : undefined });
+        childrenMap.set(rest, { type: "file", name: rest, key, size: o.Size, lastModified: o.LastModified?.toISOString?.(), etag: o.ETag ? String(o.ETag).replace(/\"/g, "") : undefined });
       } else {
         const folderName = rest.slice(0, firstSlash);
         if (!folderName) continue;
@@ -80,17 +81,17 @@ export async function GET(req: Request) {
   // If admin is listing inside hooks or learn/tutorials, flatten bundle folders into pseudo entries
   const isHooksBundleView = isAdminScope && (path === 'hooks' || path.startsWith('hooks/'));
   const isLearnTutorialsBundleView = isAdminScope && (path === 'learn/tutorials' || path.startsWith('learn/tutorials/'));
-  let bundles: { name: string; key: string; thumbKey?: string; videoKey?: string; videoEtag?: string }[] | undefined;
+  let bundles: BundleEntry[] | undefined;
   if (isHooksBundleView || isLearnTutorialsBundleView) {
     const folderChildren = Array.from(childrenMap.values()).filter(it => it.type === 'folder');
-    const results: { name: string; key: string; thumbKey?: string; videoKey?: string; videoEtag?: string }[] = [];
+    const results: BundleEntry[] = [];
     for (const f of folderChildren) {
       const folderPrefix = `${normalized}${f.name}/`;
       const source = objectsForBundles.length ? objectsForBundles : await listAllObjects(folderPrefix);
-      const files = source.filter((o: any) => String(o.Key || '').startsWith(folderPrefix));
+      const files = source.filter((o) => String(o.Key || '').startsWith(folderPrefix));
       function cleanedBase(k: string){ const base = k.slice(k.lastIndexOf('/')+1); return base.replace(/^\d{10,15}-/, ''); }
       const thumbObj = files.find(o => { const k = o.Key || ''; const b = cleanedBase(k); return /^(thumb|poster|cover)\.(jpg|jpeg|png|webp)$/i.test(b); });
-      const vidObj = files.find(o => { const k = o.Key || ''; const b = cleanedBase(k); return /^(video|index)\.(mp4|mov|webm|m4v)$/i.test(b); }) as any;
+      const vidObj = files.find(o => { const k = o.Key || ''; const b = cleanedBase(k); return /^(video|index)\.(mp4|mov|webm|m4v)$/i.test(b); });
       const thumb = thumbObj?.Key as string | undefined;
       const video = vidObj?.Key as string | undefined;
       const videoEtag = vidObj?.ETag ? String(vidObj.ETag).replace(/\"/g, '') : undefined;

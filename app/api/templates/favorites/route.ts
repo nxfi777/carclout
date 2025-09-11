@@ -27,7 +27,8 @@ async function resolveTemplateRecordId(db: Awaited<ReturnType<typeof getSurreal>
     try {
       const res = await db.query("SELECT id FROM template WHERE slug = $slug LIMIT 1;", { slug: body.templateSlug });
       const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { id?: unknown } | undefined) : undefined;
-      const rid = row?.id instanceof RecordId ? (row.id as RecordId<"template">) : (row?.id ? new RecordId("template", String((row as any).id)) : null);
+      const idStr = toIdString(row?.id);
+      const rid = row?.id instanceof RecordId ? (row.id as RecordId<"template">) : (idStr ? new RecordId("template", idStr) : null);
       if (rid) return rid;
     } catch {}
   }
@@ -37,7 +38,7 @@ async function resolveTemplateRecordId(db: Awaited<ReturnType<typeof getSurreal>
       const parts = raw.split(":");
       const tb = parts[0] || "template";
       const idPart = parts.slice(1).join(":").replace(/^⟨|⟩$/g, "");
-      return new RecordId(tb as any, idPart) as RecordId<"template">;
+      return new RecordId(tb as string, idPart) as RecordId<"template">;
     } catch {}
   }
   return null;
@@ -61,11 +62,12 @@ export async function POST(req: Request) {
     existing = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { id?: unknown } | undefined) || null : null;
   } catch {}
 
-  const want:
-    | "favorite"
-    | "unfavorite" = body?.action === "favorite" || body?.action === "unfavorite"
-    ? (body.action as any)
-    : (existing ? "unfavorite" : "favorite");
+  const want: "favorite" | "unfavorite" =
+    body?.action === "favorite"
+      ? "favorite"
+      : body?.action === "unfavorite"
+        ? "unfavorite"
+        : (existing ? "unfavorite" : "favorite");
 
   if (want === "favorite" && !existing) {
     // Create
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
       try {
         if (ridRaw) {
           const parts = ridRaw.split(":");
-          rid = new RecordId(parts[0] as any, parts.slice(1).join(":"));
+          rid = new RecordId(parts[0] as string, parts.slice(1).join(":"));
         }
       } catch {}
       await db.query("DELETE $rid;", { rid } as Record<string, unknown>);

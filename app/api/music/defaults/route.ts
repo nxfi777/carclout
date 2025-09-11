@@ -14,8 +14,8 @@ type Track = {
 export async function GET() {
   const db = await getSurreal();
   const res = await db.query("SELECT id, tracks, updated_at FROM music_defaults ORDER BY updated_at DESC LIMIT 1;");
-  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
-  const tracks: Track[] = Array.isArray(row?.tracks) ? row.tracks : [];
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { tracks?: unknown } | null) : null;
+  const tracks: Track[] = Array.isArray(row?.tracks) ? (row!.tracks as Track[]) : [];
   return NextResponse.json({ tracks: tracks.slice(0, 20) });
 }
 

@@ -4,7 +4,7 @@ import { getSurreal } from "@/lib/surrealdb";
 
 export async function GET(req: Request) {
   const session = await auth();
-  const role = (session as any)?.user?.role || (session as any)?.user?.plan || null;
+  const role = session?.user?.role || session?.user?.plan || null;
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   try { await db.query(`DEFINE INDEX OVERWRITE user_email_ft ON TABLE user FIELDS email SEARCH ANALYZER email_search BM25;`); } catch {}
   
 
-  let rows: Array<{ name?: string; email: string; credits_balance?: number }> = [];
+  let rows: Array<{ name?: string; email?: string; credits_balance?: number }> = [];
   try {
     if (q) {
       const res = await db.query(
@@ -31,22 +31,22 @@ export async function GET(req: Request) {
          LIMIT $limit;`,
         { q, limit }
       );
-      rows = (Array.isArray(res) && Array.isArray(res[0]) ? res[0] : []) as any[];
+      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; email?: string; credits_balance?: number }>) : []);
     } else {
       const res = await db.query(
         `SELECT name, email, credits_balance FROM user ORDER BY string::lower(name) LIMIT $limit;`,
         { limit }
       );
-      rows = (Array.isArray(res) && Array.isArray(res[0]) ? res[0] : []) as any[];
+      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; email?: string; credits_balance?: number }>) : []);
     }
   } catch {
     rows = [];
   }
 
   const users = rows.map((r) => ({
-    name: (r as any)?.name || null,
-    email: String((r as any)?.email || ""),
-    credits: typeof (r as any)?.credits_balance === "number" ? Number((r as any).credits_balance) : 0,
+    name: r?.name || null,
+    email: String(r?.email || ""),
+    credits: typeof r?.credits_balance === "number" ? Number(r.credits_balance) : 0,
   }));
   return NextResponse.json({ users });
 }

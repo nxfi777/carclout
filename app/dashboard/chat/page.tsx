@@ -9,7 +9,7 @@ import TabsViewFancy from "@/components/ui/tabs-view-fancy";
 import Lottie from "lottie-react";
 import fireAnimation from "@/public/fire.json";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator, ContextMenuLabel } from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
@@ -43,12 +43,12 @@ function DashboardChatPageInner() {
   const [showMembers, setShowMembers] = useState(false);
   const [showChannels, setShowChannels] = useState(false);
   const [forgeView, setForgeView] = useState<ForgeView>("chat");
-  const [lastNonChatView, setLastNonChatView] = useState<NonChatView>("forge");
-  const [forgeTab, setForgeTab] = useState<"workspace" | "content">("workspace");
+  const [_lastNonChatView, setLastNonChatView] = useState<NonChatView>("forge");
+  const [forgeTab] = useState<"workspace" | "content">("workspace");
   const [presence, setPresence] = useState<{ email?: string; name?: string; image?: string; status: string; role?: string; plan?: string }[]>([]);
   const [dmConversations, setDmConversations] = useState<{ email: string; name?: string; image?: string }[]>([]);
   const [me, setMe] = useState<{ email?: string; role?: string; plan?: string; name?: string } | null>(null);
-  const [muted, setMuted] = useState<{ active: boolean; reason?: string } | null>(null);
+  const [muted] = useState<{ active: boolean; reason?: string } | null>(null);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [emojiOpen, setEmojiOpen] = useState(false);
   // Open sidebars by default on desktop (md and up)
@@ -113,8 +113,8 @@ function DashboardChatPageInner() {
           fetch('/api/blocks', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({blocked:[]})),
         ]);
         if (mounted && meRes.status === 'fulfilled') setMe({ email: meRes.value?.email, role: meRes.value?.role, plan: meRes.value?.plan, name: meRes.value?.name });
-        if (mounted && channelsRes.status === 'fulfilled') setChannels((channelsRes.value.channels || []).map((x: any)=> ({ slug: String(x.slug), name: x.name, requiredReadRole: x.requiredReadRole || x.requiredRole, requiredReadPlan: x.requiredReadPlan, locked: !!x.locked, locked_until: x.locked_until || null })));
-        if (mounted && messagesRes.status === 'fulfilled') setMessages(((messagesRes.value.messages || []) as any[]).map((mm) => ({ ...mm, status: 'sent' })));
+        if (mounted && channelsRes.status === 'fulfilled') setChannels((channelsRes.value.channels || []).map((x: { slug: string; name?: string; requiredReadRole?: ChannelPerms['requiredReadRole']; requiredRole?: ChannelPerms['requiredReadRole']; requiredReadPlan?: ChannelPerms['requiredReadPlan']; locked?: boolean; locked_until?: string | null })=> ({ slug: String(x.slug), name: x.name, requiredReadRole: x.requiredReadRole || x.requiredRole, requiredReadPlan: x.requiredReadPlan, locked: !!x.locked, locked_until: x.locked_until || null })));
+        if (mounted && messagesRes.status === 'fulfilled') setMessages(((messagesRes.value.messages || []) as Array<{ id?: string; text: string; userName: string; userEmail?: string; created_at?: string }>).map((mm) => ({ ...mm, status: 'sent' })));
         if (mounted && presenceRes.status === 'fulfilled') setPresence(presenceRes.value.users || []);
         if (mounted && convRes.status === 'fulfilled') setDmConversations((convRes.value.conversations || []).slice(0, 50));
         if (mounted && blocksRes.status === 'fulfilled') setBlocked(Array.isArray(blocksRes.value?.blocked) ? blocksRes.value.blocked : []);
@@ -174,7 +174,7 @@ function DashboardChatPageInner() {
   useEffect(() => {
     let mounted = true;
     let es: EventSource | null = null;
-    let beat: any;
+    let beat: ReturnType<typeof setInterval> | null = null;
     async function initSSE() {
       try {
         const snapshot = await fetch('/api/presence', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({users:[]}));
@@ -183,7 +183,7 @@ function DashboardChatPageInner() {
       es = new EventSource('/api/presence/live');
       es.onmessage = (ev) => {
         try {
-          const { op, user } = JSON.parse(ev.data);
+          const { user } = JSON.parse(ev.data);
           if (!user?.email) return;
           setPresence(prev => {
             const others = prev.filter(u => u.email !== user.email);
@@ -202,7 +202,7 @@ function DashboardChatPageInner() {
     return () => {
       mounted = false;
       try { es?.close(); } catch {}
-      clearInterval(beat);
+      if (beat) clearInterval(beat);
     };
   }, []);
 
@@ -304,7 +304,7 @@ function DashboardChatPageInner() {
       if (!targetEmail) { toast.error('Could not resolve user.'); return true; }
       if (targetEmail && me?.email && targetEmail.toLowerCase() === me.email.toLowerCase()) { toast.error('You cannot mute yourself.'); return true; }
       try {
-        const payload: any = { targetEmail, channels: [active] };
+        const payload: { targetEmail: string; channels: string[]; durationSeconds?: number } = { targetEmail, channels: [active] };
         if (minutes) payload.durationSeconds = minutes * 60;
         await fetch('/api/admin/mutes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         toast.success(minutes ? `Muted ${targetEmail} for ${minutes} min in #${active}` : `Muted ${targetEmail} in #${active}`);
@@ -412,7 +412,7 @@ function DashboardChatPageInner() {
       }
     })();
     return () => { try { es?.close(); } catch {}; };
-  }, [active, activeChatType, activeDm?.email, forgeView]);
+  }, [active, activeChatType, activeDm?.email, forgeView, blocked, messages.length]);
 
   function canAccessByRole(userRole?: 'user' | 'staff' | 'admin', required?: 'user' | 'staff' | 'admin') {
     if (!required) return true;
@@ -453,10 +453,10 @@ function DashboardChatPageInner() {
     return locked;
   }, [activeChannelPerms, activeChatType]);
   const lockedForMe = (isChannelLocked && me?.role !== 'admin' && activeChatType === 'channel');
-  const filterByChannelAccess = (u: any) => {
+  const filterByChannelAccess = (u: { role?: string; plan?: string; status?: string; email?: string; name?: string; image?: string }) => {
     if (!activeChannelPerms || activeChatType === 'dm') return true;
-    const okRole = canAccessByRole(u.role as any, activeChannelPerms.requiredReadRole);
-    const okPlan = canAccessByPlan(u.plan as any, activeChannelPerms.requiredReadPlan);
+    const okRole = canAccessByRole(u.role as 'user' | 'staff' | 'admin' | undefined, activeChannelPerms.requiredReadRole);
+    const okPlan = canAccessByPlan(u.plan as 'base' | 'premium' | 'ultra' | undefined, activeChannelPerms.requiredReadPlan);
     return okRole && okPlan;
   };
   // Treat online group as any non-offline user (online, idle, dnd; invisible stays in offline list)
@@ -468,26 +468,26 @@ function DashboardChatPageInner() {
       name: (u.name || u.email || '') as string,
       image: u.image as string | undefined,
       status: (u.status === 'idle' ? 'idle' : u.status === 'dnd' ? 'dnd' : 'online') as 'online' | 'idle' | 'dnd',
-      role: (u as any).role as string | undefined,
-      plan: (u as any).plan as string | undefined,
+      role: u.role as string | undefined,
+      plan: u.plan as string | undefined,
     }))
     .filter(u => !!u.name)
     .slice(0,30);
   const offlineUsers = presence
     .filter(u => (u.status === 'offline' || u.status === 'invisible'))
     .filter(filterByChannelAccess)
-    .map(u => ({ email: u.email as string | undefined, name: (u.name || u.email || '') as string, image: u.image as string | undefined, role: (u as any).role as string | undefined, plan: (u as any).plan as string | undefined }))
+    .map(u => ({ email: u.email as string | undefined, name: (u.name || u.email || '') as string, image: u.image as string | undefined, role: u.role as string | undefined, plan: u.plan as string | undefined }))
     .filter(u => !!u.name)
     .slice(0,50);
 
   // Group helpers for elegant ordering: Admins → Pro → Members
   const isProPlan = (p?: string) => canonicalPlan(p) === 'ultra';
   const onlineAdmins = onlineUsers.filter(u => (u.role || '').toLowerCase() === 'admin');
-  const onlinePros = onlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isProPlan(u.plan as any));
-  const onlineBase = onlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && !isProPlan(u.plan as any));
+  const onlinePros = onlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isProPlan(u.plan || undefined));
+  const onlineBase = onlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && !isProPlan(u.plan || undefined));
   const offlineAdmins = offlineUsers.filter(u => (u.role || '').toLowerCase() === 'admin');
-  const offlinePros = offlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isProPlan(u.plan as any));
-  const offlineBase = offlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && !isProPlan(u.plan as any));
+  const offlinePros = offlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isProPlan(u.plan || undefined));
+  const offlineBase = offlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && !isProPlan(u.plan || undefined));
 
   // Use inline gridTemplateColumns to avoid Tailwind JIT missing dynamic arbitrary values
   const gridTemplateColumns = useMemo(() => {
@@ -686,7 +686,7 @@ function DashboardChatPageInner() {
                 ) : null}
                 {activeChatType === 'dm' && me?.email && activeDm?.email && activeDm.email.toLowerCase() === me.email.toLowerCase() ? (
                   <div className="text-xs text-white/80 bg-white/5 border border-[color:var(--border)]/60 rounded px-3 py-2">
-                    Here's your personal private chat. Only you can see these messages.
+                    Here&apos;s your personal private chat. Only you can see these messages.
                   </div>
                 ) : null}
                 {chatLoading ? (
@@ -738,8 +738,8 @@ function DashboardChatPageInner() {
                           blocked={blocked}
                           onBlockedChange={setBlocked}
                           isAdmin={me?.role === 'admin'}
-                            userRole={p?.role}
-                            userPlan={p?.plan}
+                          userRole={p?.role}
+                          userPlan={p?.plan}
                           onStartDm={async (email, name) => {
                             setActiveChatType('dm');
                             setActiveDm({ email, name, image: undefined });
@@ -879,8 +879,8 @@ function DashboardChatPageInner() {
                           blocked={blocked}
                           onBlockedChange={setBlocked}
                           isAdmin={me?.role === 'admin'}
-                            userRole={u.role as any}
-                            userPlan={u.plan as any}
+                          userRole={u.role}
+                          userPlan={u.plan}
                           onStartDm={async (email, name) => {
                           setActiveChatType('dm');
                             setActiveDm({ email, name, image: u.image });
@@ -927,8 +927,8 @@ function DashboardChatPageInner() {
                             blocked={blocked}
                             onBlockedChange={setBlocked}
                             isAdmin={me?.role === 'admin'}
-                            userRole={u.role as any}
-                            userPlan={u.plan as any}
+                            userRole={u.role}
+                            userPlan={u.plan}
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
                               setActiveDm({ email, name, image: u.image });
@@ -975,8 +975,8 @@ function DashboardChatPageInner() {
                             blocked={blocked}
                             onBlockedChange={setBlocked}
                             isAdmin={me?.role === 'admin'}
-                            userRole={u.role as any}
-                            userPlan={u.plan as any}
+                            userRole={u.role}
+                            userPlan={u.plan}
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
                               setActiveDm({ email, name, image: u.image });
@@ -1037,8 +1037,8 @@ function DashboardChatPageInner() {
                           blocked={blocked}
                           onBlockedChange={setBlocked}
                           isAdmin={me?.role === 'admin'}
-                            userRole={u.role as any}
-                            userPlan={u.plan as any}
+                          userRole={u.role}
+                          userPlan={u.plan}
                           onStartDm={async (email, name) => {
                           setActiveChatType('dm');
                             setActiveDm({ email, name, image: u.image });
@@ -1085,8 +1085,8 @@ function DashboardChatPageInner() {
                             blocked={blocked}
                             onBlockedChange={setBlocked}
                             isAdmin={me?.role === 'admin'}
-                            userRole={u.role as any}
-                            userPlan={u.plan as any}
+                            userRole={u.role}
+                            userPlan={u.plan}
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
                               setActiveDm({ email, name, image: u.image });
@@ -1133,8 +1133,8 @@ function DashboardChatPageInner() {
                             blocked={blocked}
                             onBlockedChange={setBlocked}
                             isAdmin={me?.role === 'admin'}
-                            userRole={u.role as any}
-                            userPlan={u.plan as any}
+                            userRole={u.role}
+                            userPlan={u.plan}
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
                               setActiveDm({ email, name, image: u.image });
@@ -1161,7 +1161,7 @@ function DashboardChatPageInner() {
 }
 
 function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlockedChange, isAdmin, onStartDm, userRole, userPlan }: { meEmail?: string; email: string; name: string; activeChannel: string; blocked: string[]; onBlockedChange: React.Dispatch<React.SetStateAction<string[]>>; isAdmin?: boolean; onStartDm?: (email: string, name: string) => Promise<void> | void; userRole?: string; userPlan?: string }) {
-  const [profile, setProfile] = useState<{ name?: string; image?: string; vehicles?: any[]; photos?: string[]; bio?: string } | null>(null);
+  const [profile, setProfile] = useState<{ name?: string; image?: string; vehicles?: Array<{ make?: string; model?: string }>; photos?: string[]; bio?: string } | null>(null);
   const [previews, setPreviews] = useState<Record<string,string>>({});
   const [loadingProfile, setLoadingProfile] = useState(true);
   const isSelf = (meEmail || '').toLowerCase() === (email || '').toLowerCase();
@@ -1258,7 +1258,7 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
         <div className="px-2 py-1">
           <div className="text-xs text-white/60 mb-1">Vehicles</div>
           <div className="flex flex-wrap gap-1 text-xs">
-            {profile!.vehicles!.slice(0,6).map((v: any, i: number) => (
+            {profile!.vehicles!.slice(0,6).map((v: { make?: string; model?: string }, i: number) => (
               <span key={i} className="px-2 py-0.5 rounded bg-white/5 border border-[color:var(--border)]/60">{v.make} {v.model}</span>
             ))}
           </div>

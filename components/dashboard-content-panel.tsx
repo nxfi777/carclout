@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { ArrowUpRight } from "lucide-react";
-import CircularGallery from "@/components/ui/circular-gallery";
+// import CircularGallery from "@/components/ui/circular-gallery";
 // ffmpeg wasm is loaded lazily only when uploading in admin hooks scope
 
 // Lazy-load placeholder removed to avoid shadowing the import and runtime nulls
@@ -17,13 +18,11 @@ type Asset = {
   access?: "free" | "premium" | "ultra";
 };
 
-type StorageItem = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string };
-
 type HookPreview = { image: string; text: string; videoUrl?: string };
 
 export function DashboardContentPanel() {
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
   const [hookItems, setHookItems] = useState<HookPreview[] | null>(null);
 
   useEffect(() => {
@@ -148,39 +147,6 @@ export function DashboardContentPanel() {
   );
 }
 
-async function extractFirstFrame(url: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    try {
-      const video = document.createElement('video');
-      video.crossOrigin = 'anonymous';
-      video.muted = true;
-      video.preload = 'metadata';
-      video.src = `${url}#t=0.001`;
-      const onLoadedData = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth || 320;
-          canvas.height = video.videoHeight || 180;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) throw new Error('no ctx');
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-          cleanup();
-          resolve(dataUrl);
-        } catch (e) { cleanup(); reject(e); }
-      };
-      const onError = () => { cleanup(); reject(new Error('thumb error')); };
-      function cleanup() {
-        try { video.removeEventListener('loadeddata', onLoadedData); } catch {}
-        try { video.removeEventListener('error', onError); } catch {}
-        try { video.pause(); } catch {}
-      }
-      video.addEventListener('loadeddata', onLoadedData);
-      video.addEventListener('error', onError);
-    } catch (e) { reject(e); }
-  });
-}
-
 function HoverVideoGallery({ items }: { items: HookPreview[] }) {
   const [active, setActive] = useState<number | null>(null);
   return (
@@ -191,7 +157,15 @@ function HoverVideoGallery({ items }: { items: HookPreview[] }) {
           {it.videoUrl ? (
             <video className="w-full h-full object-cover" src={it.videoUrl} preload="metadata" playsInline muted loop autoPlay={active===idx} style={{ opacity: active===idx ? 1 : 0, transition: 'opacity 200ms' }} />
           ) : null}
-          <img src={it.image} alt={it.text} className="absolute inset-0 w-full h-full object-cover" style={{ opacity: active===idx ? 0 : 1, transition: 'opacity 200ms' }} />
+          <Image
+            src={it.image}
+            alt={it.text}
+            fill
+            sizes="200px"
+            unoptimized
+            className="absolute inset-0 object-cover"
+            style={{ opacity: active===idx ? 0 : 1, transition: 'opacity 200ms' }}
+          />
         </div>
       ))}
     </div>

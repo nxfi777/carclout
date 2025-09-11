@@ -48,7 +48,7 @@ function AdminLearnPageInner() {
   useEffect(() => {
     try {
       const t = String(searchParams?.get('tab') || '').toLowerCase();
-      if (t === 'tutorials' || t === 'ebooks' || t === 'recordings') setTab(t as any);
+      if (t === 'tutorials' || t === 'ebooks' || t === 'recordings') setTab(t as 'tutorials' | 'ebooks' | 'recordings');
     } catch {}
   }, [searchParams]);
 
@@ -86,7 +86,7 @@ function AdminLearnPageInner() {
         video.src = `${url}#t=0.001`;
         video.muted = true;
         video.preload = 'metadata';
-        (video as any).playsInline = true;
+        (video as HTMLVideoElement & { playsInline?: boolean }).playsInline = true;
         const onLoaded = () => {
           try {
             const canvas = document.createElement('canvas');
@@ -129,7 +129,7 @@ function AdminLearnPageInner() {
       const videoFile = new File([videoBlob], 'video.mp4', { type: 'video/mp4' });
       const thumbFile = new File([thumbBlob], 'thumb.jpg', { type: 'image/jpeg' });
       return { videoFile, thumbFile };
-    } catch (e) {
+    } catch {
       const thumbBlob = await extractFirstFrameFromFile(file);
       const ext = (file.name.split('.').pop() || 'mp4').toLowerCase();
       const videoFile = new File([await file.arrayBuffer()], `video.${ext}`, { type: file.type || 'video/mp4' });
@@ -142,12 +142,29 @@ function AdminLearnPageInner() {
     const data = await file.arrayBuffer();
     try {
       const pdfjs = await import('pdfjs-dist');
-      const anyPdf: any = pdfjs as any;
+      const anyPdf = pdfjs as unknown as {
+        GlobalWorkerOptions?: { workerSrc?: string };
+        getDocument?: (opts: { data: ArrayBuffer }) => {
+          promise: Promise<{
+            getPage(n: number): Promise<{
+              getViewport(opts: { scale: number }): { width: number; height: number };
+              render(opts: unknown): { promise: Promise<void> };
+            }>;
+          }>;
+        };
+      };
       const GlobalWorkerOptions = anyPdf.GlobalWorkerOptions;
       if (GlobalWorkerOptions && !GlobalWorkerOptions.workerSrc) {
         try { GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs'; } catch {}
       }
-      const getDocument = anyPdf.getDocument;
+      const getDocument = anyPdf.getDocument as (opts: { data: ArrayBuffer }) => {
+        promise: Promise<{
+          getPage(n: number): Promise<{
+            getViewport(opts: { scale: number }): { width: number; height: number };
+            render(opts: unknown): { promise: Promise<void> };
+          }>;
+        }>;
+      };
       const loadingTask = getDocument({ data });
       const pdf = await loadingTask.promise;
       const page = await pdf.getPage(1);
@@ -157,7 +174,7 @@ function AdminLearnPageInner() {
       if (!ctx) throw new Error('no ctx');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      await page.render({ canvasContext: ctx, viewport } as any).promise;
+      await page.render({ canvasContext: ctx as unknown as CanvasRenderingContext2D, viewport } as unknown as Parameters<typeof page.render>[0]).promise;
       const blobOut: Blob | null = await new Promise((resolve) => canvas.toBlob((b)=>resolve(b), 'image/jpeg', 0.9));
       if (!blobOut) throw new Error('no cover');
       return new File([blobOut], 'cover.jpg', { type: 'image/jpeg' });
@@ -235,7 +252,7 @@ function AdminLearnPageInner() {
   return (
     <main className="p-6 space-y-6">
       <h1 className="text-xl font-semibold">Learn</h1>
-      <Tabs value={tab} onValueChange={(v)=>{ setTab(v as any); try { const sp = new URLSearchParams(searchParams?.toString() || ''); sp.set('tab', v); router.replace(`/admin/learn?${sp.toString()}`); } catch {} }}>
+      <Tabs value={tab} onValueChange={(v)=>{ setTab(v as 'tutorials' | 'ebooks' | 'recordings'); try { const sp = new URLSearchParams(searchParams?.toString() || ''); sp.set('tab', v); router.replace(`/admin/learn?${sp.toString()}`); } catch {} }}>
         <TabsList>
           <TabsTrigger value="tutorials">Tutorials</TabsTrigger>
           <TabsTrigger value="ebooks">E‑books</TabsTrigger>
@@ -421,7 +438,12 @@ function LearnThumb({ it }: { it: LearnItem }) {
   }, [it.thumbKey, it.slug, it.kind]);
   return (
     <div className="w-full aspect-video bg-black/20 grid place-items-center overflow-hidden">
-      {url ? <img src={url} alt={it.slug} className="w-full h-full object-cover" /> : <div className="text-xs text-white/60">No thumbnail</div>}
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={it.slug} className="w-full h-full object-cover" />
+      ) : (
+        <div className="text-xs text-white/60">No thumbnail</div>
+      )}
     </div>
   );
 }

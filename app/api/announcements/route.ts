@@ -31,7 +31,7 @@ export async function GET(req: Request) {
   const includeAll = String(searchParams.get("all") || "").toLowerCase() === "1";
 
   const user = await getSessionUser();
-  const isAdmin: boolean = !!(user && typeof (user as { role?: string }).role === 'string' && (user as { role?: string }).role === 'admin');
+  const isAdmin: boolean = !!(user && user.role === 'admin');
 
   const db = await getSurreal();
   let query = "";
@@ -43,14 +43,14 @@ export async function GET(req: Request) {
   }
   const res = await db.query(query, params);
   const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as AnnouncementDoc[]) : [];
-  const list = rows.map((a) => ({ ...a, id: toIdString((a as { id?: unknown })) }));
+  const list = rows.map((a) => ({ ...a, id: toIdString(a.id) }));
   return NextResponse.json({ announcements: list });
 }
 
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({} as Partial<AnnouncementDoc>));
   const title = String(body?.title || "").trim();
@@ -80,13 +80,13 @@ export async function POST(req: Request) {
     created_by: user.email as string,
   } as Record<string, unknown>);
   const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as AnnouncementDoc) : (Array.isArray(res) ? (res[0] as AnnouncementDoc) : null);
-  return NextResponse.json({ announcement: row ? { ...row, id: toIdString((row as { id?: unknown })) } : null });
+  return NextResponse.json({ announcement: row ? { ...row, id: toIdString(row.id) } : null });
 }
 
 export async function PATCH(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = (await req.json().catch(() => ({}))) as Partial<AnnouncementDoc> & { id?: string };
   const idRaw = String(body?.id || "").trim();
@@ -110,7 +110,7 @@ export async function PATCH(req: Request) {
     const parts = String(idRaw).split(":");
     const tb = parts[0];
     const raw = parts.slice(1).join(":");
-    rid = new RecordId(tb as any, raw);
+    rid = new RecordId(tb, raw);
   } catch {}
   params.rid = rid as unknown as Record<string, unknown>;
 
@@ -119,13 +119,13 @@ export async function PATCH(req: Request) {
   const res = await db.query(query, params);
   const result = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as AnnouncementDoc) : (Array.isArray(res) ? (res[0] as AnnouncementDoc) : null);
   if (!result) return NextResponse.json({ error: "Not found or not updated" }, { status: 404 });
-  return NextResponse.json({ announcement: { ...result, id: toIdString((result as { id?: unknown })) } });
+  return NextResponse.json({ announcement: { ...result, id: toIdString(result.id) } });
 }
 
 export async function DELETE(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (user.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const id = String(searchParams.get("id") || "").trim();
@@ -136,7 +136,7 @@ export async function DELETE(req: Request) {
     const parts = String(id).split(":");
     const tb = parts[0];
     const raw = parts.slice(1).join(":");
-    rid = new RecordId(tb as any, raw);
+    rid = new RecordId(tb, raw);
   } catch {}
   await db.query("DELETE $rid;", { rid });
   return NextResponse.json({ ok: true });

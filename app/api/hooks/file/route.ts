@@ -45,7 +45,7 @@ export async function GET(req: Request) {
 
     const status = range ? 206 : 200;
     return new Response(stream, { status, headers });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Failed to fetch file" }, { status: 500 });
   }
 }

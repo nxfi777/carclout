@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getSurreal } from "@/lib/surrealdb";
 
-type UserRow = { id: unknown };
+type UserRow = { id: { toString?: () => string } | string };
 
 function formatDayKey(d: Date): string {
   const year = d.getUTCFullYear();
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const db = await getSurreal();
   const ures = await db.query("SELECT id FROM user WHERE email = $email LIMIT 1;", { email: session.user.email });
   const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as UserRow | undefined) : undefined;
-  const rid = urow?.id as any;
+  const rid = urow?.id ?? null;
 
   if (!rid) return NextResponse.json({ days: [], streak: 0 });
 

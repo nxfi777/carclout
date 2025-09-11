@@ -8,13 +8,13 @@ import { RecordId } from "surrealdb";
 export async function POST() {
   // Optional auth gate: only allow admins
   const session = await auth().catch(() => null);
-  const role = (session?.user as any)?.role || "user";
+  const role = session?.user?.role || "user";
   if (role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const db = await getSurreal();
   // Find due schedules that are not published yet
   const res = await db.query<[
-    { id: any; user: RecordId<"user"> | string; ig_user_id: string; creation_id: string; publish_time: number | null; published_at?: string | null }[]
+    { id: RecordId<"instagram_schedule"> | string; user: RecordId<"user"> | string; ig_user_id: string; creation_id: string; publish_time: number | null; published_at?: string | null }[]
   ]>(
     `SELECT id, user, ig_user_id, creation_id, publish_time, published_at FROM instagram_schedule WHERE (published_at = NONE OR published_at = NULL) AND publish_time != NONE`
   );
@@ -27,7 +27,7 @@ export async function POST() {
       const now = Math.floor(Date.now() / 1000);
       if (now < due) continue;
       const userRid = row.user instanceof RecordId ? row.user : new RecordId("user", String(row.user));
-      const userId = userRid.id.toString();
+      const userId = userRid.toString();
       const access = await getUserFacebookAccessToken(userId);
       if (!access) continue;
       const resp = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(row.ig_user_id)}/media_publish`, {

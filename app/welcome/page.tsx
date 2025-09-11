@@ -28,8 +28,10 @@ export default function WelcomePage() {
           return;
         }
         const me: MeResponse = await meRes.json();
-        const plan = (me as any)?.plan as string | null | undefined;
-        const displayName = ((me as any)?.name || (me as any)?.email || "").toString();
+        const plan = ("plan" in (me as Record<string, unknown>) ? (me as Record<string, unknown>).plan : null) as string | null | undefined;
+        const displayName = ("name" in (me as Record<string, unknown>) && typeof (me as Record<string, unknown>).name === 'string'
+          ? String((me as Record<string, unknown>).name)
+          : ("email" in (me as Record<string, unknown>) ? String((me as Record<string, unknown>).email) : ""));
         if (mounted) setName(displayName);
         const isSubscribed = plan === 'minimum' || plan === 'basic' || plan === 'pro';
         if (isSubscribed) {

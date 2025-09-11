@@ -64,21 +64,22 @@ export async function GET(request: Request) {
      LIMIT 200;`,
     { key, me }
   );
-  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : [];
+  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
   // Build display name map for rows missing a safe senderName (or containing an email)
-  const needIds: any[] = [];
+  const needIds: Array<unknown> = [];
   for (const r of rows) {
-    const nm: string | undefined = typeof r?.senderName === 'string' ? r.senderName : undefined;
+    const nm: string | undefined = typeof (r as { senderName?: unknown })?.senderName === 'string' ? (r as { senderName?: string }).senderName : undefined;
     const looksEmail = typeof nm === 'string' && /@/.test(nm);
     if (!nm || looksEmail) {
-      if (r?.sender) needIds.push(r.sender);
+      const sender = (r as { sender?: unknown })?.sender;
+      if (sender) needIds.push(sender);
     }
   }
   const idStrings = new Set<string>();
-  const ids: any[] = [];
+  const ids: Array<unknown> = [];
   for (const u of needIds) {
     try {
-      const k = typeof u?.toString === 'function' ? u.toString() : String(u);
+      const k = typeof (u as { toString?: () => string })?.toString === 'function' ? (u as { toString: () => string }).toString() : String(u);
       if (!idStrings.has(k)) { idStrings.add(k); ids.push(u); }
     } catch {}
   }
@@ -86,32 +87,35 @@ export async function GET(request: Request) {
   if (ids.length > 0) {
     try {
       const ures = await db.query("SELECT id, name FROM user WHERE id IN $ids;", { ids });
-      const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as any[]) : [];
+      const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as Array<{ id?: unknown; name?: string }>) : [];
       for (const u of urows) {
-        const key = typeof u?.id?.toString === 'function' ? u.id.toString() : String(u?.id);
-        if (key) nameMap.set(key, u?.name || 'Member');
+        const key = typeof (u?.id as { toString?: () => string })?.toString === 'function' ? (u!.id as { toString: () => string }).toString() : String(u?.id);
+        if (key) nameMap.set(key, (u?.name as string | undefined) || 'Member');
       }
     } catch {}
     try {
       const igres = await db.query("SELECT user, username FROM instagram_account WHERE user IN $ids;", { ids });
-      const igrows = Array.isArray(igres) && Array.isArray(igres[0]) ? (igres[0] as any[]) : [];
+      const igrows = Array.isArray(igres) && Array.isArray(igres[0]) ? (igres[0] as Array<{ user?: unknown; username?: string }>) : [];
       for (const ig of igrows) {
-        const key = typeof ig?.user?.toString === 'function' ? ig.user.toString() : String(ig?.user);
-        if (key && ig?.username) nameMap.set(key, ig.username);
+        const key = typeof (ig?.user as { toString?: () => string })?.toString === 'function' ? (ig!.user as { toString: () => string }).toString() : String(ig?.user);
+        if (key && ig?.username) nameMap.set(key, ig.username as string);
       }
     } catch {}
   }
-  const messagesDesc = rows.map((row: any) => {
-    const ridStr = typeof row?.sender?.toString === 'function' ? row.sender.toString() : (row?.sender ? String(row.sender) : '');
-    const nm: string | undefined = typeof row?.senderName === 'string' ? row.senderName : undefined;
+  const messagesDesc = rows.map((row) => {
+    const rid = (row as { sender?: unknown })?.sender as { toString?: () => string } | string | undefined;
+    const ridStr = typeof rid === 'object' && typeof rid?.toString === 'function' ? rid.toString() : (rid ? String(rid) : '');
+    const nm: string | undefined = typeof (row as { senderName?: unknown })?.senderName === 'string' ? (row as { senderName?: string }).senderName : undefined;
     const looksEmail = typeof nm === 'string' && /@/.test(nm);
     const safeName = (!nm || looksEmail) ? (nameMap.get(ridStr) || 'Member') : nm;
     return {
-      id: row?.id?.id?.toString?.() || row?.id,
-      text: row?.text,
+      id: (row as { id?: { id?: { toString?: () => string }; toString?: () => string } | string })?.id && typeof (row as { id?: unknown })?.id === 'object'
+        ? ((row as { id?: { id?: { toString?: () => string }; toString?: () => string } }).id!.id?.toString?.() || (row as { id?: { toString?: () => string } }).id!.toString?.())
+        : (row as { id?: string }).id,
+      text: (row as { text?: string }).text,
       userName: safeName,
-      userEmail: row?.senderEmail,
-      created_at: row?.created_at,
+      userEmail: (row as { senderEmail?: string }).senderEmail,
+      created_at: (row as { created_at?: string }).created_at,
     };
   });
   const messages = messagesDesc.slice().reverse();
@@ -152,10 +156,10 @@ export async function POST(request: Request) {
     "SELECT text, created_at FROM dm_message WHERE dmKey = $key AND senderEmail = $email ORDER BY created_at DESC LIMIT 1;",
     { key, email: meEmail }
   );
-  const last = Array.isArray(dupRes) && Array.isArray(dupRes[0]) ? (dupRes[0][0] as any) : null;
+  const last = Array.isArray(dupRes) && Array.isArray(dupRes[0]) ? (dupRes[0][0] as { text?: string; created_at?: string } | null) : null;
   if (last && typeof last.text === "string") {
     const same = last.text.trim() === text;
-    const lastTs = Date.parse(last.created_at || 0);
+    const lastTs = Date.parse(last.created_at || "");
     if (same && isFinite(lastTs) && Date.now() - lastTs < 30_000) {
       return NextResponse.json({ error: "Duplicate message" }, { status: 409 });
     }
@@ -163,7 +167,7 @@ export async function POST(request: Request) {
 
   // Find sender's RecordId to link
   const ures = await db.query("SELECT id, name FROM user WHERE email = $email LIMIT 1;", { email: meEmail });
-  const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as any) : null;
+  const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as { id?: unknown; name?: string } | null) : null;
   const rid = urow?.id as RecordId<"user"> | string | undefined;
   // Prefer Instagram username, then user.name, then session name, never email
   let igName: string | undefined;
@@ -171,7 +175,7 @@ export async function POST(request: Request) {
     if (rid) {
       const ridObj = rid instanceof RecordId ? rid : new RecordId("user", String(rid));
       const igres = await db.query("SELECT username FROM instagram_account WHERE user = $u LIMIT 1;", { u: ridObj });
-      const igrow = Array.isArray(igres) && Array.isArray(igres[0]) ? (igres[0][0] as any) : null;
+      const igrow = Array.isArray(igres) && Array.isArray(igres[0]) ? (igres[0][0] as { username?: string } | null) : null;
       igName = igrow?.username;
     }
   } catch {}

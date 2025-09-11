@@ -58,31 +58,31 @@ export async function GET(req: Request) {
   const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as TemplateDoc[]) : [];
 
   // Map to string ids first for easier joins
-  const base = rows.map((t) => ({ ...t, id: toIdString((t as any)?.id) }));
+  const base = rows.map((t) => ({ ...t, id: toIdString((t as { id?: unknown })?.id) }));
 
   // Load favorite counts for all templates in one go
-  let counts: Record<string, number> = {};
+  const counts: Record<string, number> = {};
   try {
     const favAgg = await db.query("SELECT template, count() AS n FROM template_favorite GROUP BY template;");
     const arr = Array.isArray(favAgg) && Array.isArray(favAgg[0]) ? (favAgg[0] as Array<{ template?: unknown; n?: number }>) : [];
     for (const r of arr) {
-      const key = toIdString((r as any)?.template);
+      const key = toIdString((r as { template?: unknown })?.template);
       if (key) counts[key] = Number(r?.n || 0);
     }
   } catch {}
 
   // Load current user's favorites set
-  let favSet = new Set<string>();
+  const favSet = new Set<string>();
   if (email) {
     try {
       const uidRes = await db.query("SELECT id FROM user WHERE email = $email LIMIT 1;", { email });
       const row = Array.isArray(uidRes) && Array.isArray(uidRes[0]) ? (uidRes[0][0] as { id?: unknown } | undefined) : undefined;
-      const uid = row?.id instanceof RecordId ? (row.id as RecordId<'user'>) : (row?.id ? new RecordId('user', String((row as any).id)) : null);
+      const uid = row?.id instanceof RecordId ? (row.id as RecordId<'user'>) : (row?.id ? new RecordId('user', String(row.id as string)) : null);
       if (uid) {
         const f = await db.query("SELECT template FROM template_favorite WHERE user = $uid LIMIT 10000;", { uid });
         const favRows = Array.isArray(f) && Array.isArray(f[0]) ? (f[0] as Array<{ template?: unknown }>) : [];
         for (const r of favRows) {
-          const key = toIdString((r as any)?.template);
+          const key = toIdString((r as { template?: unknown })?.template);
           if (key) favSet.add(key);
         }
       }
@@ -110,11 +110,11 @@ export async function GET(req: Request) {
   const byFav = sortParam === 'most_favorited' || sortParam === 'most_favourited' || sortParam === 'favorites' || sortParam === 'favourites';
   if (byFav) {
     list = [...list].sort((a, b) => {
-      const da = Number((a as any).favoriteCount || 0);
-      const dbv = Number((b as any).favoriteCount || 0);
+      const da = Number((a as { favoriteCount?: unknown }).favoriteCount || 0);
+      const dbv = Number((b as { favoriteCount?: unknown }).favoriteCount || 0);
       if (dbv !== da) return dbv - da;
-      const at = (a as any)?.created_at ? new Date(String((a as any).created_at)).getTime() : 0;
-      const bt = (b as any)?.created_at ? new Date(String((b as any).created_at)).getTime() : 0;
+      const at = (a as { created_at?: unknown })?.created_at ? new Date(String((a as { created_at?: unknown }).created_at)).getTime() : 0;
+      const bt = (b as { created_at?: unknown })?.created_at ? new Date(String((b as { created_at?: unknown }).created_at)).getTime() : 0;
       return bt - at;
     });
   }
@@ -125,7 +125,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if ((user as { role?: unknown })?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json().catch(() => ({} as Partial<TemplateDoc>));
   const name = String(body?.name || "").trim();
   const prompt = String(body?.prompt || "").trim();
@@ -142,7 +142,7 @@ export async function POST(req: Request) {
     adminImageKeys: Array.isArray(body?.adminImageKeys) ? (body!.adminImageKeys as string[]).filter((x) => typeof x === "string") : [],
     imageSize: ((): TemplateDoc['imageSize'] => {
       try {
-        const sz = (body as any)?.imageSize as any;
+        const sz = (body as { imageSize?: { width?: unknown; height?: unknown } })?.imageSize;
         const w = Math.round(Number(sz?.width));
         const h = Math.round(Number(sz?.height));
         if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return { width: w, height: h };
@@ -152,15 +152,15 @@ export async function POST(req: Request) {
     })(),
     fixedAspectRatio: !!body?.fixedAspectRatio,
     aspectRatio: typeof body?.aspectRatio === 'number' ? Number(body?.aspectRatio) : undefined,
-    allowedImageSources: Array.isArray((body as any)?.allowedImageSources)
-      ? ((body as any).allowedImageSources as unknown[])
+    allowedImageSources: Array.isArray((body as { allowedImageSources?: unknown })?.allowedImageSources)
+      ? ((body as { allowedImageSources?: unknown }).allowedImageSources as unknown[])
           .map((s) => String(s || '').trim().toLowerCase())
           .filter((s) => s === 'vehicle' || s === 'user')
           .filter((v, i, a) => a.indexOf(v) === i)
       : ['vehicle', 'user'],
-    variables: Array.isArray(body?.variables) ? (body!.variables as any[]).filter(Boolean) : [],
-    categories: Array.isArray((body as any)?.categories)
-      ? ((body as any).categories as unknown[])
+    variables: Array.isArray(body?.variables) ? (body!.variables as unknown[]).filter(Boolean) as TemplateDoc['variables'] : [],
+    categories: Array.isArray((body as { categories?: unknown })?.categories)
+      ? ((body as { categories?: unknown }).categories as unknown[])
           .filter((x) => typeof x === "string")
           .map((s) => (s as string).trim())
           .filter((s) => s.length > 0)
@@ -168,7 +168,7 @@ export async function POST(req: Request) {
       : [],
     rembg: ((): TemplateDoc['rembg'] => {
       try {
-        const incoming = (body as any)?.rembg as TemplateDoc['rembg'];
+        const incoming = (body as { rembg?: TemplateDoc['rembg'] })?.rembg as TemplateDoc['rembg'];
         const def = {
           enabled: false,
           model: 'General Use (Heavy)' as const,
@@ -180,9 +180,9 @@ export async function POST(req: Request) {
         if (incoming && typeof incoming === 'object') {
           return {
             enabled: !!incoming.enabled,
-            model: (incoming.model as any) || def.model,
-            operating_resolution: (incoming.operating_resolution as any) || def.operating_resolution,
-            output_format: (incoming.output_format as any) || def.output_format,
+            model: (incoming.model as TemplateDoc['rembg'] extends infer R ? R extends { model?: infer M } ? M : never : never) || def.model,
+            operating_resolution: (incoming.operating_resolution as TemplateDoc['rembg'] extends infer R ? R extends { operating_resolution?: infer M } ? M : never : never) || def.operating_resolution,
+            output_format: (incoming.output_format as TemplateDoc['rembg'] extends infer R ? R extends { output_format?: infer M } ? M : never : never) || def.output_format,
             refine_foreground: typeof incoming.refine_foreground === 'boolean' ? incoming.refine_foreground : def.refine_foreground,
             output_mask: typeof incoming.output_mask === 'boolean' ? incoming.output_mask : def.output_mask,
           };
@@ -221,26 +221,26 @@ export async function POST(req: Request) {
     created_at = d"${createdIso}";`;
   const res = await db.query(query, payload as Record<string, unknown>);
   const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as TemplateDoc) : (Array.isArray(res) ? (res[0] as TemplateDoc) : null);
-  return NextResponse.json({ template: row ? { ...row, id: toIdString((row as any)?.id) } : null });
+  return NextResponse.json({ template: row ? { ...row, id: toIdString((row as { id?: unknown })?.id) } : null });
 }
 
 export async function DELETE(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if ((user as { role?: unknown })?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { searchParams } = new URL(req.url);
   const id = searchParams.get('id');
   const slug = searchParams.get('slug');
   if (!id && !slug) return NextResponse.json({ error: 'Missing id or slug' }, { status: 400 });
   const db = await getSurreal();
   if (id) {
-    let rid: any = id;
+    let rid: string | RecordId<string> = id;
     try {
       // Parse RecordId e.g. template:... and pass as RecordId instance
       const parts = String(id).split(":");
       const tb = parts[0];
       const raw = parts.slice(1).join(":");
-      rid = new RecordId(tb as any, raw);
+      rid = new RecordId(tb as string, raw);
     } catch {}
     await db.query("DELETE $rid;", { rid });
   } else if (slug) {
@@ -252,7 +252,7 @@ export async function DELETE(req: Request) {
 export async function PATCH(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if ((user as { role?: string }).role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = (await req.json().catch(() => ({}))) as Partial<TemplateDoc> & { id?: string; slug?: string };
   const idRaw = body?.id;
@@ -304,7 +304,7 @@ export async function PATCH(req: Request) {
       const parts = String(idRaw).split(":");
       const tb = parts[0];
       const raw = parts.slice(1).join(":");
-      rid = new RecordId(tb as any, raw);
+      rid = new RecordId(tb as string, raw);
     } catch {}
     params.rid = rid as unknown as Record<string, unknown>;
     const query = `UPDATE $rid SET ${sets.join(", ")};`;

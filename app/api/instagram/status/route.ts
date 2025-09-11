@@ -5,12 +5,12 @@ import { getUserFacebookAccessToken, getUserLinkedInstagram, getPageAccessToken,
 export async function GET() {
   const session = await auth().catch(() => null);
   if (!session?.user?.email) return NextResponse.json({ connected: false }, { status: 200 });
-  const userId = String((session as any)?.user?.id || "");
+  const userId = String(session.user.id || "");
   try {
     const access = await getUserFacebookAccessToken(userId);
     const linked = await getUserLinkedInstagram(userId);
     return NextResponse.json({ connected: Boolean(access && linked), linked, hasFacebook: Boolean(access) });
-  } catch (_e) {
+  } catch {
     return NextResponse.json({ connected: false, error: "status_error" }, { status: 200 });
   }
 }
@@ -19,7 +19,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const session = await auth().catch(() => null);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userId = String((session as any)?.user?.id || "");
+  const userId = String(session.user.id || "");
   const body = await req.json().catch(() => ({}));
   const pageId = String(body.pageId || "");
   if (!pageId) return NextResponse.json({ error: "pageId_required" }, { status: 400 });
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     if (!ig) return NextResponse.json({ error: "ig_fetch_failed" }, { status: 400 });
     await upsertInstagramAccount(userId, ig.id, ig.username);
     return NextResponse.json({ linked: ig });
-  } catch (_e) {
+  } catch {
     return NextResponse.json({ error: "link_failed" }, { status: 400 });
   }
 }

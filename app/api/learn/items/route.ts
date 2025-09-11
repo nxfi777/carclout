@@ -21,31 +21,39 @@ export async function GET() {
 
     // Gather tutorials and ebooks from learn_item table
     const res = await db.query("SELECT * FROM learn_item ORDER BY created_at DESC LIMIT 500;");
-    const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : [];
+    const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
     const items: LearnItem[] = rows
       .filter((r) => {
-        const required: Role | undefined = r?.minRole ?? undefined;
+        const required: Role | undefined = (r?.minRole as Role | undefined) ?? undefined;
         return canAccessByRole(session.role, required);
       })
       .map((r) => ({
-        id: r?.id?.toString?.() || r?.id,
-        kind: r?.kind === "ebook" ? "ebook" : "tutorial",
-        slug: r?.slug,
-        title: r?.title,
-        description: r?.description,
-        thumbKey: r?.thumbKey,
-        fileKey: r?.fileKey,
-        minRole: r?.minRole,
+        id: (r as { id?: { toString?: () => string } | string })?.id?.toString?.() || (r as { id?: string }).id,
+        kind: (r as { kind?: unknown })?.kind === "ebook" ? "ebook" : "tutorial",
+        slug: (r as { slug?: string })?.slug as string,
+        title: (r as { title?: string })?.title,
+        description: (r as { description?: string })?.description,
+        thumbKey: (r as { thumbKey?: string })?.thumbKey,
+        fileKey: (r as { fileKey?: string })?.fileKey,
+        minRole: (r as { minRole?: Role })?.minRole,
       }));
 
     // Merge in public livestream recordings that are flagged for learn
     try {
       const rec = await db.query("SELECT slug, thumbKey, videoKey, isPublic, minRole FROM livestream_recording ORDER BY created_at DESC LIMIT 200;");
-      const recRows = Array.isArray(rec) && Array.isArray(rec[0]) ? (rec[0] as any[]) : [];
+      const recRows = Array.isArray(rec) && Array.isArray(rec[0]) ? (rec[0] as Array<Record<string, unknown>>) : [];
       const recItems: LearnItem[] = recRows
-        .filter((r) => r?.isPublic)
-        .filter((r) => canAccessByRole(session.role, (r?.minRole as Role | undefined)))
-        .map((r) => ({ kind: "recording", slug: r?.slug || r?.id || "rec", title: r?.slug || "Livestream", thumbKey: r?.thumbKey, fileKey: r?.videoKey, minRole: r?.minRole, isPublic: true }));
+        .filter((r) => !!(r as { isPublic?: unknown })?.isPublic)
+        .filter((r) => canAccessByRole(session.role, ((r as { minRole?: Role }).minRole)))
+        .map((r) => ({
+          kind: "recording",
+          slug: (r as { slug?: string; id?: string }).slug || (r as { id?: string }).id || "rec",
+          title: (r as { slug?: string }).slug || "Livestream",
+          thumbKey: (r as { thumbKey?: string }).thumbKey,
+          fileKey: (r as { videoKey?: string }).videoKey,
+          minRole: (r as { minRole?: Role }).minRole,
+          isPublic: true,
+        }));
       items.push(...recItems);
     } catch {}
 
@@ -78,8 +86,8 @@ export async function POST(req: Request) {
     } RETURN AFTER;
   `;
   const res = await db.query(query, { kind, slug, title, description, thumbKey, fileKey, minRole });
-  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
-  return NextResponse.json({ item: row });
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as Record<string, unknown>) : null;
+  return NextResponse.json({ item: row as unknown });
 }
 
 

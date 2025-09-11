@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   // Persist to next-auth account table equivalent: create/update account with provider 'facebook'
   try {
     const db = await getSurreal();
-    const uid = String((session as any)?.user?.id || "");
+    const uid = String(session.user.id || "");
     await db.query(
       `LET $u = $user; IF $acc = (SELECT id FROM account WHERE userId = $u AND provider = 'facebook' LIMIT 1) THEN
          UPDATE $acc[0].id SET access_token = $token

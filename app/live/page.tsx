@@ -9,19 +9,21 @@ export default function LivePage() {
 
   useEffect(() => {
     let mounted = true;
+    let localCall: Call | null = null;
     async function init() {
       const res = await fetch("/api/stream/token");
       const data = await res.json();
       if (!data.apiKey || !data.token) return;
       const c = new StreamVideoClient({ apiKey: data.apiKey, user: { id: data.userId }, token: data.token });
       if (!mounted) return;
-      const call = c.call("default", "ignite-live");
-      await call.join({ create: true });
+      const createdCall = c.call("default", "ignite-live");
+      await createdCall.join({ create: true });
+      localCall = createdCall;
       setClient(c);
-      setCall(call);
+      setCall(createdCall);
     }
     init();
-    return () => { mounted = false; call?.leave(); };
+    return () => { mounted = false; try { localCall?.leave(); } catch {} };
   }, []);
 
   if (!client || !call) return <div className="container mx-auto py-10">Connecting to live…</div>;

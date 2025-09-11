@@ -34,7 +34,7 @@ export async function GET() {
     }
     items.sort((a, b) => a.name.localeCompare(b.name));
     return NextResponse.json({ items });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Failed to load previews" }, { status: 500 });
   }
 }

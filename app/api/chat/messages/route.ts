@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
 import { auth } from "@/lib/auth";
-import { checkChannelRead, checkChannelWrite, getSessionLite, type ChannelLike } from "@/lib/chatPerms";
+import { checkChannelRead, checkChannelWrite, getSessionLite, type ChannelLike, type Role, type Plan } from "@/lib/chatPerms";
 import { RecordId } from "surrealdb";
 
 let indexesEnsured = false;
@@ -44,10 +44,10 @@ export async function GET(request: Request) {
      LIMIT 200;`,
     { c: channel, me }
   );
-  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : [];
+  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
 
   // Build display name map for rows missing a safe userName (or containing an email)
-  const needIds: any[] = [];
+  const needIds: Array<unknown> = [];
   for (const r of rows) {
     const nm: string | undefined = typeof r?.userName === 'string' ? r.userName : undefined;
     const looksEmail = typeof nm === 'string' && /@/.test(nm);
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     }
   }
   const idStrings = new Set<string>();
-  const ids: any[] = [];
+  const ids: Array<unknown> = [];
   for (const u of needIds) {
     try {
       const k = typeof u?.toString === 'function' ? u.toString() : String(u);
@@ -67,33 +67,37 @@ export async function GET(request: Request) {
   if (ids.length > 0) {
     try {
       const ures = await db.query("SELECT id, name FROM user WHERE id IN $ids;", { ids });
-      const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as any[]) : [];
+      const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as Array<Record<string, unknown>>) : [];
       for (const u of urows) {
-        const key = typeof u?.id?.toString === 'function' ? u.id.toString() : String(u?.id);
-        if (key) nameMap.set(key, u?.name || 'Member');
+        const key = typeof (u as { id?: { toString?: () => string } } | undefined)?.id?.toString === 'function' ? (u as { id: { toString: () => string } }).id.toString() : String((u as { id?: unknown } | undefined)?.id);
+        const nm = (u as { name?: string } | undefined)?.name || 'Member';
+        if (key) nameMap.set(key, nm);
       }
     } catch {}
     try {
       const igres = await db.query("SELECT user, username FROM instagram_account WHERE user IN $ids;", { ids });
-      const igrows = Array.isArray(igres) && Array.isArray(igres[0]) ? (igres[0] as any[]) : [];
+      const igrows = Array.isArray(igres) && Array.isArray(igres[0]) ? (igres[0] as Array<Record<string, unknown>>) : [];
       for (const ig of igrows) {
-        const key = typeof ig?.user?.toString === 'function' ? ig.user.toString() : String(ig?.user);
-        if (key && ig?.username) nameMap.set(key, ig.username);
+        const key = typeof (ig as { user?: { toString?: () => string } } | undefined)?.user?.toString === 'function' ? (ig as { user: { toString: () => string } }).user.toString() : String((ig as { user?: unknown } | undefined)?.user);
+        const uname = (ig as { username?: string } | undefined)?.username;
+        if (key && uname) nameMap.set(key, uname);
       }
     } catch {}
   }
 
-  const normalizedDesc = rows.map((row: any) => {
-    const ridStr = typeof row?.user?.toString === 'function' ? row.user.toString() : (row?.user ? String(row.user) : '');
-    const nm: string | undefined = typeof row?.userName === 'string' ? row.userName : undefined;
+  const normalizedDesc = rows.map((row: Record<string, unknown>) => {
+    const ridStr = typeof (row as { user?: { toString?: () => string } } | undefined)?.user?.toString === 'function' ? (row as { user: { toString: () => string } }).user.toString() : ((row as { user?: unknown } | undefined)?.user ? String((row as { user?: unknown }).user) : '');
+    const nm: string | undefined = typeof (row as { userName?: unknown } | undefined)?.userName === 'string' ? (row as { userName: string }).userName : undefined;
     const looksEmail = typeof nm === 'string' && /@/.test(nm);
     const safeName = (!nm || looksEmail) ? (nameMap.get(ridStr) || 'Member') : nm;
     return {
-      id: row?.id?.id?.toString?.() || row?.id,
-      text: row?.text,
-      channel: row?.channel,
-      created_at: row?.created_at,
-    userEmail: row?.userEmail,
+      id: (row as { id?: { id?: unknown; toString?: () => string } | string } | undefined)?.id && typeof (row as { id?: { id?: unknown; toString?: () => string } | string }).id !== 'string' && typeof ((row as { id: { toString?: () => string } }).id as { toString?: () => string } | undefined)?.toString === 'function'
+        ? ((row as { id: { toString: () => string } }).id.toString())
+        : (row as { id?: string } | undefined)?.id,
+      text: (row as { text?: unknown } | undefined)?.text,
+      channel: (row as { channel?: unknown } | undefined)?.channel,
+      created_at: (row as { created_at?: unknown } | undefined)?.created_at,
+      userEmail: (row as { userEmail?: unknown } | undefined)?.userEmail,
       userName: safeName,
     };
   });
@@ -106,8 +110,8 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await request.json();
-  const channel: string = body?.channel || "general";
-  const rawText: string = body?.text || "";
+  const channel: string = (body as { channel?: string } | undefined)?.channel || "general";
+  const rawText: string = (body as { text?: string } | undefined)?.text || "";
   const text = String(rawText).trim();
   if (!text) return NextResponse.json({ error: "Empty" }, { status: 400 });
   if (text.length > 2000) return NextResponse.json({ error: "Too long" }, { status: 400 });
@@ -117,19 +121,19 @@ export async function POST(request: Request) {
   // Enforce channel write permissions and lock state
   try {
     const cres = await db.query("SELECT * FROM channel WHERE slug = $slug LIMIT 1;", { slug: channel });
-    const crow: ChannelLike & { locked?: boolean; locked_until?: string } | null = Array.isArray(cres) && Array.isArray(cres[0]) ? ((cres[0][0] as any) || null) : null;
+    const crow: (ChannelLike & { locked?: boolean; locked_until?: string }) | null = Array.isArray(cres) && Array.isArray(cres[0]) ? ((cres[0][0] as unknown as ChannelLike & { locked?: boolean; locked_until?: string }) || null) : null;
     if (crow) {
       const lite = {
         email: session.user.email,
-        role: (session.user as any)?.role || "user",
-        plan: (session.user as any)?.plan ?? null,
+        role: ((session.user as { role?: Role } | undefined)?.role) ?? "user",
+        plan: ((session.user as { plan?: Plan } | undefined)?.plan) ?? null,
       };
       if (!checkChannelWrite(lite, crow)) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
       // If channel is locked (either permanently or until a future time), block non-admins
-      const lockedFlag = !!(crow as any)?.locked;
-      const lockedUntil = (crow as any)?.locked_until;
+      const lockedFlag = !!(crow as { locked?: boolean } | undefined)?.locked;
+      const lockedUntil = (crow as { locked_until?: string } | undefined)?.locked_until;
       let isLocked = lockedFlag;
       if (!isLocked && typeof lockedUntil === "string") {
         const ts = Date.parse(lockedUntil);
@@ -158,16 +162,16 @@ export async function POST(request: Request) {
   }
 
   // Enforce mutes: check if the user is muted globally or for this channel, and not expired
-  const nowIso = new Date().toISOString();
+  const _nowIso = new Date().toISOString();
   const muteRes = await db.query(
     "SELECT id, channels, expires_at FROM mute WHERE targetEmail = $email;",
     { email: session.user.email }
   );
-  const mutedRows = Array.isArray(muteRes) && Array.isArray(muteRes[0]) ? (muteRes[0] as any[]) : [];
-  const isMuted = mutedRows.some((m: any) => {
-    const exp = m?.expires_at ? Date.parse(m.expires_at) : NaN;
+  const mutedRows = Array.isArray(muteRes) && Array.isArray(muteRes[0]) ? (muteRes[0] as Array<Record<string, unknown>>) : [];
+  const isMuted = mutedRows.some((m: Record<string, unknown>) => {
+    const exp = (m as { expires_at?: string } | undefined)?.expires_at ? Date.parse((m as { expires_at?: string }).expires_at as string) : NaN;
     if (Number.isFinite(exp) && exp < Date.now()) return false; // expired
-    const chans: string[] | null = Array.isArray(m?.channels) ? m.channels : null;
+    const chans: string[] | null = Array.isArray((m as { channels?: unknown[] } | undefined)?.channels) ? (m as { channels?: string[] }).channels as string[] : null;
     if (!chans || chans.length === 0) return true; // global mute
     return chans.includes(channel);
   });
@@ -191,10 +195,11 @@ export async function POST(request: Request) {
     "SELECT text, created_at FROM message WHERE channel = $channel AND userEmail = $email ORDER BY created_at DESC LIMIT 1;",
     { channel, email: session.user.email }
   );
-  const last = Array.isArray(dupRes) && Array.isArray(dupRes[0]) ? (dupRes[0][0] as any) : null;
+  const last = Array.isArray(dupRes) && Array.isArray(dupRes[0]) ? (dupRes[0][0] as Record<string, unknown>) : null;
   if (last && typeof last.text === "string") {
     const same = last.text.trim() === text;
-    const lastTs = Date.parse(last.created_at || 0);
+    const lastCreatedAt = typeof (last as { created_at?: unknown }).created_at === "string" ? (last as { created_at: string }).created_at : "";
+    const lastTs = Date.parse(lastCreatedAt);
     if (same && isFinite(lastTs) && Date.now() - lastTs < 30_000) {
       return NextResponse.json({ error: "Duplicate message" }, { status: 409 });
     }
@@ -202,7 +207,7 @@ export async function POST(request: Request) {
 
   // Find the user's RecordId to link from message.user
   const ures = await db.query("SELECT id, name FROM user WHERE email = $email LIMIT 1;", { email: session.user.email });
-  const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as any) : null;
+  const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as Record<string, unknown>) : null;
   const rid = urow?.id as RecordId<"user"> | string | undefined;
   // Prefer Instagram username, then user.name, then session name, never email
   let igName: string | undefined;
@@ -210,8 +215,8 @@ export async function POST(request: Request) {
     if (rid) {
       const ridObj = rid instanceof RecordId ? rid : new RecordId("user", String(rid));
       const igres = await db.query("SELECT username FROM instagram_account WHERE user = $u LIMIT 1;", { u: ridObj });
-      const igrow = Array.isArray(igres) && Array.isArray(igres[0]) ? (igres[0][0] as any) : null;
-      igName = igrow?.username;
+      const igrow = Array.isArray(igres) && Array.isArray(igres[0]) ? (igres[0][0] as Record<string, unknown>) : null;
+      igName = (igrow as { username?: string } | undefined)?.username;
     }
   } catch {}
   const userName = igName || (urow?.name as string | undefined) || (session.user.name as string | undefined) || "Member";

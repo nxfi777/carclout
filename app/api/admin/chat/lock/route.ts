@@ -5,10 +5,10 @@ import { auth } from "@/lib/auth";
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const role = (session.user as any)?.role || "user";
+  const role = session.user.role || "user";
   if (role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const body = await request.json().catch(() => ({} as any));
+  const body = await request.json().catch(() => ({} as Record<string, unknown>));
   const channelRaw: unknown = body?.channel;
   const minutesRaw: unknown = body?.minutes;
   const slug = (typeof channelRaw === "string" ? channelRaw : "").trim().toLowerCase();
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     `UPDATE channel SET locked = $locked, locked_until = $until WHERE slug = $slug RETURN AFTER;`,
     { slug, locked, until }
   );
-  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as Record<string, unknown>) : null;
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ channel: row });
 }

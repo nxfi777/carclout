@@ -7,12 +7,12 @@ export async function POST(request: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const role = (session.user as any)?.role || "user";
+  const role = session.user.role || "user";
   if (role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await request.json().catch(() => ({} as any));
+  const body = await request.json().catch(() => ({} as Record<string, unknown>));
   const channelRaw: unknown = body?.channel;
   const limitRaw: unknown = body?.limit;
   const channel = (typeof channelRaw === "string" && channelRaw.trim()) ? channelRaw.trim() : "general";
@@ -27,15 +27,15 @@ export async function POST(request: Request) {
     "SELECT id, created_at FROM message WHERE channel = $c ORDER BY created_at DESC LIMIT $l;",
     { c: channel, l: limit }
   );
-  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : [];
-  const ids = rows.map((r: any) => r?.id).filter(Boolean);
+  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ id?: unknown }>) : [];
+  const ids = rows.map((r) => (r?.id as unknown)).filter(Boolean);
 
   let purged = 0;
   if (ids.length > 0) {
     const results = await Promise.all(
-      ids.map(async (rid: any) => {
+      ids.map(async (rid) => {
         try {
-          await db.delete(rid);
+          await db.delete(rid as string);
           return true;
         } catch {
           return false;

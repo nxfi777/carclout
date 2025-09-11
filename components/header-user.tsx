@@ -14,13 +14,11 @@ export default function HeaderUser({
   email,
   image,
   plan,
-  initials,
 }: {
   name: string;
   email: string;
   image?: string;
   plan?: string | null;
-  initials?: string;
 }) {
   const [currentName, setCurrentName] = useState(name);
   const [currentImage, setCurrentImage] = useState<string | undefined>(image);

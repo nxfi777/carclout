@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -108,7 +109,11 @@ function LearnCard({ it }: { it: LearnItem }) {
     <Card>
       <CardContent className="p-0">
         <div className="w-full aspect-video bg-black/20 grid place-items-center overflow-hidden">
-          {thumbUrl ? <img src={thumbUrl} alt={it.slug} className="w-full h-full object-cover" /> : <div className="text-xs text-white/60">No thumbnail</div>}
+          {thumbUrl ? (
+            <Image src={thumbUrl} alt={it.slug} fill sizes="(max-width: 768px) 50vw, 33vw" className="object-cover" unoptimized />
+          ) : (
+            <div className="text-xs text-white/60">No thumbnail</div>
+          )}
         </div>
       </CardContent>
       <CardHeader>

@@ -1,10 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 function formatFalDetail(detail: unknown): string {
   try {
     if (Array.isArray(detail)) {
-      return (detail as any[])
+      return (detail as unknown[])
         .map((d) => {
-          const loc = Array.isArray(d?.loc) ? d.loc.join('.') : '';
-          const msg = d?.msg || d?.message || String(d);
+          const obj = (d && typeof d === 'object') ? (d as Record<string, unknown>) : undefined;
+          const locVal = (obj?.loc as unknown);
+          const loc = Array.isArray(locVal) ? (locVal as unknown[]).join('.') : '';
+          const msg = (obj?.msg as string | undefined) || (obj?.message as string | undefined) || String(d);
           return loc ? `${msg} (${loc})` : String(msg);
         })
         .join('; ');
@@ -27,8 +30,6 @@ function sanitizeModelNames(message: string | undefined): string | undefined {
   return m;
 }
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
-import crypto from "node:crypto";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { getSurreal } from "@/lib/surrealdb";
 import { createViewUrl, ensureFolder, r2, bucket } from "@/lib/r2";
@@ -52,11 +53,7 @@ type GenerateRequest = {
   vehicle?: { make?: string; model?: string; colorFinish?: string; accents?: string } | null;
 };
 
-function toIdString(id: unknown): string | undefined {
-  try { if (id && typeof (id as any).toString === "function") { const s = (id as any).toString(); if (typeof s === "string" && s.length > 0) return s; } } catch {}
-  if (typeof id === "string") return id;
-  return undefined;
-}
+// removed unused toIdString
 
 function substituteTokens(prompt: string, tokens: Record<string, string>): string {
   let out = prompt;
@@ -89,7 +86,7 @@ export async function POST(req: Request) {
       const parts = idStr.split(":");
       const tb = parts[0];
       const raw = parts.slice(1).join(":").replace(/^⟨|⟩$/g, "");
-      rid = new RecordId(tb as any, raw);
+      rid = new RecordId(tb as string, raw);
     } catch {}
     // Try selecting by direct record reference
     try {
@@ -178,11 +175,12 @@ export async function POST(req: Request) {
 
   // Build image URLs: upload to FAL media so they are publicly retrievable by FAL (works in dev + prod)
     const imageUrls: string[] = [];
-    async function streamToUint8Array(stream: any): Promise<Uint8Array> {
+    async function streamToUint8Array(stream: unknown): Promise<Uint8Array> {
       const chunks: Uint8Array[] = [];
-      if (stream && typeof stream[Symbol.asyncIterator] === 'function') {
-        for await (const chunk of stream) {
-          chunks.push(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : new Uint8Array(chunk));
+      const s = stream as { [Symbol.asyncIterator]?: () => AsyncIterator<unknown> } | undefined;
+      if (s && typeof s[Symbol.asyncIterator] === 'function') {
+        for await (const chunk of s as unknown as AsyncIterable<unknown>) {
+          chunks.push(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : new Uint8Array(chunk as ArrayBufferLike));
         }
       }
       return Buffer.concat(chunks);
@@ -205,7 +203,7 @@ export async function POST(req: Request) {
       try {
         const key = k.startsWith("admin/") ? k : `admin/${k.replace(/^\/+/, "")}`;
         const obj = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-        const bytes = await streamToUint8Array(obj.Body as any);
+        const bytes = await streamToUint8Array(obj.Body as unknown);
         const mime = (obj.ContentType as string) || 'image/jpeg';
         const url = await uploadToFal(bytes, mime);
         if (url) imageUrls.push(url);
@@ -218,7 +216,7 @@ export async function POST(req: Request) {
         const normalized = k.replace(/^\/+/, "");
         const key = `${userRoot}/${normalized}`;
         const obj = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-        const bytes = await streamToUint8Array(obj.Body as any);
+        const bytes = await streamToUint8Array(obj.Body as unknown);
         const mime = (obj.ContentType as string) || 'image/jpeg';
         const url = await uploadToFal(bytes, mime);
         if (url) imageUrls.push(url);
@@ -253,7 +251,7 @@ export async function POST(req: Request) {
     try {
       try {
         await requireAndReserveCredits(user.email, GENERATION_CREDITS_PER_IMAGE, "generation", String(template?.slug || template?.id || "template"));
-      } catch (e) {
+      } catch {
         return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
       }
       function clampImageSize(w?: number, h?: number): { width: number; height: number } | null {
@@ -297,13 +295,19 @@ export async function POST(req: Request) {
           } catch {}
         },
       });
-    } catch (e: any) {
-      try { console.error("FAL subscribe error", typeof e?.body === 'object' ? JSON.stringify({ message: e?.message, status: e?.status, body: e?.body }) : (e?.message || e)); } catch {}
-      const status = typeof e?.status === "number" ? e.status : 502;
-      const messageRaw = e?.body?.message || e?.message || "Generation failed. Please try again.";
-      const prettyRaw = formatFalDetail(e?.body?.detail) || undefined;
+    } catch (e: unknown) {
+      try {
+        const errObj = e as { message?: unknown; status?: unknown; body?: unknown };
+        const safe = typeof errObj?.body === 'object' ? { message: String(errObj?.message || ''), status: errObj?.status, body: errObj?.body } : (errObj?.message || errObj);
+        console.error("FAL subscribe error", safe);
+      } catch {}
+      const err = e as { status?: unknown; message?: unknown; body?: unknown };
+      const status = typeof err?.status === "number" ? err.status : 502;
+      const bodyAny = (typeof err?.body === 'object' && err?.body) ? (err.body as Record<string, unknown>) : undefined;
+      const messageRaw = (bodyAny?.message as string | undefined) || (typeof err?.message === 'string' ? err.message : undefined) || "Generation failed. Please try again.";
+      const prettyRaw = formatFalDetail((bodyAny as { detail?: unknown } | undefined)?.detail) || undefined;
       const userMsg = sanitizeModelNames(prettyRaw || messageRaw) || "Generation failed. Please try again.";
-      return NextResponse.json({ error: userMsg, details: e?.body || null }, { status });
+      return NextResponse.json({ error: userMsg, details: bodyAny || null }, { status });
     }
     const data = (result?.data || {}) as any;
     const candidateUrl: string | null = data?.images?.[0]?.url || data?.image?.url || data?.url || null;

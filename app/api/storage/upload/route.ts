@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     const path = (form.get("path") as string | null) || "";
     const scope = (form.get("scope") as string | null) || 'user';
     const isAdminScope = scope === 'admin';
-    if (isAdminScope && (user as any)?.role !== 'admin') {
+    if (isAdminScope && user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
@@ -49,12 +49,12 @@ export async function POST(req: Request) {
     // Enforce storage quota for non-admin scope
     if (!isAdminScope) {
       // Resolve effective plan
-      let effectivePlan: string | null = (user as any)?.plan ?? null;
+      let effectivePlan: string | null = user.plan ?? null;
       try {
         const db = await getSurreal();
         const res = await db.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email: user.email });
-        const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
-        if (row?.plan !== undefined) effectivePlan = row.plan || effectivePlan || null;
+        const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { plan?: string | null } | undefined) : undefined;
+        if (row && "plan" in row) effectivePlan = row.plan || effectivePlan || null;
       } catch {}
       const GB = 1024 ** 3;
       const TB = 1024 ** 4;

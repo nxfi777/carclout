@@ -15,7 +15,7 @@ interface CarPhotosUploaderProps {
   className?: string;
 }
 
-type KeyPreview = { key: string; url: string };
+// Removed unused type alias per lint
 
 export default function CarPhotosUploader({ value, onChange, vehicles = [], initialVehicleIndex = 0, max = 30, className }: CarPhotosUploaderProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -119,20 +119,7 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], init
     inputRef.current?.click();
   }, []);
 
-  const onDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files || []);
-    await uploadFiles(files);
-  }, [value]);
-
-  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-  const onDragLeave = useCallback(() => setIsDragging(false), []);
-
-  async function uploadFiles(files: File[]) {
+  const uploadFiles = useCallback(async (files: File[]) => {
     setUploadErrors(null);
     const current = value || [];
     if (!files.length) return;
@@ -173,19 +160,35 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], init
               }
             } catch {}
           }
-        } catch (err: any) {
-          setUploadErrors(err?.message || "Upload failed");
+        } catch (err) {
+          const msg = (err instanceof Error && err.message) ? err.message : "Upload failed";
+          setUploadErrors(msg);
         }
       }
       if (nextKeys.length) onChange([...(current || []), ...nextKeys]);
     } finally {
       setIsUploading(false);
     }
-  }
+  }, [value, vehicles.length, selectedSlug, keysForSelected?.length, max, onChange]);
+
+  const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    void uploadFiles(files);
+  }, [uploadFiles]);
+
+  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+  const onDragLeave = useCallback(() => setIsDragging(false), []);
+
+  
 
   function onFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
-    uploadFiles(files);
+    void uploadFiles(files);
     try { e.target.value = ""; } catch {}
   }
 

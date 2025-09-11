@@ -42,7 +42,7 @@ export default async function SiteHeader() {
     if (maybeUser && typeof maybeUser.plan === 'string') userPlanFromSession = maybeUser.plan;
   } catch {}
   const displayPlan = (dbPlan || userPlanFromSession) || null;
-  const initials = (displayName || user?.email || "U").split(" ").map((s) => s[0]).join("")?.slice(0,2).toUpperCase() || "U";
+  // initials are no longer used
 
   return (
     <header className="py-4">
@@ -101,7 +101,7 @@ export default async function SiteHeader() {
                 </div>
                 {/* Single profile trigger across breakpoints; dialogs only on md+ */}
                 <div className="flex items-center gap-2">
-                  <HeaderUser name={displayName} email={user.email!} image={displayImage} plan={displayPlan} initials={initials} />
+                  <HeaderUser name={displayName} email={user.email!} image={displayImage} plan={displayPlan} />
                 </div>
                 <div className="hidden md:flex items-center gap-2">
                   <ProfileDialog />

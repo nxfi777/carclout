@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     if (!keyParam) return NextResponse.json({ error: "Missing key" }, { status: 400 });
 
     const isAdminScope = scope === "admin";
-    if (isAdminScope && (user as any)?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (isAdminScope && user.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const root = isAdminScope ? `admin` : `users/${sanitizeUserId(user.email)}`;
     const key = keyParam.startsWith(root) ? keyParam : `${root}/${keyParam}`;
@@ -53,7 +53,7 @@ export async function GET(req: Request) {
 
     const status = range ? 206 : 200;
     return new Response(stream, { status, headers });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Failed to fetch file" }, { status: 500 });
   }
 }

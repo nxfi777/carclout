@@ -14,7 +14,8 @@ export type Plan = "minimum" | "basic" | "pro";
 
 export const PLAN_PRICE_IDS: Record<Plan, string> = {
   minimum: process.env.STRIPE_PRICE_MINIMUM || "",
-  basic: process.env.STRIPE_PRICE_BASIC || "",
+  // 'basic' plan is not currently sold; intentionally no env var
+  basic: "",
   pro: process.env.STRIPE_PRICE_PRO || "",
 };
 

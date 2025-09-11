@@ -5,7 +5,7 @@ import { checkChannelRead, getSessionLite, type ChannelLike } from "@/lib/chatPe
 
 async function ensureGeneral(db: Awaited<ReturnType<typeof getSurreal>>) {
   const res = await db.query("SELECT * FROM channel WHERE slug = 'general' LIMIT 1;");
-  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
   if (!row) {
     await db.create("channel", { name: "General", slug: "general", created_at: new Date().toISOString() });
   }
@@ -13,7 +13,7 @@ async function ensureGeneral(db: Awaited<ReturnType<typeof getSurreal>>) {
 
 async function ensureLivestream(db: Awaited<ReturnType<typeof getSurreal>>) {
   const res = await db.query("SELECT * FROM channel WHERE slug = 'livestream' LIMIT 1;");
-  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
   if (!row) {
     await db.create("channel", { name: "Livestream", slug: "livestream", created_at: new Date().toISOString() });
   }
@@ -21,7 +21,7 @@ async function ensureLivestream(db: Awaited<ReturnType<typeof getSurreal>>) {
 
 async function ensurePro(db: Awaited<ReturnType<typeof getSurreal>>) {
   const res = await db.query("SELECT * FROM channel WHERE slug = 'pro' LIMIT 1;");
-  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
   if (!row) {
     await db.create("channel", { name: "Pro", slug: "pro", requiredReadPlan: 'ultra', requiredWritePlan: 'ultra', created_at: new Date().toISOString() });
   }
@@ -44,7 +44,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userRole = (session.user as any)?.role || "user";
+  const userRole = session.user.role || "user";
   if (userRole !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json();
   const name: string = body?.name || "";
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userRole = (session.user as any)?.role || "user";
+  const userRole = session.user.role || "user";
   if (userRole !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => ({}));
   const slug: string = String(body?.slug || "").trim().toLowerCase();
@@ -103,7 +103,7 @@ export async function PATCH(request: Request) {
   const db = await getSurreal();
   const q = `UPDATE channel SET ${sets.join(", ")} WHERE slug = $slug RETURN AFTER;`;
   const res = await db.query(q, params);
-  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ channel: row });
 }
@@ -111,7 +111,7 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userRole = (session.user as any)?.role || "user";
+  const userRole = session.user.role || "user";
   if (userRole !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => ({}));
   const slug: string = String(body?.slug || "").trim().toLowerCase();

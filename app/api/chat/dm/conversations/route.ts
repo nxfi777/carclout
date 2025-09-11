@@ -10,15 +10,15 @@ export async function GET() {
   const db = await getSurreal();
   // Load self profile from DB to ensure latest name/image like the header
   const selfRes = await db.query("SELECT email, name, image FROM user WHERE email = $me LIMIT 1;", { me });
-  const selfRow = Array.isArray(selfRes) && Array.isArray(selfRes[0]) ? (selfRes[0][0] as any) : null;
+  const selfRow = Array.isArray(selfRes) && Array.isArray(selfRes[0]) ? (selfRes[0][0] as { name?: string; image?: string } | null) : null;
   const selfName = (selfRow?.name as string | undefined) || (session?.user?.name as string | undefined) || me;
   const selfImage = (selfRow?.image as string | undefined) || (session?.user?.image as string | undefined) || null;
   const res = await db.query(
     "SELECT id, dmKey, text, created_at, senderEmail, recipientEmail FROM dm_message WHERE senderEmail = $me OR recipientEmail = $me ORDER BY created_at DESC LIMIT 500;",
     { me }
   );
-  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : [];
-  const byOther = new Map<string, any>();
+  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ senderEmail?: string; recipientEmail?: string }>) : [];
+  const byOther = new Map<string, { senderEmail?: string; recipientEmail?: string }>();
   for (const r of rows) {
     const other = r?.senderEmail === me ? r?.recipientEmail : r?.senderEmail;
     if (!other) continue;
@@ -32,7 +32,7 @@ export async function GET() {
   }
 
   const ures = await db.query("SELECT email, name, image FROM user WHERE email IN $emails;", { emails: others });
-  const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as any[]) : [];
+  const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as Array<{ email?: string; name?: string; image?: string }>) : [];
   const info = new Map<string, { email: string; name?: string; image?: string }>();
   for (const u of urows) {
     if (u?.email) info.set(u.email, { email: u.email, name: u?.name, image: u?.image });

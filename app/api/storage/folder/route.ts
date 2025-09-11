@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   const path = body?.path as string;
   const scope = (body?.scope || 'user') as string;
   const isAdminScope = scope === 'admin';
-  if (isAdminScope && (user as any)?.role !== 'admin') {
+  if (isAdminScope && user.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   if (typeof path !== "string") return NextResponse.json({ error: "Invalid path" }, { status: 400 });

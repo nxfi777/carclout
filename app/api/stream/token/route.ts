@@ -14,8 +14,9 @@ export async function GET() {
   try {
     const token = serverClient.createToken(userId);
     return NextResponse.json({ token, apiKey, userId });
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Token creation failed', message: e?.message || 'unknown' }, { status: 500 });
+  } catch (e: unknown) {
+    const message = typeof e === 'object' && e && 'message' in e ? String((e as { message?: unknown }).message) : 'unknown';
+    return NextResponse.json({ error: 'Token creation failed', message }, { status: 500 });
   }
 }
 

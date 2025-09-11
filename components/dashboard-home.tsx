@@ -199,7 +199,6 @@ function LottieFireCell({ active }: { active: boolean }) {
 
 function AnnouncementItem({ title, content, level }: { title: string; content: string; level: 'info'|'update'|'warning' }) {
   const intent = level === 'warning' ? 'warning' : (level === 'update' ? 'update' : 'info');
-  const tone = intent === 'warning' ? 'amber' : (intent === 'update' ? 'blue' : 'slate');
   const border = intent === 'warning' ? 'border-amber-500/30' : (intent === 'update' ? 'border-blue-500/30' : 'border-white/10');
   const bg = intent === 'warning' ? 'bg-amber-500/10' : (intent === 'update' ? 'bg-blue-500/10' : 'bg-white/5');
   return (

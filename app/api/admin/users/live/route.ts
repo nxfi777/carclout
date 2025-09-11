@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getSurreal } from "@/lib/surrealdb";
+import type { Uuid } from "surrealdb";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const session = await auth();
-  const role = (session as any)?.user?.role || (session as any)?.user?.plan || null;
+  const role = session?.user?.role || session?.user?.plan || null;
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
 
   const db = await getSurreal();
   const te = new TextEncoder();
-  let liveId: any;
+  let liveId: Uuid | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
               : `SELECT name, email, credits_balance FROM user ORDER BY string::lower(name) LIMIT $limit;`,
             { q, limit }
           );
-          const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : []).map((r) => ({
+          const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; email?: string; credits_balance?: number }>) : []).map((r) => ({
             name: r?.name || null,
             email: String(r?.email || ""),
             credits: typeof r?.credits_balance === "number" ? Number(r.credits_balance) : 0,
@@ -40,8 +41,8 @@ export async function GET(request: Request) {
         // Live subscription to user table; we'll filter in handler
         const res2 = await db.query("LIVE SELECT * FROM user");
         const id = Array.isArray(res2) && res2[0] ? (Array.isArray(res2[0]) ? res2[0][0] : res2[0]) : res2;
-        liveId = id;
-        await db.subscribeLive(liveId, async (..._args: unknown[]) => {
+        liveId = id as unknown as Uuid;
+        await db.subscribeLive(liveId as Uuid, async (..._args: unknown[]) => {
           try {
             const res = await db.query(
               q
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
                 : `SELECT name, email, credits_balance FROM user ORDER BY string::lower(name) LIMIT $limit;`,
               { q, limit }
             );
-            const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : []).map((r) => ({
+            const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; email?: string; credits_balance?: number }>) : []).map((r) => ({
               name: r?.name || null,
               email: String(r?.email || ""),
               credits: typeof r?.credits_balance === "number" ? Number(r.credits_balance) : 0,
@@ -57,14 +58,14 @@ export async function GET(request: Request) {
             controller.enqueue(te.encode(`data: ${JSON.stringify({ users: rows })}\n\n`));
           } catch {}
         });
-      } catch (e) {
+      } catch {
         controller.enqueue(te.encode(`event: error\n` + `data: ${JSON.stringify({ error: 'live_failed' })}\n\n`));
       }
     },
-    async cancel() { try { if (liveId) await db.kill(liveId); } catch {} },
+    async cancel() { try { if (liveId) await db.kill(liveId as Uuid); } catch {} },
   });
 
-  const res = new NextResponse(stream as any, {
+  const res = new NextResponse(stream as ReadableStream<Uint8Array>, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
@@ -72,9 +73,9 @@ export async function GET(request: Request) {
     },
   });
 
-  const signal = (request as any).signal as AbortSignal | undefined;
+  const signal = (request as { signal?: AbortSignal }).signal;
   if (signal) {
-    signal.addEventListener("abort", async () => { try { if (liveId) await db.kill(liveId); } catch {} });
+    signal.addEventListener("abort", async () => { try { if (liveId) await db.kill(liveId as Uuid); } catch {} });
   }
 
   return res;

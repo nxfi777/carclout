@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { DashboardWorkspacePanel } from "@/components/dashboard-workspace-panel";
 import MusicSuggestions from "@/components/music/music-suggestions";
@@ -14,13 +14,12 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { TrendingUp, ChartBarIncreasing } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Line,
-  LineChart,
   XAxis,
   YAxis,
   ResponsiveContainer
@@ -37,6 +36,81 @@ import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
 // Disable SSR for Lottie
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
+// Shared types used across this admin page
+type TemplateVariableDef = {
+  key: string;
+  label?: string;
+  type?: 'text' | 'select' | 'color';
+  required?: boolean;
+  defaultValue?: string;
+  options?: string[];
+};
+
+type TemplateDisplay = {
+  id?: string;
+  name: string;
+  description?: string;
+  slug?: string;
+  thumbnailKey?: string;
+  variables?: TemplateVariableDef[];
+  prompt?: string;
+  falModelSlug?: string;
+  fixedAspectRatio?: boolean;
+  aspectRatio?: number;
+  allowedImageSources?: Array<'vehicle' | 'user'>;
+  imageSize?: { width: number; height: number } | null;
+  favoriteCount?: number;
+  rembg?: {
+    enabled?: boolean;
+    model?: 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait';
+    operating_resolution?: '1024x1024' | '2048x2048';
+    output_format?: 'png' | 'webp';
+    refine_foreground?: boolean;
+    output_mask?: boolean;
+  } | null;
+};
+
+type Vehicle = { make: string; model: string; type: string; colorFinish?: string; accents?: string };
+
+type CreateTemplatePayload = {
+  name: string;
+  description?: string;
+  prompt: string;
+  falModelSlug: string;
+  thumbnailKey?: string | null;
+  adminImageKeys: string[];
+  imageSize?: { width: number; height: number };
+  fixedAspectRatio: boolean;
+  aspectRatio?: number;
+  allowedImageSources: Array<'vehicle' | 'user'>;
+  variables: Array<{
+    key: string;
+    label: string;
+    required: boolean;
+    type: 'select' | 'color' | 'text';
+    options?: string[];
+    defaultValue?: string;
+  }>;
+  rembg: {
+    enabled: boolean;
+    model: 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait';
+    operating_resolution: '1024x1024' | '2048x2048';
+    output_format: 'png' | 'webp';
+    refine_foreground: boolean;
+    output_mask: boolean;
+  };
+};
+
+type GeneratePayload = {
+  templateId?: string;
+  templateSlug?: string;
+  userImageKeys: string[];
+  userImageDataUrls?: string[];
+  variables: Record<string, string>;
+};
+
+const _BUILT_IN_TOKENS = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
+
 function AdminPageInner() {
   const [tab, setTab] = useState<"analytics" | "workspace" | "templates" | "music" | "channels" | "moderation" | "announcements">("analytics");
   const [me, setMe] = useState<{ role?: string } | null>(null);
@@ -49,7 +123,7 @@ function AdminPageInner() {
   useEffect(() => {
     const t = String(searchParams?.get('tab') || '').toLowerCase();
     if (t === 'analytics' || t === 'workspace' || t === 'templates' || t === 'music' || t === 'channels' || t === 'moderation' || t === 'announcements') {
-      setTab(t as any);
+      setTab(t as "analytics" | "workspace" | "templates" | "music" | "channels" | "moderation" | "announcements");
     } else {
       setTab('analytics');
     }
@@ -119,7 +193,7 @@ function AdminAnalyticsTab() {
         <div className="text-lg font-semibold flex items-center gap-2">
           <TrendingUp className="size-5" /> Analytics
         </div>
-        <Select value={range} onValueChange={(v)=> setRange(v as any)}>
+        <Select value={range} onValueChange={(v)=> setRange(v as '7d'|'30d'|'90d')}>
           <SelectTrigger className="h-8 w-[8em]"><SelectValue placeholder="Range" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="7d">Last 7 days</SelectItem>
@@ -231,13 +305,13 @@ function UserCreditsSearch(){
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<Array<{ name?: string|null; email: string; credits: number }>>([]);
-  async function run(){
+  const run = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/users/search?q=${encodeURIComponent(q)}&limit=50`, { cache:'no-store' }).then(r=>r.json()).catch(()=>({ users: [] }));
       setRows(Array.isArray(res?.users) ? res.users : []);
     } finally { setLoading(false); }
-  }
+  }, [q]);
   useEffect(()=>{
     const t = setTimeout(run, 250);
     let es: EventSource | null = null;
@@ -255,7 +329,7 @@ function UserCreditsSearch(){
       } catch {}
     })();
     return ()=> { clearTimeout(t); try { es?.close(); } catch {} };
-  }, [q]);
+  }, [q, run]);
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -440,7 +514,7 @@ function AnnouncementsTab() {
       <div className="text-sm font-medium">New announcement</div>
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-start">
         <Input className="sm:col-span-1" value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="Title" />
-        <Select defaultValue={level} onValueChange={(v)=> setLevel(v as any)}>
+        <Select defaultValue={level} onValueChange={(v)=> setLevel(v as 'info'|'update'|'warning')}>
           <SelectTrigger className="h-9"><SelectValue placeholder="Level" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="info">info</SelectItem>
@@ -495,7 +569,7 @@ function NewTemplateButton(){
   const [imageSizeEdited, setImageSizeEdited] = useState<boolean>(false);
   const [thumbPreview, setThumbPreview] = useState<string | null>(null);
   const [adminPreviews, setAdminPreviews] = useState<string[]>([]);
-  const builtIn = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
+  const builtIn = useMemo(() => new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]), []);
   const [tokenConfigs, setTokenConfigs] = useState<Record<string, { kind: 'input' | 'select' | 'color'; options: string[]; defaultValue?: string }>>({});
   const [selectedThumbAdminIndex, setSelectedThumbAdminIndex] = useState<number | null>(null);
   const [fixedAspect, setFixedAspect] = useState<boolean>(false);
@@ -527,7 +601,7 @@ function NewTemplateButton(){
       for (const k of unknown) next[k] = prev[k] || { kind: 'input', options: [] };
       return next;
     });
-  }, [prompt]);
+  }, [prompt, builtIn]);
 
   // Build previews for thumbnail/admin images
   useEffect(()=>{
@@ -637,15 +711,15 @@ function NewTemplateButton(){
         const key = await uploadAdmin(thumbnailFile, 'thumbnails');
         if (key) thumbnailKey = key.replace(/^admin\//,'');
       }
-      const unknownVarDefs = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text'), options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as any).defaultValue === 'string' && (cfg as any).defaultValue ? (cfg as any).defaultValue : undefined }));
-      const allowedImageSources = [allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean);
-      const rembg = { enabled: !!rembgEnabled, model: rembgModel, operating_resolution: rembgRes, output_format: rembgFormat, refine_foreground: !!rembgRefine, output_mask: !!rembgMask };
-      const payload: any = { name, description, prompt, falModelSlug, thumbnailKey, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, rembg };
+      const unknownVarDefs: Array<{ key: string; label: string; required: boolean; type: 'select'|'color'|'text'; options?: string[]; defaultValue?: string; }> = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: (cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text')) as 'select'|'color'|'text', options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' && (cfg as { defaultValue?: unknown }).defaultValue ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
+      const allowedImageSources = ([allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean) as Array<'vehicle'|'user'>);
+      const rembg = { enabled: !!rembgEnabled, model: rembgModel, operating_resolution: rembgRes, output_format: rembgFormat, refine_foreground: !!rembgRefine, output_mask: !!rembgMask } as const;
+      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, rembg };
       if (/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug)) payload.imageSize = { width: imageWidth, height: imageHeight };
       const res = await fetch('/api/templates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!res.ok) { const data = await res.json().catch(()=>({})); toast.error(data?.error || 'Failed to create template'); return; }
       setOpen(false); setName(""); setDescription(""); setPrompt(""); setFalModelSlug("fal-ai/gemini-25-flash-image/edit"); setThumbnailFile(null); setAdminImageFiles([]); setAllowVehicle(true); setAllowUser(true); setImageWidth(1280); setImageHeight(1280); setImageSizeEdited(false);
-      try { const ev = new CustomEvent('admin:templates:created'); window.dispatchEvent(ev as any); } catch {}
+      try { const ev = new CustomEvent('admin:templates:created'); window.dispatchEvent(ev); } catch {}
     } finally { setBusy(false); }
   }
   return (
@@ -678,7 +752,7 @@ function NewTemplateButton(){
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div>
                     <div className="text-xs text-white/70 mb-1">Model</div>
-                    <Select value={rembgModel} onValueChange={(v)=> setRembgModel(v as any)}>
+                    <Select value={rembgModel} onValueChange={(v)=> setRembgModel(v as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait')}>
                       <SelectTrigger className="h-9"><SelectValue placeholder="Select model" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="General Use (Light)">General Use (Light)</SelectItem>
@@ -691,7 +765,7 @@ function NewTemplateButton(){
                   </div>
                   <div>
                     <div className="text-xs text-white/70 mb-1">Resolution</div>
-                    <Select value={rembgRes} onValueChange={(v)=> setRembgRes(v as any)}>
+                    <Select value={rembgRes} onValueChange={(v)=> setRembgRes(v as '1024x1024'|'2048x2048')}>
                       <SelectTrigger className="h-9"><SelectValue placeholder="Resolution" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="1024x1024">1024x1024</SelectItem>
@@ -701,7 +775,7 @@ function NewTemplateButton(){
                   </div>
                   <div>
                     <div className="text-xs text-white/70 mb-1">Output</div>
-                    <Select value={rembgFormat} onValueChange={(v)=> setRembgFormat(v as any)}>
+                    <Select value={rembgFormat} onValueChange={(v)=> setRembgFormat(v as 'png'|'webp')}>
                       <SelectTrigger className="h-9"><SelectValue placeholder="Format" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="png">png</SelectItem>
@@ -786,9 +860,9 @@ function NewTemplateButton(){
                             <Button variant="ghost" size="sm" className="text-xs" onClick={(e)=>{
                               e.preventDefault();
                               const el = (e.currentTarget.previousSibling as HTMLInputElement | null);
-                              const val = (el && 'value' in el) ? String((el as any).value || '').trim() : '';
+                              const val = (el && 'value' in el) ? String((el as HTMLInputElement).value || '').trim() : '';
                               if (val) setTokenConfigs((prev)=> ({ ...prev, [key]: { kind: 'select', options: [...(prev[key]?.options || []), val] } }));
-                              try { if (el && 'value' in el) (el as any).value = ''; } catch {}
+                              try { if (el && 'value' in el) (el as HTMLInputElement).value = ''; } catch {}
                             }}>Add</Button>
                           </div>
                           {(cfg.options || []).length ? (
@@ -870,7 +944,7 @@ function NewTemplateButton(){
 }
 
 function TemplatesTab() {
-  const [templates, setTemplates] = useState<Array<{ id?: string; name: string; description?: string; slug?: string; thumbnailKey?: string; variables?: any[]; prompt?: string; falModelSlug?: string; fixedAspectRatio?: boolean; aspectRatio?: number; allowedImageSources?: string[] }>>([]);
+  const [templates, setTemplates] = useState<TemplateDisplay[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [sortBy, setSortBy] = useState<'recent'|'favorites'>('recent');
@@ -903,7 +977,7 @@ function TemplatesTab() {
           } catch {}
           return undefined;
         }
-        const out = await Promise.all(list.map(async (t:any)=> ({
+        const out = await Promise.all(list.map(async (t: TemplateDisplay)=> ({
           id: t?.id,
           name: t?.name,
           description: t?.description,
@@ -916,8 +990,8 @@ function TemplatesTab() {
           aspectRatio: typeof t?.aspectRatio === 'number' ? Number(t?.aspectRatio) : undefined,
           rembg: t?.rembg || null,
           allowedImageSources: Array.isArray(t?.allowedImageSources) ? t.allowedImageSources : ['vehicle','user'],
-          imageSize: (t as any)?.imageSize || null,
-          favoriteCount: Number((t as any)?.favoriteCount || 0),
+          imageSize: (t as { imageSize?: { width: number; height: number } | null })?.imageSize || null,
+          favoriteCount: Number((t as { favoriteCount?: number })?.favoriteCount || 0),
         })));
         if (!cancelled) setTemplates(out);
       } finally { if (!cancelled) setLoading(false); }
@@ -926,19 +1000,19 @@ function TemplatesTab() {
   },[refreshKey, sortBy, filterBy]);
   useEffect(()=>{
     function onCreated(){ setRefreshKey((v)=> v+1); }
-    window.addEventListener('admin:templates:created', onCreated as any);
-    return ()=> window.removeEventListener('admin:templates:created', onCreated as any);
+    window.addEventListener('admin:templates:created', onCreated as EventListener);
+    return ()=> window.removeEventListener('admin:templates:created', onCreated as EventListener);
   },[]);
   const [open, setOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState<'test'|'edit'>('test');
-  const [active, setActive] = useState<any | null>(null);
+  const [active, setActive] = useState<TemplateDisplay | null>(null);
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-sm text-white/70">Manage templates</div>
         <div className="flex items-center gap-2">
           <div className="text-xs text-white/70">Filter</div>
-          <Select value={filterBy} onValueChange={(v)=> setFilterBy((v as any) || 'all')}>
+          <Select value={filterBy} onValueChange={(v)=> setFilterBy((v as 'all'|'favorites') || 'all')}>
             <SelectTrigger className="h-8 min-w-[10rem]"><SelectValue placeholder="All" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
@@ -946,7 +1020,7 @@ function TemplatesTab() {
             </SelectContent>
           </Select>
           <div className="text-xs text-white/70">Sort</div>
-          <Select value={sortBy} onValueChange={(v)=> setSortBy((v as any) || 'recent')}>
+          <Select value={sortBy} onValueChange={(v)=> setSortBy((v as 'recent'|'favorites') || 'recent')}>
             <SelectTrigger className="h-8 min-w-[10rem]"><SelectValue placeholder="Most recent" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="recent">Most recent</SelectItem>
@@ -974,7 +1048,7 @@ function TemplatesTab() {
         <div className="text-sm text-white/60">No templates yet. Create one to get started.</div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-          {templates.map((t: any)=> (
+          {templates.map((t: TemplateDisplay)=> (
             <ContextMenu key={t.id || t.slug}>
               <ContextMenuTrigger asChild>
                 <button className="text-left rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 border border-[color:var(--border)] focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer" onClick={()=>{ setActive(t); setDialogTab('test'); setOpen(true); }}>
@@ -987,7 +1061,7 @@ function TemplatesTab() {
                   <div className="p-2">
                     <div className="text-sm font-medium truncate">{t.name}</div>
                     {t.description ? <div className="text-xs text-white/60 line-clamp-2">{t.description}</div> : null}
-                    <div className="mt-1 text-[0.75rem] text-white/70">{Number((t as any)?.favoriteCount||0)} favourite{Number((t as any)?.favoriteCount||0)===1?'':'s'}</div>
+                    <div className="mt-1 text-[0.75rem] text-white/70">{Number((t as { favoriteCount?: number })?.favoriteCount||0)} favourite{Number((t as { favoriteCount?: number })?.favoriteCount||0)===1?'':'s'}</div>
                   </div>
                 </button>
               </ContextMenuTrigger>
@@ -1011,7 +1085,7 @@ function TemplatesTab() {
           <DialogHeader>
             <DialogTitle>{active?.name || 'Template'}</DialogTitle>
           </DialogHeader>
-          <Tabs value={dialogTab} onValueChange={(v)=> setDialogTab(v as any)}>
+          <Tabs value={dialogTab} onValueChange={(v)=> setDialogTab(v as 'test'|'edit')}>
             <TabsList>
               <TabsTrigger value="test">Test</TabsTrigger>
               <TabsTrigger value="edit">Edit</TabsTrigger>
@@ -1033,13 +1107,13 @@ function TemplatesTab() {
   );
 }
 
-function AdminTestTemplate({ template }: { template: any }){
+function AdminTestTemplate({ template }: { template: TemplateDisplay }){
   const [source, setSource] = useState<'vehicle'|'upload'|'workspace'>(()=>{
     const srcs: string[] = Array.isArray(template?.allowedImageSources) ? template.allowedImageSources : ['vehicle','user'];
     return srcs.includes('vehicle') ? 'vehicle' : 'upload';
   });
   const [vehiclePhotos, setVehiclePhotos] = useState<string[]>([]);
-  const [profileVehicles, setProfileVehicles] = useState<Array<{ make:string; model:string; type:string; colorFinish?: string; accents?: string }>>([]);
+  const [profileVehicles, setProfileVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicleKey, setSelectedVehicleKey] = useState<string | null>(null);
   const [browseSelected, setBrowseSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -1057,23 +1131,23 @@ function AdminTestTemplate({ template }: { template: any }){
   const [masking, setMasking] = useState<boolean>(false);
   // Designer state
   const [designing, setDesigning] = useState<boolean>(false);
-  const [designBgUrl, setDesignBgUrl] = useState<string | null>(null);
-  const [designFgUrl, setDesignFgUrl] = useState<string | null>(null);
-  const [designMaskUrl, setDesignMaskUrl] = useState<string | null>(null);
+  const [_designBgUrl, _setDesignBgUrl] = useState<string | null>(null);
+  const [_designFgUrl, _setDesignFgUrl] = useState<string | null>(null);
+  const [_designMaskUrl, _setDesignMaskUrl] = useState<string | null>(null);
   const [designText, setDesignText] = useState<string>('');
-  const [designFontSize, setDesignFontSize] = useState<number>(64);
-  const [designFontColor, setDesignFontColor] = useState<string>('#ffffff');
-  const [designFontWeight, setDesignFontWeight] = useState<number>(800);
-  const [designX, setDesignX] = useState<number>(50);
-  const [designY, setDesignY] = useState<number>(80);
-  const [designGlow, setDesignGlow] = useState<boolean>(true);
-  const [designGlowColor, setDesignGlowColor] = useState<string>('#ffffff');
-  const [designGlowBlur, setDesignGlowBlur] = useState<number>(18);
-  const [designShadow, setDesignShadow] = useState<boolean>(true);
-  const [designShadowColor, setDesignShadowColor] = useState<string>('#000000');
-  const [designShadowBlur, setDesignShadowBlur] = useState<number>(10);
-  const [designShadowX, setDesignShadowX] = useState<number>(0);
-  const [designShadowY, setDesignShadowY] = useState<number>(8);
+  const [_designFontSize, _setDesignFontSize] = useState<number>(64);
+  const [_designFontColor, _setDesignFontColor] = useState<string>('#ffffff');
+  const [_designFontWeight, _setDesignFontWeight] = useState<number>(800);
+  const [_designX, _setDesignX] = useState<number>(50);
+  const [_designY, _setDesignY] = useState<number>(80);
+  const [_designGlow, _setDesignGlow] = useState<boolean>(true);
+  const [_designGlowColor, _setDesignGlowColor] = useState<string>('#ffffff');
+  const [_designGlowBlur, _setDesignGlowBlur] = useState<number>(18);
+  const [_designShadow, _setDesignShadow] = useState<boolean>(true);
+  const [_designShadowColor, _setDesignShadowColor] = useState<string>('#000000');
+  const [_designShadowBlur, _setDesignShadowBlur] = useState<number>(10);
+  const [_designShadowX, _setDesignShadowX] = useState<number>(0);
+  const [_designShadowY, _setDesignShadowY] = useState<number>(8);
 
   useEffect(()=>{
     (async()=>{
@@ -1081,7 +1155,7 @@ function AdminTestTemplate({ template }: { template: any }){
         const profile = await fetch('/api/profile',{cache:'no-store'}).then(r=>r.json());
         const keys: string[] = Array.isArray(profile?.profile?.carPhotos) ? profile.profile.carPhotos : [];
         setVehiclePhotos(keys);
-        const vehicles: any[] = Array.isArray(profile?.profile?.vehicles) ? profile.profile.vehicles : [];
+        const vehicles: Vehicle[] = Array.isArray(profile?.profile?.vehicles) ? (profile.profile.vehicles as Vehicle[]) : [];
         setProfileVehicles(vehicles);
         const primary = keys.find(Boolean) || null; setSelectedVehicleKey(primary);
       } catch {}
@@ -1092,7 +1166,7 @@ function AdminTestTemplate({ template }: { template: any }){
   useEffect(()=>{
     try {
       const tokensInPrompt = new Set(String(template?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m:string)=> m.replace(/^[\[]|[\]]$/g,'')) || []);
-      const defs: any[] = Array.isArray(template?.variables) ? (template.variables as any[]) : [];
+      const defs: TemplateVariableDef[] = Array.isArray(template?.variables) ? (template.variables as TemplateVariableDef[]) : [];
       if (!defs.length) return;
       const next: Record<string,string> = { ...varState };
       let changed = false;
@@ -1121,12 +1195,12 @@ function AdminTestTemplate({ template }: { template: any }){
     } else if (srcs.includes('vehicle') && source !== 'vehicle' && !srcs.includes('user')) {
       setSource('vehicle');
     }
-  }, [template?.id, template?.slug, JSON.stringify(template?.allowedImageSources)]);
+  }, [template?.id, template?.slug, source, template?.allowedImageSources]);
 
   // Set default headline to vehicle brand in ALL CAPS when available
   useEffect(()=>{
     try {
-      const v = ((): any | null => {
+      const v = ((): Vehicle | null => {
         if (source === 'vehicle') {
           return findVehicleForSelected();
         }
@@ -1139,9 +1213,9 @@ function AdminTestTemplate({ template }: { template: any }){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, selectedVehicleKey, JSON.stringify(profileVehicles)]);
 
-  function baseSlug(v: any): string { if (!v) return ''; const name = `${v.make||''} ${v.model||''}`.trim().toLowerCase(); return name.replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
-  function uniqueSlugForIndex(list: any[], index:number): string { const v = list[index]; if (!v) return ''; const base = baseSlug(v); let prior=0; for (let i=0;i<index;i++){ const u=list[i]; if (u&&u.make===v.make&&u.model===v.model&&u.type===v.type) prior++; } const suf = prior>0?`-${prior}`:''; return `${base}${suf}`; }
-  function findVehicleForSelected(): any | null { if (!selectedVehicleKey || !profileVehicles.length) return null; const idx = selectedVehicleKey.indexOf('/vehicles/'); if (idx===-1) return null; const sub = selectedVehicleKey.slice(idx); const m = sub.match(/\/vehicles\/([^/]+)\//); const slug = m?.[1] || ''; const slugs = profileVehicles.map((_:any,i:number)=> uniqueSlugForIndex(profileVehicles as any[], i)); const at = slugs.findIndex((s:string)=> s===slug); return at>=0 ? profileVehicles[at] : null; }
+  function baseSlug(v: Vehicle): string { if (!v) return ''; const name = `${v.make||''} ${v.model||''}`.trim().toLowerCase(); return name.replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+  function uniqueSlugForIndex(list: Vehicle[], index:number): string { const v = list[index]; if (!v) return ''; const base = baseSlug(v); let prior=0; for (let i=0;i<index;i++){ const u=list[i]; if (u&&u.make===v.make&&u.model===v.model&&u.type===v.type) prior++; } const suf = prior>0?`-${prior}`:''; return `${base}${suf}`; }
+  function findVehicleForSelected(): Vehicle | null { if (!selectedVehicleKey || !profileVehicles.length) return null; const idx = selectedVehicleKey.indexOf('/vehicles/'); if (idx===-1) return null; const sub = selectedVehicleKey.slice(idx); const m = sub.match(/\/vehicles\/([^/]+)\/ /); const slug = m?.[1] || ''; const slugs = profileVehicles.map((_:Vehicle,i:number)=> uniqueSlugForIndex(profileVehicles as Vehicle[], i)); const at = slugs.findIndex((s:string)=> s===slug); return at>=0 ? profileVehicles[at] : null; }
 
   async function onUploadChange(e: React.ChangeEvent<HTMLInputElement>) { const file = e.target.files?.[0]; if (!file) return; setUploading(true); try { const form = new FormData(); form.append('file', file); form.append('path','uploads'); const res = await fetch('/api/storage/upload',{ method:'POST', body: form }); const data = await res.json(); if (data?.key) setBrowseSelected(data.key); } finally { setUploading(false); } }
 
@@ -1215,13 +1289,13 @@ function AdminTestTemplate({ template }: { template: any }){
       for (const k of builtinNeeded){ const val = varState[k] || ''; if (val) variables[k]=val; else missing.push(k); }
       if (builtinNeeded.length && missing.length){ toast.error(`Please fill: ${missing.join(', ')}`); return; }
     }
-    const vars = Array.isArray(template?.variables)? template.variables as any[] : [];
+    const vars = Array.isArray(template?.variables)? (template.variables as TemplateVariableDef[]) : [];
     for (const v of vars){ const key = String(v?.key||'').trim(); if (!key || ['BRAND','MODEL','COLOR_FINISH','ACCENTS','COLOR_FINISH_ACCENTS'].includes(key)) continue; if (!tokensInPrompt.has(key)) continue; const val = varState[key] || ''; if (val) variables[key]=val; }
     // Now we actually start generating: show busy UI
     setBusy(true);
     try {
-      const payload: any = { templateId: template?.id, templateSlug: template?.slug, userImageKeys, variables };
-      const res = await fetch('/api/templates/generate',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); let data: any = {}; try { data = await res.json(); } catch { data = {}; } if (!res.ok) { toast.error(data?.error || 'Generation failed'); return; } if (data?.url) setResultUrl(String(data.url)); if (data?.key) setResultKey(String(data.key)); if (data?.url) setActiveUrl(String(data.url)); if (data?.key) setActiveKey(String(data.key)); setUpscales([]);
+      const payload: GeneratePayload = { templateId: template?.id, templateSlug: template?.slug, userImageKeys, variables };
+      const res = await fetch('/api/templates/generate',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); let data: { url?: string; key?: string; error?: string } = {}; try { data = await res.json(); } catch { data = {}; } if (!res.ok) { toast.error(data?.error || 'Generation failed'); return; } if (data?.url) setResultUrl(String(data.url)); if (data?.key) setResultKey(String(data.key)); if (data?.url) setActiveUrl(String(data.url)); if (data?.key) setActiveKey(String(data.key)); setUpscales([]);
     } finally { setBusy(false); }
   }
 
@@ -1238,12 +1312,12 @@ function AdminTestTemplate({ template }: { template: any }){
       for (const k of builtinNeeded){ const val = varState[k] || ''; if (val) variables[k]=val; else missing.push(k); }
       if (builtinNeeded.length && missing.length){ toast.error(`Please fill: ${missing.join(', ')}`); setBusy(false); setPendingKeys(null); setCropUrl(null); return; }
     }
-    const vars = Array.isArray(template?.variables)? template.variables as any[] : [];
+    const vars = Array.isArray(template?.variables)? (template.variables as TemplateVariableDef[]) : [];
     for (const v of vars){ const key = String(v?.key||'').trim(); if (!key || ['BRAND','MODEL','COLOR_FINISH','ACCENTS','COLOR_FINISH_ACCENTS'].includes(key)) continue; if (!tokensInPrompt.has(key)) continue; const val = varState[key] || ''; if (val) variables[key]=val; }
     setBusy(true);
     try {
-      const payload: any = { templateId: template?.id, templateSlug: template?.slug, userImageKeys: pendingKeys || [], userImageDataUrls: [dataUrl], variables };
-      const res = await fetch('/api/templates/generate',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); let data: any = {}; try { data = await res.json(); } catch { data = {}; } if (!res.ok) { toast.error(data?.error || 'Generation failed'); return; } if (data?.url) setResultUrl(String(data.url)); if (data?.key) setResultKey(String(data.key));
+      const payload: GeneratePayload = { templateId: template?.id, templateSlug: template?.slug, userImageKeys: pendingKeys || [], userImageDataUrls: [dataUrl], variables };
+      const res = await fetch('/api/templates/generate',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); let data: { url?: string; key?: string; error?: string } = {}; try { data = await res.json(); } catch { data = {}; } if (!res.ok) { toast.error(data?.error || 'Generation failed'); return; } if (data?.url) setResultUrl(String(data.url)); if (data?.key) setResultKey(String(data.key));
     } finally {
       setBusy(false);
       setPendingKeys(null);
@@ -1264,10 +1338,10 @@ function AdminTestTemplate({ template }: { template: any }){
       setBusy(true); setMasking(true);
       const rem = await fetch('/api/tools/rembg', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ r2_key: bgKey, model: (template?.rembg?.model as any) || 'General Use (Heavy)', operating_resolution: (template?.rembg?.operating_resolution as any) || '2048x2048', output_format: (template?.rembg?.output_format as any) || 'png', refine_foreground: typeof template?.rembg?.refine_foreground === 'boolean' ? !!template.rembg.refine_foreground : true, output_mask: !!template?.rembg?.output_mask })
+        body: JSON.stringify({ r2_key: bgKey, model: (template?.rembg?.model as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait') || 'General Use (Heavy)', operating_resolution: (template?.rembg?.operating_resolution as '1024x1024'|'2048x2048') || '2048x2048', output_format: (template?.rembg?.output_format as 'png'|'webp') || 'png', refine_foreground: typeof template?.rembg?.refine_foreground === 'boolean' ? !!template.rembg.refine_foreground : true, output_mask: !!template?.rembg?.output_mask })
       }).then(r=>r.json()).catch(()=>({}));
       const fg = rem?.image?.url || null; const mk = rem?.mask_image?.url || null; if (!fg) { toast.error(rem?.error || 'Foreground mask failed'); return; }
-      setDesignBgUrl(bg); setDesignFgUrl(fg); setDesignMaskUrl(mk || null); setDesigning(true);
+      _setDesignBgUrl(bg); _setDesignFgUrl(fg); _setDesignMaskUrl(mk || null); setDesigning(true);
     } finally { setBusy(false); setMasking(false); }
   }
 
@@ -1276,7 +1350,7 @@ function AdminTestTemplate({ template }: { template: any }){
       {busy ? (
         <div className="p-10 min-h-[16rem] grid place-items-center">
           <div className="flex flex-col items-center gap-3">
-            <Lottie animationData={carLoadAnimation as any} loop style={{ width: 280, height: 170 }} />
+            <Lottie animationData={carLoadAnimation as unknown} loop style={{ width: 280, height: 170 }} />
             <div className="text-sm text-white/80">{masking ? 'Cutting out the car…' : 'Generating… this may take a moment'}</div>
           </div>
         </div>
@@ -1284,7 +1358,7 @@ function AdminTestTemplate({ template }: { template: any }){
         <div className="space-y-3">
           <TextBehindEditor
             bgKey={(activeKey || resultKey) as string}
-            rembg={{ enabled: true, model: (template?.rembg?.model as any) || 'General Use (Heavy)', operating_resolution: (template?.rembg?.operating_resolution as any) || '2048x2048', output_format: (template?.rembg?.output_format as any) || 'png', refine_foreground: typeof template?.rembg?.refine_foreground === 'boolean' ? !!template.rembg.refine_foreground : true, output_mask: !!template?.rembg?.output_mask }}
+            rembg={{ enabled: true, model: (template?.rembg?.model as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait') || 'General Use (Heavy)', operating_resolution: (template?.rembg?.operating_resolution as '1024x1024'|'2048x2048') || '2048x2048', output_format: (template?.rembg?.output_format as 'png'|'webp') || 'png', refine_foreground: typeof template?.rembg?.refine_foreground === 'boolean' ? !!template.rembg.refine_foreground : true, output_mask: !!template?.rembg?.output_mask }}
             defaultHeadline={(findVehicleForSelected()?.make || '').toUpperCase()}
             onClose={()=> setDesigning(false)}
             onSave={async(blob)=>{
@@ -1377,11 +1451,11 @@ function AdminTestTemplate({ template }: { template: any }){
         </div>
       ) : (
         <>
-      {(() => { const tokensInPrompt = new Set(String(template?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m:string)=> m.replace(/^[\[]|[\]]$/g,'')) || []); const builtinNeeded = (source !== 'vehicle') ? ['BRAND','MODEL','COLOR_FINISH','ACCENTS'].filter((k)=> tokensInPrompt.has(k)) : []; const customDefs = Array.isArray(template?.variables) ? (template.variables as any[]).filter((v:any)=> tokensInPrompt.has(String(v?.key || '')) && !['BRAND','BRAND_CAPS','MODEL','COLOR_FINISH','ACCENTS','COLOR_FINISH_ACCENTS'].includes(String(v?.key||''))) : []; if (!builtinNeeded.length && !customDefs.length) return null; return (<div className="space-y-2"><div className="text-sm font-medium">Options</div><div className="space-y-2">{builtinNeeded.map((key)=> (<div key={key} className="space-y-1"><div className="text-xs text-white/70">{key.replace(/_/g,' ').toLowerCase().replace(/\b\w/g,(c)=>c.toUpperCase())}</div><Input value={varState[key]||''} onChange={(e)=> setVarState(prev=>({ ...prev, [key]: e.target.value }))} placeholder={key} /></div>))}{customDefs.map((v:any)=>{ const key = String(v?.key||'').trim(); if (!key) return null; const type = String(v?.type||'text'); const label = String(v?.label||key); if (type==='select' && Array.isArray(v?.options) && v.options.length){ return (<div key={key} className="space-y-1"><div className="text-xs text-white/70">{label}</div><Select value={varState[key]||''} onValueChange={(val)=> setVarState(prev=>({ ...prev, [key]: val }))}><SelectTrigger className="h-9"><SelectValue placeholder={`Select ${label.toLowerCase()}`} /></SelectTrigger><SelectContent>{v.options.map((opt:string,i:number)=>(<SelectItem key={`${key}-${i}`} value={opt}>{opt}</SelectItem>))}</SelectContent></Select></div>); } if (type==='color'){ return (<div key={key} className="space-y-1"><div className="text-xs text-white/70">{label}</div><div className="flex items-center gap-2"><input type="color" value={varState[key]||'#ffffff'} onChange={(e)=> setVarState(prev=>({ ...prev, [key]: e.target.value }))} className="h-9 w-12 rounded bg-transparent border border-[color:var(--border)]" /><Input className="w-36" value={varState[key]||'#ffffff'} onChange={(e)=> setVarState(prev=>({ ...prev, [key]: e.target.value }))} placeholder="#ffffff" /></div></div>); } return (<div key={key} className="space-y-1"><div className="text-xs text-white/70">{label}</div><Input value={varState[key]||''} onChange={(e)=> setVarState(prev=>({ ...prev, [key]: e.target.value }))} placeholder={label} /></div>); })}</div></div>); })()}
+      {(() => { const tokensInPrompt = new Set(String(template?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m:string)=> m.replace(/^[\[]|[\]]$/g,'')) || []); const builtinNeeded = (source !== 'vehicle') ? ['BRAND','MODEL','COLOR_FINISH','ACCENTS'].filter((k)=> tokensInPrompt.has(k)) : []; const customDefs: TemplateVariableDef[] = Array.isArray(template?.variables) ? (template.variables as TemplateVariableDef[]).filter((v:TemplateVariableDef)=> tokensInPrompt.has(String(v?.key || '')) && !['BRAND','BRAND_CAPS','MODEL','COLOR_FINISH','ACCENTS','COLOR_FINISH_ACCENTS'].includes(String(v?.key||''))) : []; if (!builtinNeeded.length && !customDefs.length) return null; return (<div className="space-y-2"><div className="text-sm font-medium">Options</div><div className="space-y-2">{builtinNeeded.map((key)=> (<div key={key} className="space-y-1"><div className="text-xs text-white/70">{key.replace(/_/g,' ').toLowerCase().replace(/\b\w/g,(c)=>c.toUpperCase())}</div><Input value={varState[key]||''} onChange={(e)=> setVarState(prev=>({ ...prev, [key]: e.target.value }))} placeholder={key} /></div>))}{customDefs.map((v:TemplateVariableDef)=>{ const key = String(v?.key||'').trim(); if (!key) return null; const type = String(v?.type||'text'); const label = String(v?.label||key); if (type==='select' && Array.isArray(v?.options) && v.options.length){ return (<div key={key} className="space-y-1"><div className="text-xs text-white/70">{label}</div><Select value={varState[key]||''} onValueChange={(val)=> setVarState(prev=>({ ...prev, [key]: val }))}><SelectTrigger className="h-9"><SelectValue placeholder={`Select ${label.toLowerCase()}`} /></SelectTrigger><SelectContent>{v.options.map((opt:string,i:number)=>(<SelectItem key={`${key}-${i}`} value={opt}>{opt}</SelectItem>))}</SelectContent></Select></div>); } if (type==='color'){ return (<div key={key} className="space-y-1"><div className="text-xs text-white/70">{label}</div><div className="flex items-center gap-2"><input type="color" value={varState[key]||'#ffffff'} onChange={(e)=> setVarState(prev=>({ ...prev, [key]: e.target.value }))} className="h-9 w-12 rounded bg-transparent border border-[color:var(--border)]" /><Input className="w-36" value={varState[key]||'#ffffff'} onChange={(e)=> setVarState(prev=>({ ...prev, [key]: e.target.value }))} placeholder="#ffffff" /></div></div>); } return (<div key={key} className="space-y-1"><div className="text-xs text-white/70">{label}</div><Input value={varState[key]||''} onChange={(e)=> setVarState(prev=>({ ...prev, [key]: e.target.value }))} placeholder={label} /></div>); })}</div></div>); })()}
 
       <div className="space-y-2">
         <div className="text-sm font-medium">Source</div>
-        <Select value={source} onValueChange={(v)=>setSource(v as any)}>
+        <Select value={source} onValueChange={(v)=>setSource(v as 'vehicle'|'upload'|'workspace')}>
           <SelectTrigger className="h-9"><SelectValue placeholder="Select source" /></SelectTrigger>
           <SelectContent>
             {(Array.isArray(template?.allowedImageSources) ? template.allowedImageSources : ['vehicle','user']).includes('vehicle') ? (
@@ -1400,10 +1474,10 @@ function AdminTestTemplate({ template }: { template: any }){
             {profileVehicles.length ? (
               <div className="flex items-center gap-2">
                 <div className="text-xs text-white/70">Vehicle</div>
-                <Select value={(() => { const v = findVehicleForSelected(); if (!v) return ''; const i = profileVehicles.indexOf(v); return String(i); })()} onValueChange={(v)=>{ const idx = parseInt(v); const vobj = profileVehicles[idx]; if (!vobj) return; const slug = uniqueSlugForIndex(profileVehicles as any[], idx); const first = vehiclePhotos.find(k=> (k||'').includes(`/vehicles/${slug}/`)) || null; setSelectedVehicleKey(first); }}>
+                <Select value={(() => { const v = findVehicleForSelected(); if (!v) return ''; const i = profileVehicles.indexOf(v); return String(i); })()} onValueChange={(v)=>{ const idx = parseInt(v, 10); const vobj = profileVehicles[idx]; if (!vobj) return; const slug = uniqueSlugForIndex(profileVehicles as Array<{ make:string; model:string; type:string }>, idx); const first = vehiclePhotos.find(k=> (k||'').includes(`/vehicles/${slug}/`)) || null; setSelectedVehicleKey(first); }}>
                   <SelectTrigger className="h-9 w-56"><SelectValue placeholder="Select vehicle" /></SelectTrigger>
                   <SelectContent>
-                    {profileVehicles.map((v:any,i:number)=> (<SelectItem key={`${v.make}-${v.model}-${i}`} value={String(i)}>{v.make} {v.model} ({v.type})</SelectItem>))}
+                    {profileVehicles.map((v,i)=> (<SelectItem key={`${v.make}-${v.model}-${i}`} value={String(i)}>{v.make} {v.model} ({v.type})</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1446,13 +1520,13 @@ function AdminTestTemplate({ template }: { template: any }){
   );
 }
 
-function AdminEditTemplate({ template, onSaved }: { template: any; onSaved?: ()=>void }){
+function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; onSaved?: ()=>void }){
   const [name, setName] = useState<string>(String(template?.name || ''));
   const [falModelSlug, setFalModelSlug] = useState<string>(String(template?.falModelSlug || 'fal-ai/gemini-25-flash-image/edit'));
   const [description, setDescription] = useState<string>(String(template?.description || ''));
   const [prompt, setPrompt] = useState<string>(String(template?.prompt || ''));
   const [busy, setBusy] = useState(false);
-  const builtIn = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
+  const builtIn = useMemo(() => new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]), []);
   const [tokenConfigs, setTokenConfigs] = useState<Record<string, { kind: 'input' | 'select' | 'color'; options: string[]; defaultValue?: string }>>({});
   const [fixedAspect, setFixedAspect] = useState<boolean>(!!template?.fixedAspectRatio);
   const [aspectRatio, setAspectRatio] = useState<number | undefined>(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : undefined);
@@ -1486,9 +1560,9 @@ function AdminEditTemplate({ template, onSaved }: { template: any; onSaved?: ()=
       setAllowUser(srcs.includes('user'));
     } catch {}
     setRembgEnabled(!!template?.rembg?.enabled);
-    setRembgModel((template?.rembg?.model as any) || 'General Use (Heavy)');
-    setRembgRes((template?.rembg?.operating_resolution as any) || '2048x2048');
-    setRembgFormat((template?.rembg?.output_format as any) || 'png');
+    setRembgModel((template?.rembg?.model as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait') || 'General Use (Heavy)');
+    setRembgRes((template?.rembg?.operating_resolution as '1024x1024'|'2048x2048') || '2048x2048');
+    setRembgFormat((template?.rembg?.output_format as 'png'|'webp') || 'png');
     setRembgRefine(template?.rembg?.refine_foreground !== false);
     setRembgMask(!!template?.rembg?.output_mask);
   }, [template]);
@@ -1507,18 +1581,18 @@ function AdminEditTemplate({ template, onSaved }: { template: any; onSaved?: ()=
         let options: string[] = [];
         let defaultValue: string | undefined = undefined;
         try {
-          const found = Array.isArray(template?.variables) ? (template.variables as any[]).find((v: any)=> String(v?.key||'').trim() === key) : null;
+          const found = Array.isArray(template?.variables) ? (template.variables as TemplateVariableDef[]).find((v: TemplateVariableDef)=> String(v?.key||'').trim() === key) : null;
           if (found) {
-            const t = String((found as any)?.type || 'text');
-            if (t === 'select') { kind = 'select'; options = Array.isArray((found as any)?.options) ? ((found as any).options as string[]) : []; }
-            else if (t === 'color') { kind = 'color'; const d = (found as any)?.defaultValue; if (typeof d === 'string') defaultValue = d; }
+            const t = String((found as { type?: string })?.type || 'text');
+            if (t === 'select') { kind = 'select'; options = Array.isArray((found as { options?: unknown[] })?.options) ? ((found as { options?: string[] }).options as string[]) : []; }
+            else if (t === 'color') { kind = 'color'; const d = (found as { defaultValue?: unknown })?.defaultValue; if (typeof d === 'string') defaultValue = d; }
           }
         } catch {}
         next[key] = { kind, options, defaultValue };
       }
       return next;
     });
-  }, [prompt, template]);
+  }, [prompt, template, builtIn]);
 
   async function save(){
     const id = String(template?.id || '');
@@ -1534,7 +1608,7 @@ function AdminEditTemplate({ template, onSaved }: { template: any; onSaved?: ()=
     }
     setBusy(true);
     try{
-      const unknownVarDefs = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text'), options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as any).defaultValue === 'string' && (cfg as any).defaultValue ? (cfg as any).defaultValue : undefined }));
+      const unknownVarDefs = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text'), options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' && (cfg as { defaultValue?: unknown }).defaultValue ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
       const allowedImageSources = [allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean);
       const rembg = { enabled: !!rembgEnabled, model: rembgModel, operating_resolution: rembgRes, output_format: rembgFormat, refine_foreground: !!rembgRefine, output_mask: !!rembgMask };
       const res = await fetch('/api/templates', {
@@ -1567,7 +1641,7 @@ function AdminEditTemplate({ template, onSaved }: { template: any; onSaved?: ()=
       <div className="flex items-center justify-between gap-2">
         <div className="space-y-1">
           <div className="text-sm font-medium">Fixed aspect ratio</div>
-          <div className="text-xs text-white/60">If enabled, users must crop uploads to the template's aspect ratio.</div>
+          <div className="text-xs text-white/60">If enabled, users must crop uploads to the template&apos;s aspect ratio.</div>
         </div>
         <div className="flex items-center gap-2">
           {fixedAspect && typeof aspectRatio === 'number' ? (<div className="text-xs text-white/60">AR: {Number(aspectRatio).toFixed(3)}</div>) : null}
@@ -1578,7 +1652,7 @@ function AdminEditTemplate({ template, onSaved }: { template: any; onSaved?: ()=
         <div className="flex items-center justify-between gap-2">
           <div className="space-y-1">
             <div className="text-sm font-medium">Image size</div>
-            <div className="text-xs text-white/60">Width and height must be between 1024 and 4096. Keep the template's intended aspect ratio.</div>
+            <div className="text-xs text-white/60">Width and height must be between 1024 and 4096. Keep the template&apos;s intended aspect ratio.</div>
           </div>
           <div className="flex items-center gap-2">
             <Input type="number" className="w-24 h-9" value={imageWidth} onChange={(e)=> setImageWidth(Math.max(1024, Math.min(4096, Math.round(Number(e.target.value||0))))) } placeholder="width" />
@@ -1628,9 +1702,9 @@ function AdminEditTemplate({ template, onSaved }: { template: any; onSaved?: ()=
                       <Button variant="ghost" size="sm" className="text-xs" onClick={(e)=>{
                         e.preventDefault();
                         const el = (e.currentTarget.previousSibling as HTMLInputElement | null);
-                        const val = (el && 'value' in el) ? String((el as any).value || '').trim() : '';
+                        const val = (el && 'value' in el) ? String((el as HTMLInputElement).value || '').trim() : '';
                         if (val) setTokenConfigs((prev)=> ({ ...prev, [key]: { kind: 'select', options: [...(prev[key]?.options || []), val] } }));
-                        try { if (el && 'value' in el) (el as any).value = ''; } catch {}
+                        try { if (el && 'value' in el) (el as HTMLInputElement).value = ''; } catch {}
                       }}>Add</Button>
                     </div>
                     {(cfg.options || []).length ? (

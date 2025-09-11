@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback, useMemo, Fragment } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { DropZone } from "@/components/ui/drop-zone";
@@ -81,7 +82,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const isLearnTutorialsAdminPath = scope === 'admin' && (!!path && (path === 'learn/tutorials' || path.startsWith('learn/tutorials')));
   const isLearnEbooksAdminPath = scope === 'admin' && (!!path && (path === 'learn/ebooks' || path.startsWith('learn/ebooks')));
   const selectingRef = useRef(false);
-  const [selecting, setSelecting] = useState(false);
+  const [_selecting, setSelecting] = useState(false);
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const [selectionRect, setSelectionRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const initialSelectedRef = useRef<Set<string>>(new Set());
@@ -94,8 +95,8 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [uploadCurrentName, setUploadCurrentName] = useState<string | null>(null);
   const activeXHRRef = useRef<XMLHttpRequest | null>(null);
   const cancelRequestedRef = useRef(false);
-  const [uploadFilesDone, setUploadFilesDone] = useState(0);
-  const [uploadFilesTotal, setUploadFilesTotal] = useState(0);
+  const [_uploadFilesDone, setUploadFilesDone] = useState(0);
+  const [_uploadFilesTotal, setUploadFilesTotal] = useState(0);
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [usage, setUsage] = useState<{ usedBytes: number; limitBytes: number | null; percentUsed: number | null } | null>(null);
   const [designOpen, setDesignOpen] = useState(false);
@@ -133,7 +134,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         const v = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key, scope }) }).then(r=>r.json()).catch(()=>({}));
         const url: string | null = v?.url || null;
         if (url) {
-          const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img=new Image(); img.onload=()=> resolve({ w: img.naturalWidth||img.width, h: img.naturalHeight||img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
+          const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img=new window.Image(); img.onload=()=> resolve({ w: img.naturalWidth||img.width, h: img.naturalHeight||img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
           if (dims && dims.w>0 && dims.h>0) { payload = { r2_key: key, original_width: dims.w, original_height: dims.h }; }
         }
       } catch {}
@@ -233,9 +234,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     } catch {}
   }, [searchParams, path]);
 
-  function itemStorageKey(it: Item) {
-    return it.key || `${path ? `${path}/` : ""}${it.name}${it.type === 'folder' ? '/' : ''}`;
-  }
+  const itemStorageKey = useCallback((it: Item) => (
+    it.key || `${path ? `${path}/` : ""}${it.name}${it.type === 'folder' ? '/' : ''}`
+  ), [path]);
   function isSelectedKey(key: string) { return selectedKeys.has(key); }
   function toggleKey(key: string, checked: boolean | "indeterminate") {
     const want = checked === true;
@@ -249,16 +250,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const selectedCount = selectedKeys.size;
 
   // Keyboard handlers: Delete to bulk delete; Shift/Ctrl selection logic applied in click handlers below
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Delete' && selectedKeys.size > 0) {
-        e.preventDefault();
-        onBulkDelete();
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedKeys, onBulkDelete]);
+  // (moved below after onBulkDelete declaration)
 
   function navigate(next: string) {
     const clean = next.replace(/^\/+|\/+$/g, "");
@@ -608,22 +600,22 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     const data = await file.arrayBuffer();
     try {
       const pdfjs = await import('pdfjs-dist');
-      const anyPdf: any = pdfjs as any;
+      const anyPdf = pdfjs as unknown as { GlobalWorkerOptions?: { workerSrc?: string }; getDocument: (args: { data: ArrayBuffer }) => { promise: Promise<unknown> } };
       const GlobalWorkerOptions = anyPdf.GlobalWorkerOptions;
       if (GlobalWorkerOptions && !GlobalWorkerOptions.workerSrc) {
         try { GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs'; } catch {}
       }
-      const getDocument = anyPdf.getDocument;
-      const loadingTask = getDocument({ data });
-      const pdf = await loadingTask.promise;
+      const loadingTask = anyPdf.getDocument({ data });
+      const loaded: unknown = await loadingTask.promise;
+      const pdf = loaded as { getPage: (n: number) => Promise<{ getViewport: (opts: { scale: number }) => { width: number; height: number }; render: (opts: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> } }> };
       const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 1.5 });
+      const viewport: { width: number; height: number } = page.getViewport({ scale: 1.5 });
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('no ctx');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      await page.render({ canvasContext: ctx, viewport } as any).promise;
+      await page.render({ canvasContext: ctx, viewport }).promise;
       const blobOut: Blob | null = await new Promise((resolve) => canvas.toBlob((b)=>resolve(b), 'image/jpeg', 0.9));
       if (!blobOut) throw new Error('no cover');
       return new File([blobOut], 'cover.jpg', { type: 'image/jpeg' });
@@ -647,7 +639,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         video.src = `${url}#t=0.001`;
         video.muted = true;
         video.preload = 'metadata';
-        video.playsInline = true as any;
+        try { (video as HTMLVideoElement & { playsInline?: boolean }).playsInline = true; } catch {}
         const onLoaded = () => {
           try {
             const canvas = document.createElement('canvas');
@@ -694,7 +686,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         try { delete next[key.replace(/\/$/, '')]; } catch {}
         return next;
       });
-    } catch (err) {
+    } catch {
       // Revert on failure
       setItems(prevItems);
       workspaceItemsCache.set(cacheKey, { items: prevItems, timestamp: Date.now() });
@@ -702,13 +694,13 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     }
   }
 
-  async function onBulkDelete() {
+  const onBulkDelete = useCallback(async () => {
     // Prevent bulk deletes inside managed folders
     const managedPath = path === 'vehicles' || (path || '').startsWith('vehicles/') || path === 'designer_masks' || (path || '').startsWith('designer_masks/');
     if (managedPath) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
     if (selectedKeys.size === 0) return;
     const keys = Array.from(selectedKeys);
-    const lookup = new Map(sortedItems.map(it => [itemStorageKey(it), it] as const));
+    const lookup = new Map(items.map(it => [itemStorageKey(it), it] as const));
     // If any selected key lies under managed folders, block
     const hasManaged = keys.some((k) => {
       const n = String(k || '').replace(/^\/+/, '');
@@ -730,7 +722,6 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       for (const k of keys) {
         const it = lookup.get(k);
         if (!it) continue;
-        // eslint-disable-next-line no-await-in-loop
         const res = await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: k, isFolder: it.type==='folder', scope }) });
         if (!res.ok) throw new Error('Delete failed');
       }
@@ -741,16 +732,17 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         for (const k of keys) { try { delete next[k.replace(/\/$/, '')]; } catch {} }
         return next;
       });
-    } catch (err) {
+    } catch {
       // Revert UI on failure
       setItems(prevItems);
       workspaceItemsCache.set(cacheKey, { items: prevItems, timestamp: Date.now() });
       toast.error('Failed to delete selected items');
     }
-  }
+  }, [path, selectedKeys, items, scope, itemStorageKey]);
 
   // Rename temporarily disabled due to runtime issue in promptToast (jsx is not a function)
   // Leaving stub to avoid unused references if re-enabled later
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function onRename(_it: Item) { /* disabled */ }
 
   function crumbs(): { label: string; value: string }[] {
@@ -820,7 +812,16 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     if (!url) return (
       <Skeleton className="w-full h-full rounded-none" />
     );
-    return <img src={url} alt={alt} className="w-full h-full object-cover" />;
+    return (
+      <Image
+        src={url}
+        alt={alt}
+        fill
+        sizes="(max-width: 768px) 50vw, 12rem"
+        unoptimized
+        className="object-cover"
+      />
+    );
   }
 
   const sortedItems = useMemo(() => {
@@ -860,7 +861,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           const slice = missing.slice(i, i + chunkSize);
           const res = await fetch('/api/storage/view-bulk', { method: 'POST', body: JSON.stringify({ keys: slice, scope }) });
           if (!res.ok) continue;
-          const data = await res.json();
+          const data = await res.json() as { urls?: Record<string, string> };
           const urls: Record<string, string> = data?.urls || {};
           Object.assign(updates, urls);
         }
@@ -885,7 +886,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     return !(b.left > a.right || b.right < a.left || b.top > a.bottom || b.bottom < a.top);
   }
 
-  function computeMarqueeSelection(rect: { x: number; y: number; w: number; h: number }): Set<string> {
+  const computeMarqueeSelection = useCallback((rect: { x: number; y: number; w: number; h: number }): Set<string> => {
     const container = contentRef.current;
     if (!container) return new Set();
     const left = Math.min(rect.x, rect.x + rect.w);
@@ -904,7 +905,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       }
     }
     return selected;
-  }
+  }, []);
 
   const beginMarquee = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -914,7 +915,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     selectingRef.current = true;
     setSelecting(false);
     selectionStartRef.current = { x: e.clientX, y: e.clientY };
-    additiveRef.current = !!(e.ctrlKey || (e as any).metaKey);
+    additiveRef.current = !!(e.ctrlKey || e.metaKey);
     initialSelectedRef.current = new Set(selectedKeys);
     dragThresholdRef.current = false;
     setSelectionRect(null);
@@ -943,7 +944,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     } else {
       setSelectedKeys(selectedNow);
     }
-  }, []);
+  }, [computeMarqueeSelection]);
 
   const endMarquee = useCallback((e: React.PointerEvent) => {
     if (!selectingRef.current) return;
@@ -961,7 +962,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   }, []);
 
   const isFetching = loading || refreshing;
-  const selectedImageKey = useMemo(() => {
+  const _selectedImageKey = useMemo(() => {
     if (selectedKeys.size !== 1) return null;
     const k = Array.from(selectedKeys)[0];
     const lookup = new Map(sortedItems.map(it => [itemStorageKey(it), it] as const));
@@ -969,7 +970,19 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     if (!it || it.type !== 'file') return null;
     if (!/(\.png|\.jpe?g|\.gif|\.webp|\.bmp|\.tiff?)$/i.test(it.name)) return null;
     return it.key || `${path ? `${path}/` : ''}${it.name}`;
-  }, [selectedKeys, sortedItems, path]);
+  }, [selectedKeys, sortedItems, path, itemStorageKey]);
+
+  // Keyboard handlers: Delete to bulk delete; Shift/Ctrl selection logic applied in click handlers below
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Delete' && selectedKeys.size > 0) {
+        e.preventDefault();
+        onBulkDelete();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedKeys, onBulkDelete]);
 
   async function saveDesignToWorkspace(blob: Blob) {
     try {
@@ -1469,6 +1482,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
               <button className="text-xs px-2 py-1 rounded hover:bg-white/10" onClick={()=>setPreview(null)}>Close</button>
             </div>
             <div className="grid place-items-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={preview.url} alt={preview.name} className="max-w-full max-h-[70vh] rounded" />
             </div>
             <div className="mt-3 flex items-center justify-end gap-2">
@@ -1501,7 +1515,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           </DialogHeader>
           <div className="p-10 min-h-[16rem] grid place-items-center">
             <div className="flex flex-col items-center gap-3">
-              <Lottie animationData={carLoadAnimation as any} loop style={{ width: 280, height: 170 }} />
+              <Lottie animationData={carLoadAnimation as object} loop style={{ width: 280, height: 170 }} />
               <div className="text-sm text-white/80">This may take a moment</div>
             </div>
           </div>

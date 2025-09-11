@@ -6,7 +6,7 @@ import type { Role } from "@/lib/chatPerms";
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const user = await getSessionUser();
-  if (!user?.email || (user as any).role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!user?.email || (user.role as string | undefined) !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const body = await req.json().catch(() => ({}));
   const isPublic: boolean | undefined = typeof body?.isPublic === 'boolean' ? body.isPublic : undefined;
   const minRole: Role | undefined = (['admin','staff','user'] as const).includes(body?.minRole) ? body.minRole as Role : undefined;
@@ -18,7 +18,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
   if (minRole) { updates.push('minRole = $minRole'); vars.minRole = minRole; }
   const q = `UPDATE livestream_recording SET ${updates.join(', ')} WHERE slug = $slug RETURN AFTER;`;
   const res = await db.query(q, vars);
-  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as Record<string, unknown> | null) : null;
   return NextResponse.json({ recording: row });
 }
 

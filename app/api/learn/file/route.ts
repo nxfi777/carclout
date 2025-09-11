@@ -27,8 +27,8 @@ export async function GET(req: Request) {
     if (!keyRaw) return NextResponse.json({ error: "Missing key" }, { status: 400 });
 
     const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(keyRaw);
-    const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(keyRaw);
-    const isPdf = /\.pdf$/i.test(keyRaw);
+    const _isVideo = /\.(mp4|webm|mov|m4v)$/i.test(keyRaw);
+    const _isPdf = /\.pdf$/i.test(keyRaw);
 
     // Allow listing thumbnails for livestream recordings by exact DB thumbKey match
     const isLearnScope = keyRaw.startsWith("admin/learn/");
@@ -67,8 +67,8 @@ export async function GET(req: Request) {
       if (!session?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       const db = await getSurreal();
       const res = await db.query("SELECT minRole FROM learn_item WHERE slug = $slug LIMIT 1;", { slug });
-      const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as any) : null;
-      const minRole = (row?.minRole as Role | undefined) || (kind === "tutorials" ? ("user" as Role) : ("user" as Role));
+      const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { minRole?: Role }) : null;
+      const minRole: Role = row?.minRole ?? (kind === "tutorials" ? "user" : "user");
       const ok = canAccessByRole(session.role, minRole);
       if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -87,10 +87,11 @@ export async function GET(req: Request) {
     headers.set("Accept-Ranges", "bytes");
     if (result.ETag) headers.set("ETag", result.ETag);
     if (result.ContentLength !== undefined) headers.set("Content-Length", String(result.ContentLength));
-    if (range && (result as any).ContentRange) headers.set("Content-Range", (result as any).ContentRange);
+    const contentRange = (result as unknown as { ContentRange?: string }).ContentRange;
+    if (range && contentRange) headers.set("Content-Range", contentRange);
     const status = range ? 206 : 200;
     return new Response(stream, { status, headers });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Failed to fetch file" }, { status: 500 });
   }
 }

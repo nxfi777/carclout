@@ -1,6 +1,6 @@
 'use client';
-/* eslint-disable @next/next/no-img-element */
 import { useState, useEffect } from 'react';
+import NextImage from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import MusicSuggestions from '@/components/music/music-suggestions';
 // import { createViewUrl, listAllObjects } from '@/lib/r2';
@@ -45,7 +45,7 @@ export function HooksTabContent() {
     let cancelled = false;
     const loaders = items.map((it) => new Promise<void>((resolve) => {
       try {
-        const img = new Image();
+        const img = new window.Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => resolve();
         img.onerror = () => resolve();
@@ -284,7 +284,7 @@ export function TemplatesTabContent(){
   const [vehiclePhotos, setVehiclePhotos] = useState<string[]>([]);
   const [profileVehicles, setProfileVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicleKey, setSelectedVehicleKey] = useState<string | null>(null);
-  const [browsePath, setBrowsePath] = useState<string>("");
+  const [_browsePath, setBrowsePath] = useState<string>("");
   const [browseSelected, setBrowseSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -444,7 +444,7 @@ export function TemplatesTabContent(){
           </button>
           <button className="text-left w-full rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 border border-[color:var(--border)] focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer" onClick={()=>{ setActive({ id: it.id, name: it.name, slug: it.slug }); setOpen(true); }}>
             {it.thumbUrl ? (
-              <img src={it.thumbUrl} alt={it.name} className="w-full h-auto" />
+              <NextImage src={it.thumbUrl} alt={it.name} width={640} height={360} className="w-full h-auto" unoptimized />
             ) : (
               <div className="w-full grid place-items-center text-white/60" style={{ aspectRatio: '16 / 10' }}>No preview</div>
             )}
@@ -509,7 +509,7 @@ export function TemplatesTabContent(){
   useEffect(()=>{
     try {
       const tokensInPrompt = new Set(String(activeTemplate?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m)=> m.replace(/^[\[]|[\]]$/g, '')) || []);
-      const defs: any[] = Array.isArray(activeTemplate?.variables) ? (activeTemplate!.variables as any[]) : [];
+      const defs: Array<{ key?: string; type?: string; defaultValue?: string }> = Array.isArray(activeTemplate?.variables) ? (activeTemplate!.variables as Array<{ key?: string; type?: string; defaultValue?: string }>) : [];
       if (!defs.length) return;
       const next: Record<string,string> = { ...varState };
       let changed = false;
@@ -562,8 +562,8 @@ export function TemplatesTabContent(){
     if (!v) return;
     const brand = v.make || '';
     const model = v.model || '';
-    const cf = (v as any)?.colorFinish ? String((v as any).colorFinish) : '';
-    const acc = (v as any)?.accents ? String((v as any).accents) : '';
+    const cf = (v as unknown as { colorFinish?: string })?.colorFinish ? String((v as unknown as { colorFinish?: string }).colorFinish) : '';
+    const acc = (v as unknown as { accents?: string })?.accents ? String((v as unknown as { accents?: string }).accents) : '';
     const combo = acc ? `${cf} with ${acc}` : cf;
     setVarState(prev=> ({
       ...prev,
@@ -635,8 +635,8 @@ export function TemplatesTabContent(){
       if (v) {
         const brand = v.make || '';
         const model = v.model || '';
-        const cf = (v as any)?.colorFinish ? String((v as any).colorFinish) : '';
-        const acc = (v as any)?.accents ? String((v as any).accents) : '';
+        const cf = (v as unknown as { colorFinish?: string })?.colorFinish ? String((v as unknown as { colorFinish?: string }).colorFinish) : '';
+        const acc = (v as unknown as { accents?: string })?.accents ? String((v as unknown as { accents?: string }).accents) : '';
         const combo = acc ? `${cf} with ${acc}` : cf;
         if (brand) variables.BRAND = brand;
         if (model) variables.MODEL = model;
@@ -658,7 +658,7 @@ export function TemplatesTabContent(){
         }
       }
       // Pull in only template-defined variables (skips built-ins that are auto-filled)
-      const vars = Array.isArray(activeTemplate?.variables) ? activeTemplate?.variables as any[] : [];
+      const vars = Array.isArray(activeTemplate?.variables) ? (activeTemplate?.variables as Array<Record<string, unknown>>) : [];
       for (const vDef of vars) {
         const key = String(vDef?.key || '').trim();
         if (!key) continue;
@@ -730,7 +730,9 @@ export function TemplatesTabContent(){
             <div className="space-y-3">
               <div className="w-full grid place-items-center">
                 <div className="text-xs text-white/70 mb-1">Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=generations" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/generations</a></div>
-                <img src={(activeUrl || resultUrl)} alt="result" className="rounded w-auto max-w-[32rem] max-h-[56vh] h-auto object-contain" />
+                {activeUrl || resultUrl ? (
+                  <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-[32rem] max-h-[56vh] h-auto object-contain" unoptimized />
+                ) : null}
               </div>
               <div className="flex items-center justify-between gap-2">
                 <Button onClick={()=>{ setResultUrl(null); }}>Try again</Button>
@@ -750,7 +752,7 @@ export function TemplatesTabContent(){
                         const v = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key: resultKey }) }).then(r=>r.json()).catch(()=>({}));
                         const url: string | null = v?.url || null;
                         if (url) {
-                          const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img=new Image(); img.onload=()=> resolve({ w: img.naturalWidth||img.width, h: img.naturalHeight||img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
+                          const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img=new window.Image(); img.onload=()=> resolve({ w: img.naturalWidth||img.width, h: img.naturalHeight||img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
                           if (dims && dims.w>0 && dims.h>0) { payloadObj = { r2_key: String(resultKey), original_width: dims.w, original_height: dims.h }; }
                         }
                       } catch {}
@@ -800,7 +802,7 @@ export function TemplatesTabContent(){
                       </Select>
                     </div>
                   ))}
-                  <div className="text-xs text-white/60">Designer will use the currently selected image. You can't upscale an image that was already upscaled. Upscaling is limited to 6MP.</div>
+                  <div className="text-xs text-white/60">Designer will use the currently selected image. You can&apos;t upscale an image that was already upscaled. Upscaling is limited to 6MP.</div>
                 </div>
               ) : null}
               <AppDialog open={designOpen} onOpenChange={setDesignOpen}>
@@ -829,7 +831,7 @@ export function TemplatesTabContent(){
                   const tokensInPrompt = new Set(String(activeTemplate?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m)=> m.replace(/^[\[]|[\]]$/g, '')) || []);
                   const builtin = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
                   const needBuiltins = source !== 'vehicle' ? ["BRAND","MODEL","COLOR_FINISH","ACCENTS"].filter(k=> tokensInPrompt.has(k)) : [];
-                  const customVarDefs = Array.isArray(activeTemplate?.variables) ? (activeTemplate!.variables as any[]).filter((v:any)=> tokensInPrompt.has(String(v?.key || '')) && !builtin.has(String(v?.key || ''))) : [];
+                  const customVarDefs = Array.isArray(activeTemplate?.variables) ? (activeTemplate!.variables as Array<{ key?: string; type?: string; label?: string; options?: string[] }>).filter((v)=> tokensInPrompt.has(String(v?.key || '')) && !builtin.has(String(v?.key || ''))) : [];
                   if (!needBuiltins.length && !customVarDefs.length) return null;
                   return (
                     <div className="space-y-2">
@@ -841,7 +843,7 @@ export function TemplatesTabContent(){
                             <Input value={varState[key] || ''} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder={key} />
                           </div>
                         ))}
-                        {customVarDefs.map((v: any)=> {
+                        {customVarDefs.map((v)=> {
                           const key = String(v?.key || '').trim();
                           if (!key) return null;
                           const type = String(v?.type || 'text');
@@ -853,7 +855,7 @@ export function TemplatesTabContent(){
                                 <Select value={varState[key] || ''} onValueChange={(val)=> setVarState((prev)=> ({ ...prev, [key]: val }))}>
                                   <SelectTrigger className="h-9"><SelectValue placeholder={`Select ${label.toLowerCase()}`} /></SelectTrigger>
                                   <SelectContent>
-                                    {v.options.map((opt: string, i: number)=> (<SelectItem key={`${key}-${i}`} value={opt}>{opt}</SelectItem>))}
+                                    {v.options.map((opt, i)=> (<SelectItem key={`${key}-${i}`} value={opt}>{opt}</SelectItem>))}
                                   </SelectContent>
                                 </Select>
                               </div>
@@ -900,10 +902,10 @@ export function TemplatesTabContent(){
                       <SelectValue placeholder="Select source" />
                     </SelectTrigger>
                     <SelectContent>
-                      {(Array.isArray((activeTemplate as any)?.allowedImageSources) ? (activeTemplate as any).allowedImageSources : ['vehicle','user']).includes('vehicle') ? (
+                      {(Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']).includes('vehicle') ? (
                         <SelectItem value="vehicle">Your vehicles</SelectItem>
                       ) : null}
-                      {(Array.isArray((activeTemplate as any)?.allowedImageSources) ? (activeTemplate as any).allowedImageSources : ['vehicle','user']).includes('user') ? (
+                      {(Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']).includes('user') ? (
                         <>
                           <SelectItem value="upload">Upload image</SelectItem>
                           <SelectItem value="workspace">Browse workspace</SelectItem>
@@ -977,7 +979,7 @@ export function TemplatesTabContent(){
               <FixedAspectCropper
                 open={cropOpen}
                 imageUrl={cropUrl}
-                aspectRatio={typeof (activeTemplate as any)?.aspectRatio === 'number' ? Number((activeTemplate as any).aspectRatio) : 1}
+                aspectRatio={typeof (activeTemplate as { aspectRatio?: number })?.aspectRatio === 'number' ? Number((activeTemplate as { aspectRatio?: number }).aspectRatio) : 1}
                 title={`Crop image to match aspect ratio`}
                 onCancel={()=>{ setCropOpen(false); setCropUrl(null); setPendingKeys(null); }}
                 onCropped={async(blob)=>{
@@ -991,8 +993,8 @@ export function TemplatesTabContent(){
                     if (v) {
                       const brand = v.make || '';
                       const model = v.model || '';
-                      const cf = (v as any)?.colorFinish ? String((v as any).colorFinish) : '';
-                      const acc = (v as any)?.accents ? String((v as any).accents) : '';
+                      const cf = (v as unknown as { colorFinish?: string })?.colorFinish ? String((v as unknown as { colorFinish?: string }).colorFinish) : '';
+                      const acc = (v as unknown as { accents?: string })?.accents ? String((v as unknown as { accents?: string }).accents) : '';
                       const combo = acc ? `${cf} with ${acc}` : cf;
                       if (brand) variables.BRAND = brand;
                       if (model) variables.MODEL = model;
@@ -1014,19 +1016,19 @@ export function TemplatesTabContent(){
                         return;
                       }
                     }
-                    const varDefs = Array.isArray(activeTemplate?.variables) ? (activeTemplate?.variables as any[]) : [];
+                    const varDefs = Array.isArray(activeTemplate?.variables) ? (activeTemplate?.variables as Array<Record<string, unknown>>) : [];
                     for (const vDef of varDefs) {
                       const key = String(vDef?.key || '').trim();
                       if (!key) continue;
                       const val = varState[key] || '';
                       if (val) variables[key] = val;
                     }
-                    const payload = { templateId: active?.id, templateSlug: active?.slug, userImageKeys: pendingKeys || [], userImageDataUrls: [dataUrl], variables } as any;
+                    const payload = { templateId: active?.id, templateSlug: active?.slug, userImageKeys: pendingKeys || [], userImageDataUrls: [dataUrl], variables } as Record<string, unknown>;
                     const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-                    let data: any = {}; try { data = await res.json(); } catch { data = {}; }
-                    if (!res.ok) { toast.error(data?.error || 'Generation failed'); return; }
-                    if (data?.url) setResultUrl(String(data.url));
-                    if (data?.key) setResultKey(String(data.key));
+                    let data: Record<string, unknown> = {}; try { data = await res.json(); } catch { data = {}; }
+                    if (!res.ok) { toast.error(String((data as { error?: string }).error || 'Generation failed')); return; }
+                    if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
+                    if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
                     if (data?.key) setResultKey(String(data.key));
                   } finally {
                     setBusy(false);
@@ -1056,7 +1058,9 @@ function VehicleImage({ keyStr }: { keyStr: string }){
     return ()=>{cancelled=true};
   },[keyStr]);
   if (!url) return <Skeleton className="w-full aspect-square" />
-  return <img src={url} alt="vehicle" className="block w-full aspect-square object-cover" />
+  return (
+    <NextImage src={url} alt="vehicle" width={300} height={300} className="block w-full aspect-square object-cover" unoptimized />
+  )
 }
 
 export { TabsViewFancy };

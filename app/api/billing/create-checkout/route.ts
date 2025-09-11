@@ -13,7 +13,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { plan, topup } = await req.json().catch(()=>({}));
+    const { plan, topup } = (await req.json().catch(()=>({} as Record<string, unknown>))) as { plan?: unknown; topup?: unknown };
     // Credits top-up flow (one-time payment)
     if (typeof topup === "number") {
       // Load plan for differential credit rates
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
       try {
         const db = await getSurreal();
         const r = await db.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email });
-        const row = Array.isArray(r) && Array.isArray(r[0]) ? (r[0][0] as any) : null;
+        const row = Array.isArray(r) && Array.isArray(r[0]) ? (r[0][0] as { plan?: Plan }) : null;
         const p = row?.plan as Plan | undefined;
         currentPlan = p === "pro" ? "pro" : "minimum"; // default minimum if unset
       } catch {}
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ url: session.url, ...(upgradeHint ? { hint: "You get more credits per dollar on Pro." } : {}) });
     }
 
-    const key = (plan as Plan) || "minimum";
+    const key = ((plan as Plan) || "minimum") as Plan;
     if (key === "basic") {
       return NextResponse.json({ error: "This plan is coming soon." }, { status: 400 });
     }
@@ -75,8 +75,8 @@ export async function POST(req: Request) {
     try {
       const db = await getSurreal();
       const q = await db.query("SELECT id FROM user WHERE email = $email LIMIT 1;", { email });
-      const row = Array.isArray(q) && Array.isArray(q[0]) ? (q[0][0] as any) : null;
-      const rid = row?.id;
+      const row = Array.isArray(q) && Array.isArray(q[0]) ? (q[0][0] as { id?: unknown }) : null;
+      const rid = row?.id as unknown;
       if (rid) userIdString = rid instanceof RecordId ? rid.toString() : String(rid);
     } catch {}
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,14 +44,13 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
   const audioCache = useRef<Map<string, HTMLAudioElement>>(new Map());
 
   useEffect(() => {
+    const cacheAtMount = audioCache.current;
     return () => {
       try { audioRef.current?.pause(); } catch {}
       audioRef.current = null;
       try {
-        // Copy the ref to avoid the react-hooks/exhaustive-deps cleanup warning
-        const cache = audioCache.current;
-        for (const a of cache.values()) { try { a.pause(); } catch {} }
-        cache.clear();
+        for (const a of cacheAtMount.values()) { try { a.pause(); } catch {} }
+        cacheAtMount.clear();
       } catch {}
     };
   }, []);
@@ -259,9 +259,8 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
                       <Button size='sm' className='h-6 px-2 text-[10px] mt-1' variant='secondary' onClick={()=>removeTrack(t.id)}>Remove</Button>
                     </div>
                     <div className="relative shrink-0 size-16">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       {t.artworkUrl ? (
-                        <img src={t.artworkUrl} alt={t.title} className="absolute inset-0 size-full rounded-md object-cover" />
+                        <Image src={t.artworkUrl} alt={t.title} fill sizes="64px" unoptimized className="rounded-md object-cover" />
                       ) : (
                         <div className="absolute inset-0 rounded-md bg-white/10" />
                       )}
@@ -338,9 +337,8 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
                       <Button size='sm' className='h-6 px-2 text-xs mt-1' onClick={()=>onAddTrack(t)}>+</Button>
                     </div>
                     <div className="relative shrink-0 size-16">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       {t.artworkUrl ? (
-                        <img src={t.artworkUrl} alt={t.title} className="absolute inset-0 size-full rounded-md object-cover" />
+                        <Image src={t.artworkUrl} alt={t.title} fill sizes="64px" unoptimized className="rounded-md object-cover" />
                       ) : (
                         <div className="absolute inset-0 rounded-md bg-white/10" />
                       )}
@@ -448,9 +446,8 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
                       </button>
                     </div>
                     <div className='relative shrink-0 size-16'>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       {t.artworkUrl ? (
-                        <img src={t.artworkUrl} alt={t.title} className='absolute inset-0 size-full rounded-md object-cover' />
+                        <Image src={t.artworkUrl} alt={t.title} fill sizes='64px' unoptimized className='rounded-md object-cover' />
                       ) : (
                         <div className='absolute inset-0 rounded-md bg-white/10' />
                       )}

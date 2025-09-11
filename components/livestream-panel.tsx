@@ -19,7 +19,7 @@ type Me = { email?: string; role?: string };
 export default function LivestreamPanel() {
   const [client, setClient] = useState<StreamVideoClient | null>(null);
   const [call, setCall] = useState<Call | null>(null);
-  const [me, setMe] = useState<Me | null>(null);
+  const [_me, setMe] = useState<Me | null>(null);
   const [isCohost, setIsCohost] = useState(false);
   const [showChat, setShowChat] = useState(true);
   const callType = "livestream";
@@ -62,7 +62,7 @@ export default function LivestreamPanel() {
       mounted = false;
       try { call?.leave(); } catch {}
     };
-  }, [callId]);
+  }, [callId, call]);
 
   // Render viewer if not cohost/admin
   const viewer = useMemo(() => {
@@ -92,7 +92,7 @@ export default function LivestreamPanel() {
               </button>
             </div>
             <div className="mt-2">
-              <CallParticipantsList onClose={()=>{}} />
+              <CallParticipantsList onClose={() => undefined} />
             </div>
           </div>
         ) : (
@@ -134,11 +134,11 @@ function GoLiveToggle({ call }: { call: Call }) {
   );
 }
 
-function RecorderControl({ call }: { call: Call }) {
+function RecorderControl({ call: _call }: { call: Call }) {
   const { useIsCallLive } = useCallStateHooks();
   const isLive = useIsCallLive();
   const [rec, setRec] = useState<MediaRecorder | null>(null);
-  const [chunks, setChunks] = useState<Blob[]>([]);
+  const [_chunks, setChunks] = useState<Blob[]>([]);
   const [busy, setBusy] = useState(false);
 
   const [startAt, setStartAt] = useState<string | null>(null);
@@ -233,7 +233,7 @@ async function uploadLivestreamRecording(videoBlob: Blob, thumbFile: File, opts?
   formVideo.append("file", videoFile, "video.webm");
   formVideo.append("path", `livestreams/${slug}`);
   formVideo.append("scope", "admin");
-  const res = await fetch("/api/storage/upload", { method: "POST", body: formVideo }).then((r) => r.json());
+  await fetch("/api/storage/upload", { method: "POST", body: formVideo }).then((r) => r.json());
 
   // Register metadata and chat linkage
   try {
@@ -245,22 +245,24 @@ function LivestreamChat({ initialSession }: { initialSession?: string }) {
   const [messages, setMessages] = useState<Array<{ id?: string; text: string; userName: string; created_at?: string }>>([]);
   const [sending, setSending] = useState(false);
   const [text, setText] = useState("");
-  const [sessionSlug, setSessionSlug] = useState<string>(initialSession || 'ignite-global');
+  const [sessionSlug, _setSessionSlug] = useState<string>(initialSession || 'ignite-global');
   useEffect(() => {
     let es: EventSource | null = null;
     let mounted = true;
     (async () => {
       try {
         const snap = await fetch(`/api/chat/messages?channel=${encodeURIComponent(sessionSlug)}`).then((r) => r.json());
-        if (mounted) setMessages((snap.messages || []).map((m: any) => ({ ...m })));
+        if (mounted) setMessages((snap.messages || []).map((m: { id?: string; text: string; userName?: string; userEmail?: string; created_at?: string }) => ({ ...m })));
       } catch {}
       es = new EventSource(`/api/chat/live?channel=${encodeURIComponent(sessionSlug)}`);
       es.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data);
-          const row = data?.result || data?.record || data;
+          const row = (data as { result?: unknown; record?: unknown } | Record<string, unknown>)?.result || (data as { result?: unknown; record?: unknown } | Record<string, unknown>)?.record || data;
           if (!row?.text) return;
-          setMessages((prev) => [...prev, { id: row?.id?.id?.toString?.() || row?.id, text: row.text, userName: row.userName || row.userEmail, created_at: row.created_at }]);
+          const r = row as { id?: { id?: unknown; toString?: () => string } | string; text?: string; userName?: string; userEmail?: string; created_at?: string };
+          const idVal = typeof r?.id === 'string' ? r.id : (typeof (r?.id as { toString?: () => string } | undefined)?.toString === 'function' ? (r!.id as { toString: () => string }).toString() : undefined);
+          setMessages((prev) => [...prev, { id: idVal, text: String(r.text || ''), userName: (r.userName || r.userEmail || 'user'), created_at: r.created_at }]);
         } catch {}
       };
       es.onerror = () => { try { es?.close(); } catch {} };

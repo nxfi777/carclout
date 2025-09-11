@@ -8,7 +8,7 @@ export async function POST(req: Request) {
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { key, isFolder, scope } = await req.json();
   const isAdminScope = scope === 'admin';
-  if (isAdminScope && (user as any)?.role !== 'admin') {
+  if (isAdminScope && user.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   const root = isAdminScope ? `admin` : `users/${sanitizeUserId(user.email)}`;
@@ -52,7 +52,9 @@ export async function POST(req: Request) {
             ]);
           }
         }
-      } catch {}
+      } catch {
+        // ignore cascade errors
+      }
     }
   }
   return NextResponse.json({ ok: true });

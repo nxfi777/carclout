@@ -33,7 +33,8 @@ export async function GET(req: Request) {
   // Resolve the user's RecordId
   const ures = await db.query("SELECT id FROM user WHERE email = $email LIMIT 1;", { email: session.user.email });
   const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as { id?: unknown } | undefined) : undefined;
-  const rid = urow?.id instanceof RecordId ? (urow.id as RecordId) : (urow?.id ? new RecordId("user", String((urow as any).id)) : undefined);
+  const idStr = toIdString(urow?.id);
+  const rid = urow?.id instanceof RecordId ? (urow.id as RecordId) : (idStr ? new RecordId("user", idStr) : undefined);
   if (!rid) return NextResponse.json({ reminders: [] });
 
   const q = `SELECT id, title, caption, scheduled_at, created_at, sent_at
@@ -55,10 +56,14 @@ export async function POST(req: Request) {
   const session = await auth().catch(() => null);
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => ({} as any));
-  const caption: string = typeof body?.caption === "string" ? body.caption : "";
-  const title: string | undefined = typeof body?.title === "string" ? body.title : undefined;
-  const whenIso: string | undefined = typeof body?.scheduledAt === "string" ? body.scheduledAt : undefined;
+  const body: unknown = await req.json().catch(() => ({}));
+  const caption: string = typeof (body as { caption?: unknown })?.caption === "string" ? (body as { caption?: string }).caption! : "";
+  const title: string | undefined =
+    typeof (body as { title?: unknown })?.title === "string" ? (body as { title?: string }).title! : undefined;
+  const whenIso: string | undefined =
+    typeof (body as { scheduledAt?: unknown })?.scheduledAt === "string"
+      ? (body as { scheduledAt?: string }).scheduledAt!
+      : undefined;
   if (!whenIso) return NextResponse.json({ error: "Missing scheduledAt" }, { status: 400 });
 
   const when = new Date(whenIso);
@@ -70,7 +75,8 @@ export async function POST(req: Request) {
   const db = await getSurreal();
   const ures = await db.query("SELECT id FROM user WHERE email = $email LIMIT 1;", { email: session.user.email });
   const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as { id?: unknown } | undefined) : undefined;
-  const rid = urow?.id instanceof RecordId ? (urow.id as RecordId) : (urow?.id ? new RecordId("user", String((urow as any).id)) : undefined);
+  const idStr2 = toIdString(urow?.id);
+  const rid = urow?.id instanceof RecordId ? (urow.id as RecordId) : (idStr2 ? new RecordId("user", idStr2) : undefined);
   if (!rid) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   const createdIso = new Date().toISOString();

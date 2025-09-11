@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
 import { getSessionUser } from "@/lib/user";
 
-export async function GET(request: Request) {
+export async function GET(_request: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const db = await getSurreal();
@@ -10,13 +10,13 @@ export async function GET(request: Request) {
     "SELECT channels, expires_at, created_at FROM mute WHERE targetEmail = $email;",
     { email: user.email }
   );
-  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as any[]) : [];
+  const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
   const now = Date.now();
   const mutes = rows
     .map((m) => ({
-      channels: Array.isArray(m?.channels) ? (m.channels as string[]) : null,
-      expires_at: m?.expires_at as string | undefined,
-      created_at: m?.created_at as string | undefined,
+      channels: Array.isArray((m as { channels?: unknown[] } | undefined)?.channels) ? ((m as { channels: unknown[] }).channels.filter((x)=> typeof x === 'string') as string[]) : null,
+      expires_at: (m as { expires_at?: string } | undefined)?.expires_at,
+      created_at: (m as { created_at?: string } | undefined)?.created_at,
     }))
     .filter((m) => {
       if (!m?.expires_at) return true;

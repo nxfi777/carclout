@@ -28,7 +28,7 @@ function toIsoUtc(date: Date): string {
 
 export async function GET(req: Request) {
   const session = await auth().catch(() => null);
-  const role = (session?.user as any)?.role || "user";
+  const role = session?.user?.role || "user";
   if (role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -53,8 +53,8 @@ export async function GET(req: Request) {
       `SELECT * FROM credit_txn WHERE string::starts_with(reason, 'reserve:') AND created_at >= d"${startIso}" AND created_at < d"${endIso}";`
     );
 
-    const topups: CreditTxn[] = Array.isArray(topupRes) && Array.isArray(topupRes[0]) ? (topupRes[0] as any) : [];
-    const reserves: CreditTxn[] = Array.isArray(reserveRes) && Array.isArray(reserveRes[0]) ? (reserveRes[0] as any) : [];
+    const topups: CreditTxn[] = Array.isArray(topupRes) && Array.isArray(topupRes[0]) ? (topupRes[0] as CreditTxn[]) : [];
+    const reserves: CreditTxn[] = Array.isArray(reserveRes) && Array.isArray(reserveRes[0]) ? (reserveRes[0] as CreditTxn[]) : [];
 
     const totalTopupCredits = topups.reduce((sum, t) => sum + (typeof t.delta === "number" ? t.delta : 0), 0);
     const totalRevenueUsd = totalTopupCredits / CREDITS_PER_DOLLAR;
@@ -62,7 +62,7 @@ export async function GET(req: Request) {
     const creditsSpent = reserves.reduce((sum, t) => sum + Math.abs(typeof t.delta === "number" ? t.delta : 0), 0);
     const userIdsSpent = new Set<string>();
     for (const r of reserves) {
-      const uid = r.user ? String((r as any).user) : "";
+      const uid = r.user ? String(r.user as unknown as string) : "";
       if (uid) userIdsSpent.add(uid);
     }
     const spendingUsers = userIdsSpent.size;
@@ -70,7 +70,7 @@ export async function GET(req: Request) {
 
     const userIdsTopup = new Set<string>();
     for (const t of topups) {
-      const uid = t.user ? String((t as any).user) : "";
+      const uid = t.user ? String(t.user as unknown as string) : "";
       if (uid) userIdsTopup.add(uid);
     }
     const payingUsers = userIdsTopup.size;
@@ -95,10 +95,10 @@ export async function GET(req: Request) {
 
     const series = Object.values(daysMap);
 
-    const subsRes = await db.query<any[]>(
+    const subsRes = await db.query<Record<string, unknown>[]>(
       `SELECT id FROM user WHERE plan != NONE AND plan != '' LIMIT 10000;`
     );
-    const subscribers = Array.isArray(subsRes) && Array.isArray(subsRes[0]) ? (subsRes[0] as any[]) : [];
+    const subscribers = Array.isArray(subsRes) && Array.isArray(subsRes[0]) ? (subsRes[0] as Array<Record<string, unknown>>) : [];
 
     return NextResponse.json({
       metrics: {

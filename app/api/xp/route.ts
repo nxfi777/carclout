@@ -65,13 +65,13 @@ export async function POST(request: Request) {
   if (reason === "daily-login") {
     try {
       const ures = await db.query("SELECT id FROM user WHERE email = $email LIMIT 1;", { email: session.user.email });
-      const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as any) : undefined;
+      const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as { id?: unknown } | undefined) : undefined;
       const rid = urow?.id;
       if (rid) {
         const day = new Date();
         const key = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
         const ares = await db.query("SELECT id FROM activity WHERE user = $rid AND day = $day LIMIT 1;", { rid, day: key });
-        const arow = Array.isArray(ares) && Array.isArray(ares[0]) ? (ares[0][0] as any) : undefined;
+        const arow = Array.isArray(ares) && Array.isArray(ares[0]) ? (ares[0][0] as { id?: unknown } | undefined) : undefined;
         if (arow?.id) {
           await db.query("UPDATE $rec SET active = true, updated_at = $now;", { rec: arow.id, now: nowIso });
         } else {

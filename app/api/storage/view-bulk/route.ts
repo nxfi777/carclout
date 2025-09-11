@@ -6,11 +6,11 @@ export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
     if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const body = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({} as { keys?: unknown; scope?: unknown }));
     const keys = Array.isArray(body?.keys) ? (body.keys as unknown[]) : [];
     const scope = body?.scope === "admin" ? "admin" : "user";
     const isAdminScope = scope === "admin";
-    if (isAdminScope && (user as any)?.role !== "admin") {
+    if (isAdminScope && user.role !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
     await Promise.all(tasks);
     return NextResponse.json({ urls: results });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }

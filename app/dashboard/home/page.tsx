@@ -282,8 +282,9 @@ function StreakFireChart({ data }: { data: StreakPoint[] }) {
   );
 }
 
+type LottieRef = { goToAndStop?: (value: number, isFrame?: boolean) => void } | null;
 function LottieFireCell({ active }: { active: boolean }) {
-  const ref = useRef<any>(null);
+  const ref = useRef<LottieRef>(null);
   useEffect(() => {
     if (!active && ref.current && typeof ref.current.goToAndStop === 'function') {
       try { ref.current.goToAndStop(0, true); } catch {}
@@ -291,7 +292,7 @@ function LottieFireCell({ active }: { active: boolean }) {
   }, [active]);
   return (
     <div className={`w-12 h-12 md:w-14 md:h-14 rounded overflow-hidden ${active ? '' : 'opacity-70 grayscale'}`}>
-      <Lottie lottieRef={ref as any} animationData={fireAnimation as any} autoplay={active} loop={active} />
+      <Lottie lottieRef={ref as never} animationData={fireAnimation as never} autoplay={active} loop={active} />
     </div>
   );
 }
