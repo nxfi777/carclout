@@ -314,10 +314,12 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
 
   if (busy) {
     return (
-      <div className="p-10 min-h-[16rem] grid place-items-center">
+      <div className="p-6 sm:p-10 min-h-[12rem] grid place-items-center">
         <div className="flex flex-col items-center gap-3">
-          <Lottie animationData={carLoadAnimation as unknown as object} loop style={{ width: 280, height: 170 }} />
-          <div className="text-sm text-white/80">Cutting out your car — this may take a moment</div>
+          <div className="w-[14rem] h-[8rem] sm:w-[17.5rem] sm:h-[10.5rem]">
+            <Lottie animationData={carLoadAnimation as unknown as object} loop style={{ width: '100%', height: '100%' }} />
+          </div>
+          <div className="text-sm text-white/80 text-center px-2">Cutting out your car — this may take a moment</div>
         </div>
       </div>
     );
@@ -398,16 +400,16 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
             <img src={fgUrl} alt="fg" className="absolute inset-0 w-full h-full select-none pointer-events-none max-h-[56vh] object-contain" />
           </div>
         </div>
-        <div className="space-y-2 min-w-[18rem] xl:pl-2 flex-1">
+        <div className="space-y-2 min-w-0 xl:pl-2 w-full">
           <div className="space-y-1">
             <div className="text-xs text-white/70">Text</div>
             <textarea rows={3} value={text} onChange={(e)=> setText(e.target.value.toUpperCase())} placeholder="Type your headline" className="w-full rounded bg-white/5 border border-[color:var(--border)] p-2 resize-none" />
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="space-y-1">
               <div className="text-xs text-white/70">Font</div>
               <Select value={fontFamily} onValueChange={(v)=> setFontFamily(v)}>
-                <SelectTrigger className="h-9 min-w-[8rem]"><SelectValue placeholder="Font" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-full sm:min-w-[8rem]"><SelectValue placeholder="Font" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif'}>System UI</SelectItem>
                   <SelectItem value={'Arial, Helvetica, sans-serif'}>Arial</SelectItem>
@@ -422,7 +424,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
             <div className="space-y-1">
               <div className="text-xs text-white/70">Weight</div>
               <Select value={String(fontWeight)} onValueChange={(v)=> setFontWeight(parseInt(v))}>
-                <SelectTrigger className="h-9 min-w-[8rem]"><SelectValue placeholder="Weight" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-full sm:min-w-[8rem]"><SelectValue placeholder="Weight" /></SelectTrigger>
                 <SelectContent>
                   {[300,400,500,600,700,800,900].map((w)=> (
                     <SelectItem key={w} value={String(w)}>{w}</SelectItem>
@@ -435,17 +437,17 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
             <div className="text-xs text-white/70">Font size</div>
             <ValueSlider min={18} max={200} step={1} value={[fontSize]} onValueChange={(vals: number[])=> setFontSize(parseInt(String(vals?.[0] ?? 0)))} className="w-full" />
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="space-y-1">
               <div className="text-xs text-white/70">Letter spacing (em)</div>
               <ValueSlider min={-0.1} max={1} step={0.01} value={[letterSpacing]} onValueChange={(vals: number[])=> setLetterSpacing(parseFloat(String(vals?.[0] ?? 0)))} className="w-full" />
             </div>
-            <div className="space-y-1 col-span-2">
+            <div className="space-y-1 sm:col-span-2">
               <div className="text-xs text-white/70">Width scale (%)</div>
               <ValueSlider min={50} max={150} step={1} value={[Math.round(squish * 100)]} onValueChange={(vals: number[])=> setSquish(parseFloat(String(vals?.[0] ?? 100)) / 100)} className="w-full" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="space-y-1">
               <div className="text-xs text-white/70">Position Y (%)</div>
               <ValueSlider min={0} max={100} step={1} value={[y]} onValueChange={(vals: number[])=> setY(parseInt(String(vals?.[0] ?? 0)))} className="w-full" />
@@ -454,7 +456,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
               <div className="text-xs text-white/70">Position X (%)</div>
               <ValueSlider min={0} max={100} step={1} value={[x]} onValueChange={(vals: number[])=> setX(parseInt(String(vals?.[0] ?? 0)))} className="w-full" />
             </div>
-            <div className="space-y-1 col-span-2">
+            <div className="space-y-1 sm:col-span-2">
               <div className="text-xs text-white/70">Align</div>
               <div className="flex items-center gap-2">
                 <button className={`px-2 py-1 text-xs rounded bg-white/10 hover:bg-white/15`} onClick={()=> setX(50)} title="Center horizontally">
@@ -465,7 +467,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
                 </button>
               </div>
             </div>
-            <div className="space-y-1 col-span-2">
+            <div className="space-y-1 sm:col-span-2">
               <div className="text-xs text-white/70">Text color</div>
               <div className="flex items-center gap-2">
                 <input type="color" value={color} onChange={(e)=> setColor(e.target.value)} className="h-10 w-16 rounded bg-transparent border border-[color:var(--border)]" />
@@ -479,7 +481,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
               <input type="checkbox" checked={glow} onChange={(e)=> setGlow(!!e.target.checked)} />
             </div>
             {glow ? (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <div className="text-xs text-white/70">Glow color</div>
                   <div className="flex items-center gap-2">
@@ -500,7 +502,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
               <input type="checkbox" checked={shadow} onChange={(e)=> setShadow(!!e.target.checked)} />
             </div>
             {shadow ? (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <div className="text-xs text-white/70">Shadow color</div>
                   <div className="flex items-center gap-2">
@@ -523,11 +525,11 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
               </div>
             ) : null}
           </div>
-          <div className="pt-2 flex items-center justify-end gap-2">
+          <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
             {onSave ? (
-              <Button disabled={saving} onClick={saveComposite}>{saveLabel || 'Save'}</Button>
+              <Button className="w-full sm:w-auto" disabled={saving} onClick={saveComposite}>{saveLabel || 'Save'}</Button>
             ) : null}
-            <Button onClick={downloadComposite} disabled={downloading}>
+            <Button className="w-full sm:w-auto" onClick={downloadComposite} disabled={downloading}>
               {downloading ? <Loader2 className="size-4 animate-spin" /> : null}
               {downloading ? 'Downloading…' : 'Download'}
             </Button>

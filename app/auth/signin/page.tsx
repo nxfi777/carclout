@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +45,9 @@ export default function SignInPage() {
             <Button type="submit" className="w-full" disabled={loading}>{loading ? "Sending..." : "Send magic link"}</Button>
             {error ? <p className="text-sm text-red-400">{error}</p> : null}
           </form>
+          <div className="mt-3 text-center text-sm text-muted-foreground">
+            Don’t have an account? <Link href="/auth/signup" className="text-[color:var(--primary)] hover:underline">Sign up</Link>
+          </div>
         </CardContent>
       </Card>
     </div>

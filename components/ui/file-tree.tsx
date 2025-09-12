@@ -113,6 +113,7 @@ export function R2FileTree({
   const [collapsed, setCollapsed] = React.useState<boolean>(false);
   const [childrenByPath, setChildrenByPath] = React.useState<Record<string, FileTreeItem[]>>({});
   const [etagByPath, setEtagByPath] = React.useState<Record<string, string | undefined>>({});
+  const etagByPathRef = React.useRef<Record<string, string | undefined>>({});
   const SESSION_PREFIX = "ignite:tree:list:";
   const scopeKey = React.useCallback((p: string) => `${scope === 'admin' ? 'admin' : 'user'}:${p}`, [scope]);
   const readSession = React.useCallback((p: string): { items: FileTreeItem[]; etag?: string } | null => {
@@ -142,7 +143,7 @@ export function R2FileTree({
         setEtagByPath(prev => ({ ...prev, [p]: existing.etag }));
       }
       const headers: Record<string, string> = {};
-      const et = etagByPath[p] || existing?.etag;
+      const et = etagByPathRef.current[p] || existing?.etag;
       if (et && typeof et === 'string') {
         const clean = et.replace(/^W\//, '').replace(/\"/g, '');
         headers["If-None-Match"] = `W/"${clean}"`;
@@ -178,7 +179,9 @@ export function R2FileTree({
     } catch {
       setChildrenByPath(prev => ({ ...prev, [p]: [] }));
     }
-  }, [etagByPath, scope, readSession, writeSession]);
+  }, [scope, readSession, writeSession]);
+
+  React.useEffect(() => { etagByPathRef.current = etagByPath; }, [etagByPath]);
 
   React.useEffect(() => { fetchChildren(""); }, [fetchChildren]);
 

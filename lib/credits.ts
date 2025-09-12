@@ -12,6 +12,8 @@ export const GENERATION_CREDITS_PER_IMAGE = 6;
 export const REMBG_CREDITS_PER_CALL = 1;
 // - Upscale $0.03 per MP ⇒ charge 5 credits per MP ($0.05) ~67% margin
 export const UPSCALE_CREDITS_PER_MP = 5;
+// - Streak restore: +25 credits per missed day
+export const STREAK_RESTORE_CREDITS_PER_DAY = 25;
 
 export function estimateUpscaleCredits(originalWidth: number, originalHeight: number, upscaleFactor: number): number {
   const mp = (originalWidth * originalHeight * Math.pow(Math.max(1, upscaleFactor), 2)) / 1_000_000;

@@ -101,11 +101,13 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
           </Card>
         );
         return (
-          <div key={p.key} className="h-full">
+          <div key={p.key} className="h-full relative overflow-visible">
             {isPro ? (
-              <ElectricBorder color={color} speed={1} chaos={0.6} thickness={2} style={{ borderRadius: 12 }} className="h-full">
-                {cardInner}
-              </ElectricBorder>
+              <>
+                <ElectricBorder color={color} speed={1} chaos={0.6} thickness={2} style={{ borderRadius: 12 }} className="h-full">
+                  {cardInner}
+                </ElectricBorder>
+              </>
             ) : (
               cardInner
             )}

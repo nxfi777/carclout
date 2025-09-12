@@ -17,6 +17,7 @@ import HeaderCredits from "./header-credits";
 import HeaderNotifications from "@/components/header-notifications";
 import { Home } from "lucide-react";
 import { Suspense } from "react";
+import HeaderMarketingMenu from "@/components/header-marketing-menu";
 
 export default async function SiteHeader() {
   const session = await auth();
@@ -83,7 +84,17 @@ export default async function SiteHeader() {
                 </Button>
               </DashboardCta>
             ) : (
-              <Link href="/auth/signin"><Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70">Get Started</Button></Link>
+              <>
+                <div className="hidden md:block">
+                  <div className="flex items-center gap-2">
+                    <Link href="/auth/signup"><Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70">Get Started</Button></Link>
+                    <Link href="/auth/signin"><Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70">Sign in</Button></Link>
+                  </div>
+                </div>
+                <div className="block md:hidden">
+                  <HeaderMarketingMenu />
+                </div>
+              </>
             )}
             {user ? (
               <>

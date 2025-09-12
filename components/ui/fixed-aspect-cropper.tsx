@@ -105,8 +105,9 @@ export function FixedAspectCropper({ open, imageUrl, aspectRatio, title = 'Crop 
   useEffect(() => {
     if (!imgDims) return;
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-    const maxW = isMobile ? 360 : 560;
-    const maxH = isMobile ? 260 : 420;
+    // Give more generous width and height on mobile to reduce horizontal scroll
+    const maxW = isMobile ? 340 : 560;
+    const maxH = isMobile ? 300 : 420;
     const ar = imgDims.w / imgDims.h;
     let cw = maxW;
     let ch = Math.round(maxW / ar);
@@ -300,10 +301,10 @@ export function FixedAspectCropper({ open, imageUrl, aspectRatio, title = 'Crop 
               type="range"
               min={1}
               max={3}
-              step={0.01}
+              step={0.02}
               value={zoom}
               onChange={(e)=> onZoomChange(parseFloat(e.target.value))}
-              className="w-full"
+              className="w-full touch-pan-y"
             />
           </div>
         </div>

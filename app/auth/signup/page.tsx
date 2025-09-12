@@ -3,6 +3,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,6 +81,9 @@ function SignUpPageInner() {
             </div>
             <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             <Button type="submit" className="w-full" disabled={loading}>{loading ? "Sending..." : "Send magic link"}</Button>
+            <div className="mt-3 text-center text-sm text-muted-foreground">
+              Already have an account? <Link href="/auth/signin" className="text-[color:var(--primary)] hover:underline">Sign in</Link>
+            </div>
           </form>
         </CardContent>
       </Card>

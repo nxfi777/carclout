@@ -7,6 +7,8 @@ import React, {
   useId,
   useLayoutEffect,
   useRef,
+  useMemo,
+  useState,
 } from "react";
 
 type ElectricBorderProps = PropsWithChildren<{
@@ -43,20 +45,41 @@ const ElectricBorder: React.FC<ElectricBorderProps> = ({
   className,
   style,
 }) => {
-  const rawId = useId().replace(/[:]/g, "");
-  const filterId = `turbulent-displace-${rawId}`;
+  // Avoid hydration mismatch by computing a stable id only after mount
+  const reactId = useId();
+  const [filterId, setFilterId] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const strokeRef = useRef<HTMLDivElement | null>(null);
 
+  // iOS Safari has unreliable support for CSS filter: url(#id) on HTML nodes
+  // and animated SVG filters. Provide a graceful fallback with a static border
+  // and clipped glow to avoid jank and horizontal overflow.
+  // Defer UA detection to the client to avoid hydration mismatches.
+  const [isIosSafari, setIsIosSafari] = useState(false);
+  useEffect(() => {
+    try {
+      const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
+      const isIOS = /iP(ad|hone|od)/.test(ua);
+      const isWebKit = /WebKit\//.test(ua);
+      const isCriOS = /CriOS\//.test(ua);
+      const isFxiOS = /FxiOS\//.test(ua);
+      const isIPadOnMac = /Macintosh/.test(ua) && typeof document !== 'undefined' && 'ontouchstart' in document.documentElement;
+      setIsIosSafari((isIOS || isIPadOnMac) && isWebKit && !isCriOS && !isFxiOS);
+    } catch {}
+  }, []);
+
   const updateAnim = useCallback(() => {
     const svg = svgRef.current;
     const host = rootRef.current;
-    if (!svg || !host) return;
+    if (!svg || !host || !filterId) return;
 
     if (strokeRef.current) {
-      strokeRef.current.style.filter = `url(#${filterId})`;
+      // Apply animated filter only when supported. Otherwise, ensure no filter.
+      strokeRef.current.style.filter = isIosSafari ? 'none' : `url(#${filterId})`;
     }
+
+    if (isIosSafari) return; // skip heavy animated filter adjustments on iOS
 
     const width = Math.max(
       1,
@@ -113,11 +136,17 @@ const ElectricBorder: React.FC<ElectricBorderProps> = ({
         }
       });
     });
-  }, [speed, chaos, filterId]);
+  }, [speed, chaos, filterId, isIosSafari]);
+
+  useEffect(() => {
+    // Defer id generation until after mount to prevent SSR/CSR mismatch
+    const id = `turbulent-displace-${reactId.replace(/[:]/g, "")}`;
+    setFilterId(id);
+  }, [reactId]);
 
   useEffect(() => {
     updateAnim();
-  }, [updateAnim]);
+  }, [updateAnim, filterId]);
 
   useLayoutEffect(() => {
     if (!rootRef.current) return;
@@ -165,7 +194,7 @@ const ElectricBorder: React.FC<ElectricBorderProps> = ({
 
   const bgGlowStyle: CSSProperties = {
     ...inheritRadius,
-    transform: "scale(1.08)",
+    transform: `scale(${isIosSafari ? 1.02 : 1.08})`,
     filter: "blur(32px)",
     opacity: 0.3,
     zIndex: -1,
@@ -175,7 +204,7 @@ const ElectricBorder: React.FC<ElectricBorderProps> = ({
   return (
     <div
       ref={rootRef}
-      className={"relative isolate " + (className ?? "")}
+      className={"relative isolate overflow-visible md:overflow-visible z-0 md:z-20 " + (className ?? "")}
       style={style}
     >
       <svg
@@ -186,7 +215,7 @@ const ElectricBorder: React.FC<ElectricBorderProps> = ({
       >
         <defs>
           <filter
-            id={filterId}
+            id={filterId || 'noop'}
             colorInterpolationFilters="sRGB"
             x="-20%"
             y="-20%"
@@ -284,14 +313,18 @@ const ElectricBorder: React.FC<ElectricBorderProps> = ({
         className="absolute inset-0 pointer-events-none"
         style={{ ...inheritRadius, zIndex: 2 }}
       >
-        <div
-          ref={strokeRef}
-          className="absolute inset-0 box-border"
-          style={strokeStyle}
-        />
-        <div className="absolute inset-0 box-border" style={glow1Style} />
-        <div className="absolute inset-0 box-border" style={glow2Style} />
-        <div className="absolute inset-0" style={bgGlowStyle} />
+        {/* Clip inner glow layers but do not clip the outward pulse ring */}
+        <div className="absolute inset-0 overflow-hidden rounded-[inherit]">
+          <div
+            ref={strokeRef}
+            className="absolute inset-0 box-border"
+            style={strokeStyle}
+          />
+          <div className="absolute inset-0 box-border" style={glow1Style} />
+          <div className="absolute inset-0 box-border" style={glow2Style} />
+          <div className="absolute inset-0" style={bgGlowStyle} />
+        </div>
+        {/* pulse removed per request */}
       </div>
 
       <div className="relative" style={{ ...inheritRadius, zIndex: 1 }}>

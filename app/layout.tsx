@@ -30,13 +30,13 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${roboto.className} ${roboto.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh bg-background text-foreground overflow-x-hidden`}>
+      <body className={`${roboto.className} ${roboto.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh min-h-[100svh] bg-background text-foreground overflow-x-hidden`}>
         <SessionProviderWrapper>
           <HeaderGate>
             <SiteHeader />
           </HeaderGate>
           <main className="flex-1 min-h-0 flex flex-col">
-            <div className="flex-1 min-h-0 w-full px-2 md:px-3">
+            <div className="flex-1 min-h-0 w-full px-2 md:px-3 flex flex-col">
               {children}
             </div>
           </main>

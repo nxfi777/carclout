@@ -4,6 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import fireAnimation from "@/public/fire.json";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { STREAK_RESTORE_CREDITS_PER_DAY } from "@/lib/credits";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
 type StreakPoint = { day: string; value: number };
@@ -14,6 +18,8 @@ export default function DashboardHome() {
   const [series, setSeries] = useState<StreakPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [announcements, setAnnouncements] = useState<Array<{ id?: string; title: string; content: string; level?: "info"|"update"|"warning" }>>([]);
+  const [isMobile, setIsMobile] = useState(false);
+  const streakScrollRef = useRef<HTMLDivElement | null>(null);
 
   function computeTrailingStreak(points: StreakPoint[]): number {
     let s = 0;
@@ -97,6 +103,30 @@ export default function DashboardHome() {
     };
   }, []);
 
+  // Detect mobile viewport
+  useEffect(() => {
+    try {
+      const mq = window.matchMedia('(max-width: 767px)');
+      const update = () => setIsMobile(!!mq.matches);
+      update();
+      mq.addEventListener('change', update);
+      return () => mq.removeEventListener('change', update);
+    } catch {}
+  }, []);
+
+  // Auto-scroll streak container to the end on mobile when data loads/changes
+  useEffect(() => {
+    if (!isMobile || loading) return;
+    const el = streakScrollRef.current;
+    if (!el) return;
+    try {
+      const scrollToEnd = () => { el.scrollLeft = Math.max(0, el.scrollWidth - el.clientWidth); };
+      scrollToEnd();
+      requestAnimationFrame(scrollToEnd);
+      setTimeout(scrollToEnd, 0);
+    } catch {}
+  }, [isMobile, loading, series]);
+
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return "Good morning";
@@ -129,24 +159,27 @@ export default function DashboardHome() {
           {loading ? (
             <Skeleton className="h-4 w-24" />
           ) : (
-            <div className="text-sm text-white/70">
-              Streak: <span className="text-white">{streak}</span> days
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-white/70">
+                Streak: <span className="text-white">{streak}</span> days
+              </div>
+              <RestoreStreakButton onRestored={async()=>{ try { window.dispatchEvent(new CustomEvent('streak-refresh')); } catch {} }} />
             </div>
           )}
         </div>
-        <div className="w-full overflow-x-auto">
-          <div className="min-w-[32rem]">
+        <div ref={streakScrollRef} className="w-full overflow-x-auto">
+          <div className="min-w-0 md:min-w-[32rem]">
             {loading || !series ? (
-              <div className="grid grid-cols-[repeat(14,minmax(2rem,1fr))] gap-3">
-                {Array.from({ length: 14 }).map((_, i) => (
-                  <div key={i} className="flex flex-col items-center gap-2">
+              <div className="flex gap-3 md:grid md:grid-cols-[repeat(14,minmax(2rem,1fr))]">
+                {Array.from({ length: isMobile ? 7 : 14 }).map((_, i) => (
+                  <div key={i} className="shrink-0 flex flex-col items-center gap-2">
                     <Skeleton className="w-12 h-12 md:w-14 md:h-14 rounded" />
                     <Skeleton className="h-3 w-12" />
                   </div>
                 ))}
               </div>
             ) : (
-              <StreakFireChart data={series} />
+              <StreakFireChart data={isMobile ? series.slice(-7) : series} />
             )}
           </div>
         </div>
@@ -170,9 +203,9 @@ export default function DashboardHome() {
 
 function StreakFireChart({ data }: { data: StreakPoint[] }) {
   return (
-    <div className="grid grid-cols-[repeat(14,minmax(2rem,1fr))] gap-3">
+    <div className="flex gap-3 md:grid md:grid-cols-[repeat(14,minmax(2rem,1fr))]">
       {data.map((d, i) => (
-        <div key={`${d.day}-${i}`} className="flex flex-col items-center gap-2">
+        <div key={`${d.day}-${i}`} className="shrink-0 flex flex-col items-center gap-2">
           <LottieFireCell active={!!d.value} />
           <div className="text-2xs text-white/60">{d.day}</div>
         </div>
@@ -206,6 +239,83 @@ function AnnouncementItem({ title, content, level }: { title: string; content: s
       <div className="text-sm font-medium">{title}</div>
       <div className="text-xs text-white/80 whitespace-pre-wrap mt-1">{content}</div>
     </div>
+  );
+}
+
+function RestoreStreakButton({ onRestored }: { onRestored?: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [missedDays, setMissedDays] = useState<number | null>(null);
+  const [cost, setCost] = useState<number | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    // Mirror the dashboard page logic: compute gap between previous and current streaks
+    (async () => {
+      try {
+        const res = await fetch('/api/activity/streak?days=14', { cache: 'no-store' });
+        const data = await res.json().catch(()=>({}));
+        const days: Array<{ date?: string; active?: boolean }> = Array.isArray(data?.days) ? data.days : [];
+        if (!days.length) { setMissedDays(null); setCost(null); return; }
+        let i = days.length - 1;
+        let current = 0;
+        while (i >= 0 && days[i]?.active) { current += 1; i -= 1; }
+        const gapEnd = i;
+        let j = i;
+        while (j >= 0 && !days[j]?.active) { j -= 1; }
+        const gapStart = j + 1;
+        const gap = gapEnd >= gapStart ? (gapEnd - gapStart + 1) : 0;
+        let k = j;
+        let prev = 0;
+        while (k >= 0 && days[k]?.active) { prev += 1; k -= 1; }
+        const withinWindow = (days.length - 1) - gapEnd <= 7;
+        if (gap > 0 && prev > 0 && current < prev && withinWindow) {
+          setMissedDays(gap);
+          setCost(gap * STREAK_RESTORE_CREDITS_PER_DAY);
+        } else {
+          setMissedDays(null); setCost(null);
+        }
+      } catch { setMissedDays(null); setCost(null); }
+    })();
+  }, []);
+
+  async function onConfirm() {
+    if (busy) return;
+    if (!missedDays || missedDays <= 0) { setOpen(false); return; }
+    setBusy(true);
+    try {
+      const res = await fetch('/api/activity/streak/restore', { method: 'POST' });
+      const json = await res.json().catch(()=>({}));
+      if (res.status === 402) { toast.error('Not enough credits to restore. Top up in Billing.'); return; }
+      if (!res.ok) { toast.error(json?.error || 'Failed to restore'); return; }
+      toast.success(`Streak restored +${json?.missedDays||missedDays} days`);
+      try { window.dispatchEvent(new CustomEvent('streak-refresh')); } catch {}
+      try { window.dispatchEvent(new CustomEvent('credits-refresh')); } catch {}
+      if (onRestored) onRestored();
+      setMissedDays(0); setCost(0); setOpen(false);
+    } finally { setBusy(false); }
+  }
+
+  if (missedDays == null || missedDays <= 0) return null;
+  return (
+    <>
+      <Button size="sm" variant="outline" onClick={()=>setOpen(true)} disabled={busy}>{busy ? 'Restoring…' : 'Restore Streak'}</Button>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore streak?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cost != null && missedDays != null
+                ? `This will restore ${missedDays} day${missedDays>1?'s':''} for ${cost} credits (${STREAK_RESTORE_CREDITS_PER_DAY}/day).`
+                : 'This will restore missed days and cost credits.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onConfirm} disabled={busy}>{busy ? 'Restoring…' : 'Confirm'}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

@@ -8,6 +8,16 @@ export default function HeaderCredits() {
 
   useEffect(() => {
     let mounted = true;
+    function onCreditsRefresh() {
+      (async () => {
+        try {
+          const r = await fetch("/api/credits", { cache: "no-store" }).then((r) => r.json());
+          if (!mounted) return;
+          const c = typeof r?.credits === "number" ? Number(r.credits) : null;
+          if (c != null) setCredits(c);
+        } catch {}
+      })();
+    }
     (async () => {
       try {
         // Prime with current value
@@ -32,9 +42,11 @@ export default function HeaderCredits() {
         };
       } catch {}
     })();
+    try { window.addEventListener('credits-refresh', onCreditsRefresh as EventListener); } catch {}
     return () => {
       mounted = false;
       const es = esRef.current; if (es) { try { es.close(); } catch {} esRef.current = null; }
+      try { window.removeEventListener('credits-refresh', onCreditsRefresh as EventListener); } catch {}
     };
   }, []);
 

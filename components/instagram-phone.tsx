@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BadgeCheck, Bookmark, Heart, MessageCircle, Send } from "lucide-react";
 import KCountUp from "@/components/ui/k-count-up";
@@ -24,26 +24,6 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-
-  // Scale entire UI based on available width to prevent overflow
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const el = containerRef.current;
-    const BASE_WIDTH_REM = 19;
-    function recompute() {
-      const rfs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      const baseWidthPx = BASE_WIDTH_REM * rfs;
-      const width = el.clientWidth || baseWidthPx;
-      const next = Math.max(0.5, Math.min(1.25, width / baseWidthPx));
-      setScale(next);
-    }
-    const ro = new ResizeObserver(() => recompute());
-    try { ro.observe(el); } catch {}
-    recompute();
-    return () => { try { ro.disconnect(); } catch {} };
-  }, []);
 
   async function submitContact(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -81,13 +61,13 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
   return (
     <>
       <div
-        ref={containerRef}
-        className="relative w-full mx-auto animate-slide-up"
-        style={{ height: `${(19 / (71.5 / 149.6) * scale).toFixed(4)}rem` }}
+        className="relative w-full mx-auto overflow-hidden aspect-[71.5/149.6]"
+        suppressHydrationWarning
+        style={{ ['--igp-scale' as unknown as string]: 'calc(var(--igp-w, 12rem) / 19rem)' }}
       >
       <div
-        className="absolute left-0 top-0"
-        style={{ width: "19rem", transform: `scale(${scale})`, transformOrigin: "top left" }}
+        className="absolute left-0 top-0 will-change-transform"
+        style={{ width: "19rem", transform: `scale(var(--igp-scale))`, transformOrigin: "top left" }}
       >
       <div
         className="relative aspect-[71.5/149.6] w-[19rem] rounded-[2rem] border-[0.3rem] border-black bg-black"

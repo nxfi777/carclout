@@ -77,7 +77,7 @@ export default function PhoneWithCarParallax() {
 
   return (
     <div
-      className="relative mx-auto flex items-center justify-center min-h-[22rem] sm:min-h-[26rem] md:min-h-[28rem] select-none w-full"
+      className="relative mx-auto flex items-center justify-center min-h-[22rem] sm:min-h-[26rem] md:min-h-[28rem] select-none w-full overflow-hidden"
       onMouseMove={handleMove}
       onMouseLeave={handleLeave}
       // Try to request motion permission on first tap for iOS
@@ -88,7 +88,7 @@ export default function PhoneWithCarParallax() {
         className="pointer-events-none absolute inset-x-0 top-[58%] sm:top-1/2 -translate-y-1/2 z-0 flex justify-center"
       >
         <div
-          className="relative w-[34rem] sm:w-[36rem] md:w-[38rem] max-w-[min(50rem,96vw)] aspect-[21/9]"
+          className="relative w-full max-w-[min(50rem,96vw)] aspect-[21/9]"
           style={{ transform: carTranslate, transition: "transform 200ms ease-out" }}
         >
           <Image
@@ -104,10 +104,15 @@ export default function PhoneWithCarParallax() {
 
       {/* Phone on top */}
       <div
-        className="relative z-[2] pointer-events-none w-[12rem] sm:w-[16rem] md:w-[19rem] max-w-[84vw]"
-        style={{ transform: phoneTranslate, transition: "transform 200ms ease-out" }}
+        className="relative z-[2] pointer-events-none max-w-[84vw] [--igp-w:12rem] sm:[--igp-w:16rem] md:[--igp-w:19rem]"
+        style={{
+          transform: phoneTranslate,
+          transition: "transform 200ms ease-out",
+        }}
       >
-        <InstagramPhone />
+        <div className="w-[var(--igp-w)]">
+          <InstagramPhone />
+        </div>
       </div>
     </div>
   );

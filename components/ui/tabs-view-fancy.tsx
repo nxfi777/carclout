@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import NextImage from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import MusicSuggestions from '@/components/music/music-suggestions';
@@ -27,6 +27,40 @@ import { Heart } from 'lucide-react';
 export function HooksTabContent() {
   const [items, setItems] = useState<{ image: string; text: string; videoUrl?: string }[] | null>(null);
   const [thumbsReady, setThumbsReady] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const PAGE_SIZE = 24;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
+
+  // Play/pause active preview without remounting the <video>
+  useEffect(() => {
+    try {
+      videoRefs.current.forEach((v, idx) => {
+        if (!v) return;
+        if (idx === activeIdx) {
+          v.play().catch(() => {});
+        } else {
+          try { v.pause(); } catch {}
+        }
+      });
+    } catch {}
+  }, [activeIdx]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(max-width: 640px)');
+    const update = () => setIsMobile(mql.matches);
+    update();
+    try {
+      mql.addEventListener('change', update);
+      return () => mql.removeEventListener('change', update);
+    } catch {
+      window.addEventListener('resize', update);
+      return () => window.removeEventListener('resize', update);
+    }
+  }, []);
   useEffect(() => {
     let aborted = false;
     (async () => {
@@ -56,9 +90,89 @@ export function HooksTabContent() {
     Promise.all(loaders).then(() => { if (!cancelled) setThumbsReady(true); });
     return () => { cancelled = true; };
   }, [items]);
-  if (items === null) return <CurvedGallerySkeleton />;
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [items?.length, isMobile]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      const e = entries[0];
+      if (e && e.isIntersecting) {
+        setVisibleCount((c) => Math.min((items?.length || 0), c + PAGE_SIZE));
+      }
+    }, { root: null, rootMargin: '200px 0px', threshold: 0 });
+    observer.observe(el);
+    return () => { try { observer.unobserve(el); observer.disconnect(); } catch {} };
+  }, [isMobile, items?.length]);
+
+  if (items === null) return isMobile ? <MobileHooksSkeleton /> : <CurvedGallerySkeleton />;
   if (items.length === 0) return <div>No hooks yet</div>;
-  if (!thumbsReady) return <CurvedGallerySkeleton />;
+  if (!thumbsReady) return isMobile ? <MobileHooksSkeleton /> : <CurvedGallerySkeleton />;
+
+  if (isMobile) {
+    const toShow = (items || []).slice(0, visibleCount);
+    const hasMore = visibleCount < (items?.length || 0);
+    return (
+      <div className="w-full h-full min-h-[65vh]">
+        <div className="px-6 pt-1 pb-2">
+          <Button size="sm" variant="outline" className="h-9 w-full text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={async()=>{
+            try{
+              const list = (items || []).filter(it=>it.videoUrl);
+              for(let i=0;i<list.length;i++){
+                const it=list[i]!; const url = it.videoUrl as string; const name = `${it.text || `hook-${i+1}`}.mp4`;
+                const res = await fetch(url, { cache: 'no-store' }); const blob = await res.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name.replace(/[^a-z0-9_.-]+/gi,'_'); document.body.appendChild(a); a.click(); setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
+              }
+            } catch {}
+          }}>Download All</Button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-auto">
+          <div className="grid grid-cols-2 gap-3 pb-6">
+            {toShow.map((it, i) => (
+              <button
+                key={`${it.text}-${i}`}
+                type="button"
+                onClick={() => { if (it.videoUrl) setActiveIdx((idx) => idx === i ? null : i); }}
+                className="rounded-lg overflow-hidden bg-white/5 border border-white/10 text-left"
+              >
+                <div className="relative w-full aspect-[3/4]">
+                  {/* Keep video mounted to leverage browser caching and avoid refetches */}
+                  {it.videoUrl ? (
+                    <video
+                      ref={(el) => { videoRefs.current[i] = el; }}
+                      src={it.videoUrl}
+                      poster={it.image}
+                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${activeIdx === i ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                      playsInline
+                      muted
+                      controls={activeIdx === i}
+                      preload="metadata"
+                    />
+                  ) : null}
+                  <NextImage src={it.image} alt="Hook" fill sizes="(max-width: 640px) 50vw, 33vw" className={`object-cover transition-opacity duration-200 ${activeIdx === i ? 'opacity-0' : 'opacity-100'}`} unoptimized />
+                </div>
+              </button>
+            ))}
+          </div>
+          <div ref={sentinelRef} className="h-8" aria-hidden />
+          {!hasMore ? null : (
+            <div className="pb-6 px-1">
+              <div className="grid grid-cols-2 gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="rounded-lg overflow-hidden bg-white/5 border border-white/10">
+                    <Skeleton className="w-full aspect-[3/4]" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-full min-h-[65vh]">
       <div className="flex items-center justify-end mb-2">
@@ -156,6 +270,28 @@ function CurvedGallerySkeleton() {
   );
 }
 
+function MobileHooksSkeleton(){
+  const count = 8;
+  return (
+    <div className="w-full h-full min-h-[65vh]">
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="sticky top-0 z-20 -mx-6 px-6 pt-1 pb-2 bg-[color:var(--card)]/80 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--card)]/60">
+          <Skeleton className="h-9 w-full" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 pb-6">
+          {Array.from({ length: count }).map((_, i) => (
+            <div key={i} className="rounded-lg overflow-hidden bg-white/5 border border-white/10">
+              <Skeleton className="w-full aspect-[3/4]" />
+              <div className="p-2">
+                <Skeleton className="h-3 w-3/5" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 // extractFirstFrame not used; remove to satisfy unused warnings
 
 export default function TabsViewFancy() {
@@ -251,6 +387,24 @@ function TemplatesSkeletonGrid(){
           </div>
         </div>
       ))}
+      <div className="hidden lg:block rounded-lg overflow-hidden bg-white/5 border border-white/10">
+        <Skeleton className="w-full aspect-[3/4]" />
+        <div className="p-2">
+          <Skeleton className="h-4 w-2/5" />
+          <div className="mt-2 flex items-center gap-2">
+            <Skeleton className="h-3 w-3/5" />
+          </div>
+        </div>
+      </div>
+      <div className="hidden lg:block rounded-lg overflow-hidden bg-white/5 border border-white/10">
+        <Skeleton className="w-full aspect-[3/4]" />
+        <div className="p-2">
+          <Skeleton className="h-4 w-2/5" />
+          <div className="mt-2 flex items-center gap-2">
+            <Skeleton className="h-3 w-3/5" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -436,7 +590,7 @@ export function TemplatesTabContent(){
   }
 
   const grid = (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
       {items.map((it, idx)=> (
         <div key={idx} className="relative">
           <button className={`absolute top-[0.5rem] right-[0.5rem] z-10 rounded-full ${favBusy[String(it.id||it.slug)] ? 'bg-black/40' : 'bg-black/60 hover:bg-black/70'} text-white px-[0.6rem] py-[0.4rem] focus:outline-none focus:ring-2 focus:ring-primary`} aria-label={it.isFavorited ? 'Remove from favourites' : 'Add to favourites'} onClick={(e)=>{ e.stopPropagation(); toggleFavorite(it.id, it.slug); }} disabled={!!favBusy[String(it.id||it.slug)]}>
@@ -576,6 +730,70 @@ export function TemplatesTabContent(){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVehicleKey, JSON.stringify(profileVehicles)]);
 
+  // Reuse generating logic for both manual and automatic crop flows
+  async function finalizeWithCroppedBlob(blob: Blob) {
+    const fr = new FileReader();
+    const dataUrl: string = await new Promise((resolve)=>{ fr.onloadend=()=> resolve(String(fr.result||'')); fr.readAsDataURL(blob); });
+    const variables: Record<string, string> = {};
+    const v = findVehicleForSelected();
+    if (v) {
+      const brand = v.make || '';
+      const model = v.model || '';
+      const cf = (v as unknown as { colorFinish?: string })?.colorFinish ? String((v as unknown as { colorFinish?: string }).colorFinish) : '';
+      const acc = (v as unknown as { accents?: string })?.accents ? String((v as unknown as { accents?: string }).accents) : '';
+      const combo = acc ? `${cf} with ${acc}` : cf;
+      if (brand) variables.BRAND = brand;
+      if (model) variables.MODEL = model;
+      if (cf) variables.COLOR_FINISH = cf;
+      if (acc) variables.ACCENTS = acc;
+      if (combo) variables.COLOR_FINISH_ACCENTS = combo;
+    }
+    if (source !== 'vehicle') {
+      const tokensInPrompt = new Set(String(activeTemplate?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m)=> m.replace(/^[\[]|[\]]$/g, '')) || []);
+      const builtinNeeded = ["BRAND","MODEL","COLOR_FINISH","ACCENTS"].filter(k=> tokensInPrompt.has(k));
+      const missing: string[] = [];
+      for (const key of builtinNeeded) {
+        const val = varState[key] || '';
+        if (val) variables[key] = val; else missing.push(key);
+      }
+      if (builtinNeeded.length && missing.length) {
+        toast.error(`Please fill: ${missing.join(', ')}`);
+        return;
+      }
+    }
+    const varDefs = Array.isArray(activeTemplate?.variables) ? (activeTemplate?.variables as Array<Record<string, unknown>>) : [];
+    for (const vDef of varDefs) {
+      const key = String(vDef?.key || '').trim();
+      if (!key) continue;
+      const val = varState[key] || '';
+      if (val) variables[key] = val;
+    }
+    const payload = { templateId: active?.id, templateSlug: active?.slug, userImageDataUrls: [dataUrl], variables } as Record<string, unknown>;
+    const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    let data: Record<string, unknown> = {}; try { data = await res.json(); } catch { data = {}; }
+    if (!res.ok) { toast.error(String((data as { error?: string }).error || 'Generation failed')); return; }
+    if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
+    if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
+    if (data?.key) setResultKey(String(data.key));
+  }
+
+  async function autoCropAndGenerateFromUrl(safeUrl: string, targetAspect: number) {
+    // Fetch image and crop minimally to exact aspect ratio, then finalize
+    const img = await new Promise<HTMLImageElement | null>((resolve)=>{ try { const el = new Image(); el.onload=()=> resolve(el); el.onerror=()=> resolve(null); el.src = safeUrl; } catch { resolve(null); } });
+    if (!img) return;
+    const w = img.naturalWidth || img.width; const h = img.naturalHeight || img.height; if (!w || !h) return;
+    const ar = w / h;
+    let cropW = w, cropH = h, cropX = 0, cropY = 0;
+    if (ar > targetAspect) { cropW = Math.round(h * targetAspect); cropH = h; cropX = Math.round((w - cropW) / 2); cropY = 0; }
+    else if (ar < targetAspect) { cropW = w; cropH = Math.round(w / targetAspect); cropX = 0; cropY = Math.round((h - cropH) / 2); }
+    const canvas = document.createElement('canvas'); canvas.width = cropW; canvas.height = cropH;
+    const ctx = canvas.getContext('2d'); if (!ctx) return;
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    const blob: Blob | null = await new Promise((resolve)=> canvas.toBlob((b)=> resolve(b), 'image/jpeg', 0.92));
+    if (!blob) return;
+    await finalizeWithCroppedBlob(blob);
+  }
+
   async function generate() {
     if (!active) return;
     setResultUrl(null);
@@ -617,8 +835,14 @@ export function TemplatesTabContent(){
             const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img = new Image(); img.onload=()=> resolve({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
             if (dims) {
               const ar = dims.w / dims.h;
-              const tolerance = 0.02;
-              if (Math.abs(ar / Number(t.aspectRatio) - 1) > tolerance) {
+              const tolerance = 0.05;
+              const targetAR = Number(t.aspectRatio);
+              if (Math.abs(ar / targetAR - 1) <= tolerance) {
+                // Auto-crop minimally and continue without popup
+                setBusy(true);
+                try { await autoCropAndGenerateFromUrl(`/api/storage/file?key=${encodeURIComponent(selectedFullKey)}`, targetAR); } finally { setBusy(false); }
+                return;
+              } else {
                 setPendingKeys([]);
                 // Use same-origin proxy to ensure drawable image for canvas
                 setCropUrl(`/api/storage/file?key=${encodeURIComponent(selectedFullKey)}`);
@@ -688,23 +912,23 @@ export function TemplatesTabContent(){
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2 gap-2">
+      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
         <div />
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <div className="text-xs text-white/70">Filter</div>
             <Select value={filterBy} onValueChange={(v: 'all' | 'favorites')=> setFilterBy(v || 'all')}>
-              <SelectTrigger className="h-8 min-w-[10rem]"><SelectValue placeholder="All" /></SelectTrigger>
+              <SelectTrigger className="h-8 min-w-[10rem] w-full sm:w-auto"><SelectValue placeholder="All" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
                 <SelectItem value="favorites">My favourites</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <div className="text-xs text-white/70">Sort</div>
             <Select value={sortBy} onValueChange={(v: 'recent' | 'favorites')=> setSortBy(v || 'recent')}>
-              <SelectTrigger className="h-8 min-w-[10rem]"><SelectValue placeholder="Most recent" /></SelectTrigger>
+              <SelectTrigger className="h-8 min-w-[10rem] w-full sm:w-auto"><SelectValue placeholder="Most recent" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="recent">Most recent</SelectItem>
                 <SelectItem value="favorites">Most favourited</SelectItem>
@@ -715,15 +939,17 @@ export function TemplatesTabContent(){
       </div>
       {grid}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
+        <DialogContent className="p-4 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
           <DialogHeader>
             <DialogTitle>Use template{active ? ` — ${active.name}` : ''}</DialogTitle>
           </DialogHeader>
           {busy ? (
-            <div className="p-10 min-h-[16rem] grid place-items-center">
+            <div className="p-6 sm:p-10 min-h-[12rem] grid place-items-center">
               <div className="flex flex-col items-center gap-3">
-                <Lottie animationData={carLoadAnimation as object} loop style={{ width: 280, height: 170 }} />
-                <div className="text-sm text-white/80">Generating… this may take a moment</div>
+                <div className="w-[14rem] h-[8rem] sm:w-[17.5rem] sm:h-[10.5rem]">
+                  <Lottie animationData={carLoadAnimation as object} loop style={{ width: '100%', height: '100%' }} />
+                </div>
+                <div className="text-sm text-white/80 text-center px-2">Generating… this may take a moment</div>
               </div>
             </div>
           ) : resultUrl ? (
@@ -731,14 +957,14 @@ export function TemplatesTabContent(){
               <div className="w-full grid place-items-center">
                 <div className="text-xs text-white/70 mb-1">Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=generations" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/generations</a></div>
                 {activeUrl || resultUrl ? (
-                  <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-[32rem] max-h-[56vh] h-auto object-contain" unoptimized />
+                  <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-full sm:max-w-[32rem] max-h-[56vh] h-auto object-contain" unoptimized />
                 ) : null}
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <Button onClick={()=>{ setResultUrl(null); }}>Try again</Button>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={()=> setDesignOpen(true)}>Designer</Button>
-                  <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" disabled={upscaleBusy || !resultKey} onClick={async()=>{
+              <div className="flex flex-wrap items-center gap-2">
+                <Button className="w-full sm:w-auto" onClick={()=>{ setResultUrl(null); }}>Try again</Button>
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
+                  <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70 flex-1 sm:flex-none min-w-[9rem]" onClick={()=> setDesignOpen(true)}>Designer</Button>
+                  <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70 flex-1 sm:flex-none min-w-[12rem]" disabled={upscaleBusy || !resultKey} onClick={async()=>{
                     if (canonicalPlan(me?.plan) !== 'ultra') {
                       try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
                       return;
@@ -769,7 +995,7 @@ export function TemplatesTabContent(){
                     } finally { setUpscaleBusy(false); }
                   }}>{upscales.length ? 'Upscale again' : `Upscale (up to 6MP)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
                   </Button>
-                  <Button onClick={async()=>{
+                  <Button className="flex-1 sm:flex-none min-w-[9rem]" onClick={async()=>{
                   try {
                     const r = await fetch((activeUrl || resultUrl)!, { cache:'no-store' });
                     const blob = await r.blob();
@@ -941,11 +1167,11 @@ export function TemplatesTabContent(){
                           <Button size="sm" variant="secondary" onClick={()=>{ try { window.dispatchEvent(new CustomEvent('open-profile')); setTimeout(()=>{ try { window.dispatchEvent(new CustomEvent('highlight-vehicles')); } catch {} }, 300); } catch {} }}>Add vehicle</Button>
                         </div>
                       )}
-                      <div className="overflow-x-auto">
-                        <div className="flex gap-3 pb-2">
+                      <div className="overflow-visible sm:overflow-x-auto">
+                        <div className="flex flex-wrap gap-3 pb-2">
                           {vehiclePhotos.length ? vehiclePhotos.map((k)=> (
-                            <button key={k} onClick={()=>setSelectedVehicleKey(k)} className="relative focus:outline-none shrink-0 w-28">
-                              <div className={`w-28 rounded p-0.5 ${selectedVehicleKey===k ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
+                            <button key={k} onClick={()=>setSelectedVehicleKey(k)} className="relative focus:outline-none shrink sm:shrink-0 w-24 sm:w-28">
+                              <div className={`w-full rounded p-0.5 ${selectedVehicleKey===k ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
                                 <div className="rounded overflow-hidden"><VehicleImage keyStr={k} /></div>
                               </div>
                             </button>
