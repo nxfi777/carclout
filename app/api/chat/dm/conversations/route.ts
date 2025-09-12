@@ -27,17 +27,26 @@ export async function GET() {
     }
   }
   const others = Array.from(byOther.keys());
+  // Exclude hidden conversations for this user
+  const hres = await db.query("SELECT otherEmail FROM dm_hidden WHERE userEmail = $me;", { me: String(me).toLowerCase() });
+  const hrows = Array.isArray(hres) && Array.isArray(hres[0]) ? (hres[0] as Array<{ otherEmail?: string }>) : [];
+  const hidden = new Set<string>();
+  for (const r of hrows) {
+    const v = typeof r?.otherEmail === 'string' ? r.otherEmail : '';
+    if (v) hidden.add(v.toLowerCase());
+  }
+  const filteredOthers = others.filter((e) => !hidden.has(String(e || '').toLowerCase()));
   if (others.length === 0) {
     return NextResponse.json({ conversations: [{ email: me, name: selfName, image: selfImage }] });
   }
 
-  const ures = await db.query("SELECT email, name, image FROM user WHERE email IN $emails;", { emails: others });
+  const ures = await db.query("SELECT email, name, image FROM user WHERE email IN $emails;", { emails: filteredOthers });
   const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as Array<{ email?: string; name?: string; image?: string }>) : [];
   const info = new Map<string, { email: string; name?: string; image?: string }>();
   for (const u of urows) {
     if (u?.email) info.set(u.email, { email: u.email, name: u?.name, image: u?.image });
   }
-  const conversations = others.map((email) => {
+  const conversations = filteredOthers.map((email) => {
     const fallback = { email, name: email, image: undefined } as { email: string; name?: string; image?: string };
     return info.get(email) || fallback;
   });

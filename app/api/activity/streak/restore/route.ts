@@ -45,16 +45,15 @@ export async function POST() {
   let i = days.length - 1;
   let currentStreakLen = 0;
   while (i >= 0 && days[i].active) { currentStreakLen += 1; i -= 1; }
-  const trailingStartIdx = i + 1; // start index of current trailing active segment (may equal days.length)
 
   // Step 2: gap length (consecutive inactive days before trailing active)
-  let gapEndIdx = i;
+  const gapEndIdx = i;
   while (i >= 0 && !days[i].active) { i -= 1; }
   const gapStartIdx = i + 1;
   const gapLen = gapEndIdx >= gapStartIdx ? (gapEndIdx - gapStartIdx + 1) : 0;
 
   // Step 3: previous active length before the gap
-  let prevStreakEndIdx = i;
+  const prevStreakEndIdx = i;
   while (i >= 0 && days[i].active) { i -= 1; }
   const prevStreakStartIdx = i + 1;
   const prevStreakLen = prevStreakEndIdx >= prevStreakStartIdx ? (prevStreakEndIdx - prevStreakStartIdx + 1) : 0;
@@ -116,7 +115,16 @@ export async function POST() {
     if (daysAfter[idx].active) newStreak += 1; else break;
   }
 
-  try { (globalThis as any).window?.dispatchEvent?.(new CustomEvent('streak-refresh')); } catch {}
+  try {
+    const maybeWindow = (globalThis as unknown as {
+      window?: { dispatchEvent?: (e: unknown) => void };
+    }).window;
+    const ev: unknown =
+      typeof CustomEvent !== "undefined"
+        ? new CustomEvent("streak-refresh")
+        : ({ type: "streak-refresh" } as unknown);
+    maybeWindow?.dispatchEvent?.(ev);
+  } catch {}
 
   return NextResponse.json({ restored: true, missedDays, cost, newStreak, prevStreakLen, currentStreakLen });
 }

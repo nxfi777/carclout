@@ -27,12 +27,21 @@ async function ensurePro(db: Awaited<ReturnType<typeof getSurreal>>) {
   }
 }
 
+async function ensureFeatureRequests(db: Awaited<ReturnType<typeof getSurreal>>) {
+  const res = await db.query("SELECT * FROM channel WHERE slug = 'request-a-feature' LIMIT 1;");
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
+  if (!row) {
+    await db.create("channel", { name: "Request a Feature", slug: "request-a-feature", created_at: new Date().toISOString() });
+  }
+}
+
 export async function GET() {
   const db = await getSurreal();
   await Promise.allSettled([
     ensureGeneral(db),
     ensureLivestream(db),
     ensurePro(db),
+    ensureFeatureRequests(db),
   ]);
   const session = await getSessionLite();
   const res = await db.query("SELECT * FROM channel ORDER BY created_at;");

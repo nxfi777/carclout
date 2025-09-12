@@ -7,7 +7,6 @@ import React, {
   useId,
   useLayoutEffect,
   useRef,
-  useMemo,
   useState,
 } from "react";
 
@@ -313,16 +312,18 @@ const ElectricBorder: React.FC<ElectricBorderProps> = ({
         className="absolute inset-0 pointer-events-none"
         style={{ ...inheritRadius, zIndex: 2 }}
       >
-        {/* Clip inner glow layers but do not clip the outward pulse ring */}
-        <div className="absolute inset-0 overflow-hidden rounded-[inherit]">
+        {/* Allow animated stroke to bleed outside; keep inner glows clipped */}
+        <div className="absolute inset-0 rounded-[inherit]">
           <div
             ref={strokeRef}
             className="absolute inset-0 box-border"
             style={strokeStyle}
           />
-          <div className="absolute inset-0 box-border" style={glow1Style} />
-          <div className="absolute inset-0 box-border" style={glow2Style} />
-          <div className="absolute inset-0" style={bgGlowStyle} />
+          <div className="absolute inset-0 overflow-hidden rounded-[inherit]">
+            <div className="absolute inset-0 box-border" style={glow1Style} />
+            <div className="absolute inset-0 box-border" style={glow2Style} />
+            <div className="absolute inset-0" style={bgGlowStyle} />
+          </div>
         </div>
         {/* pulse removed per request */}
       </div>

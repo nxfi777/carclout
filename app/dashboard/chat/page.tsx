@@ -9,6 +9,8 @@ import TabsViewFancy from "@/components/ui/tabs-view-fancy";
 import Lottie from "lottie-react";
 import fireAnimation from "@/public/fire.json";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import FeatureRequestsPanel from "@/components/feature-requests-panel";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -51,6 +53,13 @@ function DashboardChatPageInner() {
   const [muted] = useState<{ active: boolean; reason?: string } | null>(null);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [dmTtlSeconds, setDmTtlSeconds] = useState<number>(24*60*60);
+  // Helper: on mobile, close channels sidebar after navigating
+  const closeChannelsIfMobile = () => {
+    try {
+      if (typeof window !== 'undefined' && window.innerWidth < 768) setShowChannels(false);
+    } catch {}
+  };
   // Open sidebars by default on desktop (md and up)
   useEffect(() => {
     try {
@@ -104,13 +113,14 @@ function DashboardChatPageInner() {
     async function init() {
       try {
         // parallelize initial fetches
-        const [meRes, channelsRes, messagesRes, presenceRes, convRes, blocksRes] = await Promise.allSettled([
+        const [meRes, channelsRes, messagesRes, presenceRes, convRes, blocksRes, dmTtlRes] = await Promise.allSettled([
           fetch('/api/me', { cache: 'no-store' }).then(r=>r.json()),
           fetch('/api/chat/channels').then(r=>r.json()),
           fetch(`/api/chat/messages?channel=general`).then(r=>r.json()),
           fetch('/api/presence', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({users:[]})),
           fetch('/api/chat/dm/conversations', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({conversations:[]})),
           fetch('/api/blocks', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({blocked:[]})),
+          fetch('/api/chat/dm/settings', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({ ttlSeconds: 86400 })),
         ]);
         if (mounted && meRes.status === 'fulfilled') setMe({ email: meRes.value?.email, role: meRes.value?.role, plan: meRes.value?.plan, name: meRes.value?.name });
         if (mounted && channelsRes.status === 'fulfilled') setChannels((channelsRes.value.channels || []).map((x: { slug: string; name?: string; requiredReadRole?: ChannelPerms['requiredReadRole']; requiredRole?: ChannelPerms['requiredReadRole']; requiredReadPlan?: ChannelPerms['requiredReadPlan']; locked?: boolean; locked_until?: string | null })=> ({ slug: String(x.slug), name: x.name, requiredReadRole: x.requiredReadRole || x.requiredRole, requiredReadPlan: x.requiredReadPlan, locked: !!x.locked, locked_until: x.locked_until || null })));
@@ -118,6 +128,10 @@ function DashboardChatPageInner() {
         if (mounted && presenceRes.status === 'fulfilled') setPresence(presenceRes.value.users || []);
         if (mounted && convRes.status === 'fulfilled') setDmConversations((convRes.value.conversations || []).slice(0, 50));
         if (mounted && blocksRes.status === 'fulfilled') setBlocked(Array.isArray(blocksRes.value?.blocked) ? blocksRes.value.blocked : []);
+        if (mounted && dmTtlRes.status === 'fulfilled') {
+          const v = Number(dmTtlRes.value?.ttlSeconds);
+          if (Number.isFinite(v)) setDmTtlSeconds(Math.max(0, Math.floor(v)));
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -167,6 +181,13 @@ function DashboardChatPageInner() {
       })();
     }
     window.addEventListener('profile-updated', onProfileUpdated as EventListener);
+    const onDmHiddenChanged = async () => {
+      try {
+        const conv = await fetch('/api/chat/dm/conversations', { cache: 'no-store' }).then(r=>r.json());
+        setDmConversations((conv.conversations || []).slice(0, 50));
+      } catch {}
+    };
+    window.addEventListener('dm-hidden-changed', onDmHiddenChanged as EventListener);
     return () => window.removeEventListener('profile-updated', onProfileUpdated as EventListener);
   }, [active]);
 
@@ -211,6 +232,68 @@ function DashboardChatPageInner() {
   }
 
   const [confirmOpen, setConfirmOpen] = useState<null | { type: 'purge', count: number }>(null);
+  const [featureOpen, setFeatureOpen] = useState(false);
+
+  function FeatureRequestInlineForm() {
+    const [busy, setBusy] = useState(false);
+    const [canCreate, setCanCreate] = useState<boolean | null>(null);
+    const [nextAllowedAt, setNextAllowedAt] = useState<string | null>(null);
+    const [title, setTitle] = useState("");
+    const [desc, setDesc] = useState("");
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const r = await fetch('/api/feature-requests?meta=1', { cache: 'no-store' }).then(r=>r.json());
+          if (!cancelled) {
+            setCanCreate(!!r?.canCreate);
+            setNextAllowedAt(r?.nextAllowedAt || null);
+          }
+        } catch {}
+      })();
+      return () => { cancelled = true; };
+    }, []);
+    function cooldownTextFor(iso: string | null) {
+      if (!iso) return null;
+      try {
+        const ts = Date.parse(iso);
+        if (!Number.isFinite(ts)) return null;
+        const ms = ts - Date.now();
+        if (ms <= 0) return null;
+        const hrs = Math.ceil(ms / (60 * 60 * 1000));
+        if (hrs >= 24) { const d = Math.ceil(hrs / 24); return `You can post again in ~${d} day${d===1?'':'s'}.`; }
+        return `You can post again in ~${hrs} hour${hrs===1?'':'s'}.`;
+      } catch { return null; }
+    }
+    return (
+      <div className="rounded border border-[color:var(--border)]/70 bg-[color:var(--card)] p-3">
+        <div className="text-sm font-medium mb-2">Suggest a feature</div>
+        <div className="space-y-2">
+          <input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="Short title" className="w-full rounded bg-white/5 px-3 py-2 text-sm" />
+          <textarea value={desc} onChange={(e)=>setDesc(e.target.value)} placeholder="Optional details" className="w-full rounded bg-white/5 px-3 py-2 text-sm min-h-[6em]" />
+          <div className="flex items-center gap-2">
+            <button type="button" className="px-3 py-2 rounded bg-primary text-black text-sm disabled:opacity-60" disabled={busy || !title.trim() || canCreate === false} onClick={async()=>{
+              setBusy(true);
+              try {
+                const r = await fetch('/api/feature-requests', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title: title.trim(), description: desc.trim() || undefined }) });
+                const j = await r.json();
+                if (!r.ok) {
+                  if (j?.nextAllowedAt) setNextAllowedAt(j.nextAllowedAt);
+                  throw new Error(j?.error || 'Failed to create');
+                }
+                setTitle(""); setDesc("");
+                try { window.dispatchEvent(new CustomEvent('feature-request-created', { detail: j?.request })); } catch {}
+              } catch {}
+              finally { setBusy(false); }
+            }}> {busy ? 'Submitting…' : 'Submit'} </button>
+            {canCreate === false && cooldownTextFor(nextAllowedAt) ? (
+              <span className="text-xs text-white/60">{cooldownTextFor(nextAllowedAt)}</span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   async function tryHandleSlashCommand(input: string): Promise<boolean> {
     const raw = String(input || "").trim();
@@ -453,6 +536,49 @@ function DashboardChatPageInner() {
     return locked;
   }, [activeChannelPerms, activeChatType]);
   const lockedForMe = (isChannelLocked && me?.role !== 'admin' && activeChatType === 'channel');
+  function DmTtlNotice({ self, ttlSeconds }: { self?: boolean; ttlSeconds: number }) {
+    const [open, setOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [val, setVal] = useState(ttlSeconds);
+    useEffect(() => { setVal(ttlSeconds); }, [ttlSeconds]);
+    const label = self ? 'Messages stay forever' : (ttlSeconds <= 0 ? 'Messages stay forever' : `Messages auto-delete after ${Math.round(ttlSeconds/3600)}h`);
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button type="button" className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 border border-[color:var(--border)]/60">
+            {label}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" sideOffset={8} className="p-3 w-64">
+          <div className="text-xs mb-2">Direct messages auto-delete by default. Change your preference:</div>
+          <div className="flex flex-col gap-2">
+            {[24, 48, 72, 0].map((hrs)=> (
+              <label key={hrs} className="text-xs inline-flex items-center gap-2">
+                <input type="radio" name="dm-ttl" className="accent-[color:var(--primary)]" checked={hrs===0 ? val<=0 : val===hrs*3600} onChange={()=> setVal(hrs===0 ? 0 : hrs*3600)} />
+                <span>{hrs===0 ? 'Never auto-delete' : `${hrs} hours`}</span>
+              </label>
+            ))}
+            <div className="flex items-center justify-end gap-2 mt-1">
+              <button className="text-xs px-2 py-1 rounded bg-white/5 border border-[color:var(--border)]/60" onClick={()=> setOpen(false)}>Close</button>
+              <button disabled={saving} className="text-xs px-2 py-1 rounded bg-primary text-black disabled:opacity-60" onClick={async()=>{
+                setSaving(true);
+                try {
+                  const r = await fetch('/api/chat/dm/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ttlSeconds: val }) }).then(r=>r.json());
+                  const v = Number(r?.ttlSeconds);
+                  if (Number.isFinite(v)) setDmTtlSeconds(Math.max(0, Math.floor(v)));
+                  toast.success('DM expiry preference updated');
+                  setOpen(false);
+                } catch {
+                } finally {
+                  setSaving(false);
+                }
+              }}>Save</button>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  }
   const filterByChannelAccess = (u: { role?: string; plan?: string; status?: string; email?: string; name?: string; image?: string }) => {
     if (!activeChannelPerms || activeChatType === 'dm') return true;
     const okRole = canAccessByRole(u.role as 'user' | 'staff' | 'admin' | undefined, activeChannelPerms.requiredReadRole);
@@ -530,8 +656,12 @@ function DashboardChatPageInner() {
                   setForgeView('chat');
                   router.push('/dashboard/chat');
                   setChatLoading(true);
-                  const m: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/messages?channel=${c.slug}`).then(r=>r.json());
-                  setMessages((m.messages||[]).map((mm)=>({...mm,status:'sent'})));
+                  if (c.slug === 'request-a-feature') {
+                    setMessages([]);
+                  } else {
+                    const m: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/messages?channel=${c.slug}`).then(r=>r.json());
+                    setMessages((m.messages||[]).map((mm)=>({...mm,status:'sent'})));
+                  }
                   setChatLoading(false);
                 }} className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${forgeView==='chat' && activeChatType==='channel' && active===c.slug ? `bg-white/10 ${c.slug==='pro' ? 'ring-1 ring-[#ff6a00]/40' : ''}` : `hover:bg-white/5 ${c.slug==='pro' ? 'ring-1 ring-transparent hover:ring-[#ff6a00]/30' : ''}`}`}>
                   <span className={`${c.slug==='pro' ? 'text-[#ff6a00]' : ''}`}>#{c.slug}</span>
@@ -571,6 +701,26 @@ function DashboardChatPageInner() {
                         ) : (isPro ? (
                           <span className="ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(255,106,0,0.12)] text-[#ff6a00] border border-[#ff6a00]/30">Pro</span>
                         ) : null)}
+                        <button
+                          title="Close conversation"
+                          aria-label="Close conversation"
+                          className="ml-2 text-xs px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-[color:var(--border)]/60"
+                          onClick={async (e)=>{
+                            e.preventDefault();
+                            e.stopPropagation();
+                            try {
+                              await fetch('/api/chat/dm/hidden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherEmail: u.email }) });
+                              setDmConversations(prev => prev.filter(c => c.email !== u.email));
+                              // If closing the active DM, switch back to last channel
+                              setActiveChatType('channel');
+                              setActive('general');
+                              setActiveDm(null);
+                              setMessages([]);
+                            } catch {}
+                          }}
+                        >
+                          ×
+                        </button>
                     </button>
                   </ContextMenuTrigger>
                   <UserContextMenu
@@ -588,10 +738,13 @@ function DashboardChatPageInner() {
                       setActiveDm({ email, name, image: u.image });
                   setForgeView('chat');
                   router.push('/dashboard/chat');
+                  closeChannelsIfMobile();
                   setChatLoading(true);
                       const m: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                   setMessages((m.messages||[]).map((mm)=>({...mm,status:'sent'})));
                   setChatLoading(false);
+                      // Unhide if previously hidden
+                      try { await fetch('/api/chat/dm/hidden', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherEmail: email }) }); } catch {}
                       setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
                     }}
                   />
@@ -631,6 +784,8 @@ function DashboardChatPageInner() {
                             {isAdm ? (
                               <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[rgba(239,68,68,0.12)] text-[#ef4444] border border-[#ef4444]/30">Admin</span>
                             ) : null}
+                            {/* Ephemeral TTL indicator */}
+                            <DmTtlNotice self={!!(me?.email && activeDm?.email && me.email.toLowerCase() === activeDm.email.toLowerCase())} ttlSeconds={dmTtlSeconds} />
                           </span>
                         );
                       })()
@@ -694,7 +849,9 @@ function DashboardChatPageInner() {
                     <Lottie animationData={fireAnimation} loop className="w-20 h-20 mt-8" />
                   </div>
                 ) : (
-                  messages.map((m)=> {
+                  active === 'request-a-feature' ? (
+                    <FeatureRequestsPanel showForm={false} />
+                  ) : messages.map((m)=> {
                     const p = (m.userEmail ? presence.find(u => (u.email || '').toLowerCase() === (m.userEmail || '').toLowerCase()) : undefined);
                     const isAdminName = (p?.role || '').toLowerCase() === 'admin';
                     const isProName = (() => { const s = (p?.plan || '').toLowerCase(); return canonicalPlan(s) === 'ultra'; })();
@@ -745,6 +902,7 @@ function DashboardChatPageInner() {
                             setActiveDm({ email, name, image: undefined });
                             setForgeView('chat');
                             router.push('/dashboard/chat');
+                            closeChannelsIfMobile();
                             setChatLoading(true);
                             const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                             setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
@@ -765,56 +923,79 @@ function DashboardChatPageInner() {
                 if (text.trim().startsWith('/')) { const handled = await tryHandleSlashCommand(text); inputRef.current!.value = ""; if (handled) return; }
                 if (muted?.active) return;
                 inputRef.current!.value="";
+                if (active === 'request-a-feature') return; // no chat send in feature channel
                 await sendMessage(text);
               }}>
-                <input ref={inputRef} className="flex-1 rounded bg-white/5 px-3 py-2 text-sm disabled:opacity-60" placeholder={activeChatType==='dm' ? `Message @${activeDm?.name || activeDm?.email || 'self'}` : `Message #${active}`} disabled={lockedForMe} />
-                <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
-                  <PopoverTrigger asChild>
-                    <button type="button" className="hidden md:inline-flex items-center justify-center px-3 py-2 rounded bg-white/5 hover:bg-white/10 text-sm" title="Insert emoji" aria-label="Insert emoji">
-                      😊
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" sideOffset={8} className="p-2 w-72 max-h-[20rem] overflow-y-auto">
-                    <div className="grid grid-cols-8 gap-2">
-                      {[
-                        // Smileys & emotion
-                        "😀","😁","😂","🤣","😊","😇","🙂","😉",
-                        "🥰","😍","😘","😗","😙","😚","😋","😛",
-                        "😜","🤪","😝","🫠","🤗","🤩","🤔","🫨",
-                        "🤨","😐","😑","😶","🙄","😏","😣","😥",
-                        "😮","🤐","😯","😪","😫","🥱","😴","😌",
-                        "😤","😮‍💨","😓","😢","😭","😡","🤬","🥵",
-                        "🥶","🤮","🤢","🤧","😷","🤕","🤒","🤥",
-                        "🤯","🤠","😎","🥳","🥺","🫠","🫨","🫥",
-                        // People & gestures
-                        "👍","👎","👏","🙌","🙏","🤝","🤞","✌️",
-                        "🤘","🤙","💪","🫶","👉","👈","👆","👇",
-                        "🫵","👋","✋","🖐️","🤚","✍️","🤌","🫰",
-                        "🫳","🫴","👀","🫡","🤝","🤲","🙇","💁",
-                        // Hearts & symbols
-                        "❤️","🧡","💛","💚","💙","💜","🖤","🤍",
-                        "🤎","💖","💗","💓","💞","💕","💘","💝",
-                        "✨","🎉","🎊","🎁","🥇","⭐️","🌟","⚡️",
-                        "✅","❌","❓","❗","⭕","🔴","🟢","🔵",
-                        "🟡","🟣","🟤","⚪","⚫","🟥","🟧","🟨",
-                        // Fun/memes
-                        "💯","🗿","💀","☠️","🤡","🧠","🧩","🛠️",
-                        "🔥","🚀","🧨","🎯","🪄","🌀","💡","📎",
-                        // Animals & food (a few)
-                        "🐶","🐱","🦊","🐼","🦄","🍕","🍔","☕️",
-                        // Weather & celestial
-                        "☀️","🌙","☁️","🌧️","🌈","❄️","🌊","🌋",
-                        // Flags
-                        ...flagEmojis
-                      ].map((e, i)=> (
-                        <button key={`${e}-${i}`} type="button" className="text-xl leading-none rounded hover:bg-white/10 p-1" onClick={()=>{ insertEmoji(e); setEmojiOpen(false); }}>
-                          {e}
+                {active === 'request-a-feature' ? (
+                  <div className="w-full">
+                    <Collapsible open={featureOpen} onOpenChange={setFeatureOpen}>
+                      <div className="flex items-center gap-2 w-full">
+                        <CollapsibleTrigger asChild>
+                          <button type="button" className="px-3 py-2 rounded bg-white/5 hover:bg-white/10 text-sm border border-[color:var(--border)]/60">
+                            {featureOpen ? 'Hide request form' : 'Request a feature'}
+                          </button>
+                        </CollapsibleTrigger>
+                        {!featureOpen ? (
+                          <span className="text-xs text-white/60">Pro can post daily; others weekly.</span>
+                        ) : null}
+                      </div>
+                      <CollapsibleContent className="pt-2">
+                        <FeatureRequestInlineForm />
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                ) : (
+                  <>
+                    <input ref={inputRef} className="flex-1 rounded bg-white/5 px-3 py-2 text-sm disabled:opacity-60" placeholder={activeChatType==='dm' ? `Message @${activeDm?.name || activeDm?.email || 'self'}` : `Message #${active}`} disabled={lockedForMe} />
+                    <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
+                      <PopoverTrigger asChild>
+                        <button type="button" className="hidden md:inline-flex items-center justify-center px-3 py-2 rounded bg-white/5 hover:bg-white/10 text-sm" title="Insert emoji" aria-label="Insert emoji">
+                          😊
                         </button>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                <button type="submit" className="px-3 py-2 rounded bg-primary text-black text-sm disabled:opacity-60" disabled={!!muted?.active || lockedForMe}>Send</button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" sideOffset={8} className="p-2 w-72 max-h-[20rem] overflow-y-auto">
+                        <div className="grid grid-cols-8 gap-2">
+                          {[
+                            // Smileys & emotion
+                            "😀","😁","😂","🤣","😊","😇","🙂","😉",
+                            "🥰","😍","😘","😗","😙","😚","😋","😛",
+                            "😜","🤪","😝","🫠","🤗","🤩","🤔","🫨",
+                            "🤨","😐","😑","😶","🙄","😏","😣","😥",
+                            "😮","🤐","😯","😪","😫","🥱","😴","😌",
+                            "😤","😮‍💨","😓","😢","😭","😡","🤬","🥵",
+                            "🥶","🤮","🤢","🤧","😷","🤕","🤒","🤥",
+                            "🤯","🤠","😎","🥳","🥺","🫠","🫨","🫥",
+                            // People & gestures
+                            "👍","👎","👏","🙌","🙏","🤝","🤞","✌️",
+                            "🤘","🤙","💪","🫶","👉","👈","👆","👇",
+                            "🫵","👋","✋","🖐️","🤚","✍️","🤌","🫰",
+                            "🫳","🫴","👀","🫡","🤝","🤲","🙇","💁",
+                            // Hearts & symbols
+                            "❤️","🧡","💛","💚","💙","💜","🖤","🤍",
+                            "🤎","💖","💗","💓","💞","💕","💘","💝",
+                            "✨","🎉","🎊","🎁","🥇","⭐️","🌟","⚡️",
+                            "✅","❌","❓","❗","⭕","🔴","🟢","🔵",
+                            "🟡","🟣","🟤","⚪","⚫","🟥","🟧","🟨",
+                            // Fun/memes
+                            "💯","🗿","💀","☠️","🤡","🧠","🧩","🛠️",
+                            "🔥","🚀","🧨","🎯","🪄","🌀","💡","📎",
+                            // Animals & food (a few)
+                            "🐶","🐱","🦊","🐼","🦄","🍕","🍔","☕️",
+                            // Weather & celestial
+                            "☀️","🌙","☁️","🌧️","🌈","❄️","🌊","🌋",
+                            // Flags
+                            ...flagEmojis
+                          ].map((e, i)=> (
+                            <button key={`${e}-${i}`} type="button" className="text-xl leading-none rounded hover:bg-white/10 p-1" onClick={()=>{ insertEmoji(e); setEmojiOpen(false); }}>
+                              {e}
+                            </button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    <button type="submit" className="px-3 py-2 rounded bg-primary text-black text-sm disabled:opacity-60" disabled={!!muted?.active || lockedForMe}>Send</button>
+                  </>
+                )}
               </form>
             </>
           )}
@@ -886,6 +1067,7 @@ function DashboardChatPageInner() {
                             setActiveDm({ email, name, image: u.image });
                           setForgeView('chat');
                           router.push('/dashboard/chat');
+                          closeChannelsIfMobile();
                           setChatLoading(true);
                             const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                             setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
@@ -934,6 +1116,7 @@ function DashboardChatPageInner() {
                               setActiveDm({ email, name, image: u.image });
                               setForgeView('chat');
                               router.push('/dashboard/chat');
+                              closeChannelsIfMobile();
                               setChatLoading(true);
                               const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                               setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
@@ -1044,6 +1227,7 @@ function DashboardChatPageInner() {
                             setActiveDm({ email, name, image: u.image });
                           setForgeView('chat');
                           router.push('/dashboard/chat');
+                          closeChannelsIfMobile();
                           setChatLoading(true);
                             const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                             setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
@@ -1218,6 +1402,23 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
         >
           {isSelf ? 'Open your private chat' : `Message @${profile?.name || name}`}
           </button>
+        {!isSelf ? (
+          <button
+            className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/15 border border-[color:var(--border)]/60 cursor-pointer"
+            onClick={async ()=>{
+              try {
+                await fetch('/api/chat/dm/hidden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherEmail: email }) });
+                // Optimistically remove from sidebar by dispatching a simple event for parent to refetch
+                try { window.dispatchEvent(new CustomEvent('dm-hidden-changed')); } catch {}
+                toast.success('Conversation closed');
+              } catch {}
+            }}
+            title="Close conversation"
+            aria-label="Close conversation"
+          >
+            Close
+          </button>
+        ) : null}
         {(profile?.name || name) ? (
           <button
             className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/15 border border-[color:var(--border)]/60 cursor-pointer"
@@ -1295,6 +1496,12 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
         ) : (
           <ContextMenuItem onClick={async()=>{ try{ await fetch('/api/blocks',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ targetEmail: email })}); onBlockedChange(prev=>[...prev, email]); } catch {} }}>Block</ContextMenuItem>
         )
+      ) : null}
+      {meEmail && meEmail.toLowerCase() !== email.toLowerCase() ? (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={async()=>{ try{ await fetch('/api/chat/dm/hidden',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ otherEmail: email })}); try { window.dispatchEvent(new CustomEvent('dm-hidden-changed')); } catch {}; toast.success('Conversation closed'); } catch {} }}>Close conversation</ContextMenuItem>
+        </>
       ) : null}
     </ContextMenuContent>
   );

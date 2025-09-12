@@ -8,6 +8,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const channel = searchParams.get("channel") || "general";
+  if (channel === 'request-a-feature') {
+    // No SSE for feature request channel; handled via REST
+    return new Response(null, { status: 204 });
+  }
   const session = await getSessionLite();
   const db = await getSurreal();
   const te = new TextEncoder();

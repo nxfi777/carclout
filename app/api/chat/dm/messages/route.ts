@@ -55,14 +55,42 @@ export async function GET(request: Request) {
   const db = await getSurreal();
   await ensureDmIndexes();
 
+  // TTL logic: by default 24h unless self-DM, which never expires; user-configurable via user.dm_ttl_seconds
+  let ttlSeconds = 24 * 60 * 60;
+  try {
+    const sres = await db.query("SELECT dm_ttl_seconds FROM user WHERE email = $me LIMIT 1;", { me });
+    const srow = Array.isArray(sres) && Array.isArray(sres[0]) ? (sres[0][0] as { dm_ttl_seconds?: number } | null) : null;
+    if (typeof srow?.dm_ttl_seconds === 'number' && Number.isFinite(srow.dm_ttl_seconds)) {
+      ttlSeconds = Math.max(0, Math.floor(srow.dm_ttl_seconds));
+    }
+  } catch {}
+  const isSelf = String(me).toLowerCase() === String(other).toLowerCase();
+  const cutoffIso = (() => {
+    if (isSelf) return null; // self-DM never expires
+    if (ttlSeconds <= 0) return null; // 0 = never expire per user's setting
+    const cutoffMs = Date.now() - ttlSeconds * 1000;
+    return new Date(cutoffMs).toISOString();
+  })();
+
+  // Purge-on-read: delete expired messages for this DM key (never purge self-DM)
+  if (!isSelf && cutoffIso) {
+    try {
+      await db.query(
+        "DELETE dm_message WHERE dmKey = $key AND senderEmail != recipientEmail AND created_at < $cutoff;",
+        { key, cutoff: cutoffIso }
+      );
+    } catch {}
+  }
+
   const res = await db.query(
     `SELECT id, dmKey, text, created_at, senderEmail, senderName, recipientEmail, sender
      FROM dm_message
      WHERE dmKey = $key
        AND senderEmail NOT IN (SELECT targetEmail FROM block WHERE userEmail = $me)
+       AND ($cutoff IS NONE OR created_at >= $cutoff)
      ORDER BY created_at DESC
      LIMIT 200;`,
-    { key, me }
+    { key, me, cutoff: cutoffIso }
   );
   const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
   // Build display name map for rows missing a safe senderName (or containing an email)
