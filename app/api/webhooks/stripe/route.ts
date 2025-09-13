@@ -7,6 +7,47 @@ import { adjustCredits, includedMonthlyCreditsForPlan } from "@/lib/credits";
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 
+async function getCustomerEmailFromStripe(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null | undefined): Promise<string | null> {
+  try {
+    if (!customer) return null;
+    if (typeof customer === "string") {
+      const c = await stripe.customers.retrieve(customer);
+      if ("deleted" in c && (c as Stripe.DeletedCustomer).deleted) {
+        return null;
+      }
+      const email = (c as Stripe.Customer).email;
+      return typeof email === "string" ? email : null;
+    }
+    const c = customer as Stripe.Customer | Stripe.DeletedCustomer;
+    if ("deleted" in c && (c as Stripe.DeletedCustomer).deleted) {
+      return null;
+    }
+    const email = (c as Stripe.Customer).email;
+    return typeof email === "string" ? email : null;
+  } catch (e) {
+    console.error("Failed to resolve customer email:", e);
+    return null;
+  }
+}
+
+async function syncPlanFromSubscription(subId: string): Promise<void> {
+  try {
+    if (!subId) return;
+    const sub = await stripe.subscriptions.retrieve(subId);
+    const email = await getCustomerEmailFromStripe(sub.customer);
+    if (!email) return;
+    const status = sub.status;
+    const priceId = sub?.items?.data?.[0]?.price?.id || null;
+    const mappedPlan: Plan | null = planFromPriceId(priceId);
+    const shouldHaveAccess = status === "active" || status === "trialing";
+    const planToSet: Plan | null = shouldHaveAccess ? mappedPlan : null;
+    const surreal = await getSurreal();
+    await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan: planToSet, email });
+  } catch (e) {
+    console.error("syncPlanFromSubscription failed:", e);
+  }
+}
+
 export async function POST(req: Request) {
   const body = await req.text();
   const sig = (await headers()).get("stripe-signature");
@@ -41,10 +82,17 @@ export async function POST(req: Request) {
             const linePrice = s?.line_items?.data?.[0]?.price?.id || s?.subscription?.items?.data?.[0]?.price?.id;
             plan = planFromPriceId(linePrice);
           }
-          if (customerEmail && plan) {
+          // Prefer syncing from live subscription status if we have a subscription id
+          const maybeSubId = typeof (session as unknown as Record<string, unknown>).subscription === "string"
+            ? String((session as unknown as Record<string, unknown>).subscription)
+            : null;
+          if (maybeSubId) {
+            await syncPlanFromSubscription(maybeSubId);
+          } else if (customerEmail && plan) {
             await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan, email: customerEmail });
-            // First-time plan purchase: seed monthly credits immediately
-            // Map Plan (minimum|basic|pro) to the credit tiers used by includedMonthlyCreditsForPlan
+          }
+          // Seed included credits on first-time plan purchase
+          if (customerEmail && plan) {
             const creditTier: "$1" | "$20" | "$200" | "basic" | "pro" | "ultra" =
               plan === "minimum" ? "$1" : (plan === "basic" ? "basic" : "pro");
             const included = includedMonthlyCreditsForPlan(creditTier);
@@ -55,6 +103,43 @@ export async function POST(req: Request) {
         }
       } catch (e) {
         console.error("Failed to update user plan:", e);
+      }
+      break;
+    }
+    case "invoice.payment_failed": {
+      const invoice = event.data.object as Stripe.Invoice;
+      // Only suspend on subscription-related invoices
+      const inv = invoice as Stripe.Invoice & { subscription?: string | { id: string } | null };
+      if (!inv.subscription) break;
+      try {
+        // Always source-of-truth from live subscription status to avoid ordering races
+        const subId = typeof inv.subscription === "string" ? inv.subscription : String(inv.subscription.id);
+        await syncPlanFromSubscription(subId);
+      } catch (e) {
+        console.error("Failed to suspend user on invoice.payment_failed:", e);
+      }
+      break;
+    }
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      // Only restore on subscription-related invoices
+      const inv = invoice as Stripe.Invoice & { subscription?: string | { id: string } | null };
+      if (!inv.subscription) break;
+      try {
+        // Always source-of-truth from live subscription status
+        const subId = typeof inv.subscription === "string" ? inv.subscription : String(inv.subscription.id);
+        await syncPlanFromSubscription(subId);
+      } catch (e) {
+        console.error("Failed to restore user plan on invoice.paid:", e);
+      }
+      break;
+    }
+    case "customer.subscription.updated": {
+      const sub = event.data.object as Stripe.Subscription;
+      try {
+        await syncPlanFromSubscription(sub.id);
+      } catch (e) {
+        console.error("Failed to sync plan on customer.subscription.updated:", e);
       }
       break;
     }
