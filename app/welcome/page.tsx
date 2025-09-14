@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect as _useEffect } from "react";
 import { useState as _useState } from "react";
@@ -10,6 +10,14 @@ import PlanSelector from "@/components/plan-selector";
 type MeResponse = { name?: string; email?: string; plan?: string | null } | { error: string };
 
 export default function WelcomePage() {
+  return (
+    <Suspense fallback={null}>
+      <WelcomePageInner />
+    </Suspense>
+  );
+}
+
+function WelcomePageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [checking, setChecking] = useState(true);
