@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect as _useEffect } from "react";
 import { useState as _useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,14 @@ type MeResponse = { name?: string; email?: string; plan?: string | null } | { er
 
 export default function WelcomePage() {
   const router = useRouter();
+  const params = useSearchParams();
   const [checking, setChecking] = useState(true);
   const [name, setName] = useState<string>("");
   const [carPhotos, setCarPhotos] = useState<string[]>([]);
   const [chatProfilePhotos, setChatProfilePhotos] = useState<string[]>([]);
   const [previews, setPreviews] = useState<Record<string,string>>({});
   const [bio, setBio] = useState<string>("");
+  const appliedParamsRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -38,6 +40,28 @@ export default function WelcomePage() {
           router.replace('/dashboard/home');
           return;
         }
+        // Apply any onboarding params after login (once)
+        if (!appliedParamsRef.current) {
+          appliedParamsRef.current = true;
+          const handle = params.get('name') || '';
+          const chosenPlan = params.get('plan') || '';
+          try {
+            if (handle) {
+              await fetch('/api/profile', { method: 'POST', body: JSON.stringify({ name: sanitizeInstagramHandle(handle) }) });
+            }
+          } catch {}
+          // If a plan was preselected before signup, auto-start checkout now
+          if (chosenPlan === 'minimum' || chosenPlan === 'pro') {
+            try {
+              const res = await fetch('/api/billing/create-checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: chosenPlan }) });
+              const json = await res.json().catch(()=>({}));
+              if (json?.url) {
+                window.location.assign(json.url);
+                return;
+              }
+            } catch {}
+          }
+        }
         try {
           const prof = await fetch('/api/profile', { cache: 'no-store' }).then(r=>r.json());
           if (mounted) {
@@ -51,7 +75,13 @@ export default function WelcomePage() {
       }
     })();
     return () => { mounted = false; };
-  }, [router]);
+  }, [router, params]);
+
+  function sanitizeInstagramHandle(input: string): string {
+    const withoutAt = input.toLowerCase().replace(/^@+/, "");
+    const filtered = withoutAt.replace(/[^a-z0-9._]/g, "");
+    return filtered.slice(0, 30);
+  }
 
   if (checking) return null;
 

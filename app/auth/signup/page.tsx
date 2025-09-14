@@ -23,17 +23,12 @@ function SignUpPageInner() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch("/api/profile", { method: "POST", body: JSON.stringify({ name: sanitizeInstagramHandle(name) }) });
-      if (!res.ok) {
-        try {
-          const data = await res.json();
-          toast.error(data?.error || 'Failed to save profile');
-        } catch {
-          toast.error('Failed to save profile');
-        }
-        return;
-      }
-      await signIn("resend", { email, callbackUrl: "/welcome", redirect: true });
+      const paramsPlan = params.get("plan");
+      const handle = sanitizeInstagramHandle(name);
+      const search = new URLSearchParams();
+      if (handle) search.set("name", handle);
+      if (paramsPlan) search.set("plan", paramsPlan);
+      await signIn("resend", { email, callbackUrl: `/welcome${search.toString() ? `?${search.toString()}` : ""}`, redirect: true });
     } finally {
       setLoading(false);
     }

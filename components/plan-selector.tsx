@@ -52,7 +52,15 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
   async function startCheckout(plan: PlanKey) {
     try {
       setLoading(plan);
-      const res = await fetch("/api/billing/create-checkout", { method: "POST", body: JSON.stringify({ plan }) });
+      // If user is not authenticated, redirect to signup with selected plan
+      try {
+        const meRes = await fetch("/api/me", { cache: "no-store" });
+        if (meRes.status === 401) {
+          router.push(`/auth/signup?plan=${plan}`);
+          return;
+        }
+      } catch {}
+      const res = await fetch("/api/billing/create-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan }) });
       const json = await res.json();
       if (json.url) router.push(json.url);
       else toast.error(json.error || "Failed to start checkout");
