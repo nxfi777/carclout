@@ -18,6 +18,7 @@ import CarPhotosUploader from "@/components/car-photos-uploader";
 export default function ProfileDialog() {
   const { data: session } = useSession();
   const [name, setName] = useState("");
+  const [displayName, setDisplayName] = useState("");
   // const [hasFacebook, setHasFacebook] = useState<boolean>(false);
   // const [igLinked, setIgLinked] = useState<boolean>(false);
   const [image, setImage] = useState<File | null>(null);
@@ -44,6 +45,7 @@ export default function ProfileDialog() {
     (async () => {
       const data = await fetch('/api/profile').then(r=>r.json());
       setName(data?.profile?.name || "");
+      setDisplayName(data?.profile?.displayName || "");
       if (typeof data?.profile?.image === "string" && data.profile.image.length > 0) {
         setImagePreviewUrl(data.profile.image);
       }
@@ -135,7 +137,7 @@ export default function ProfileDialog() {
         toast.error('Please fill Body color/finish for each vehicle. Accents are optional.');
         return;
       }
-      const res = await fetch("/api/profile", { method: "POST", body: JSON.stringify({ name, image: imageUrl, vehicles, carPhotos, chatProfilePhotos, bio }) });
+      const res = await fetch("/api/profile", { method: "POST", body: JSON.stringify({ name, displayName: (displayName || '').replace(/\s+/g,' ').trim() || null, image: imageUrl, vehicles, carPhotos, chatProfilePhotos, bio }) });
       if (!res.ok) {
         try {
           const data = await res.json();
@@ -147,7 +149,8 @@ export default function ProfileDialog() {
       }
       // Notify UI pieces (header, chat) to refresh live without full reload
       try {
-        window.dispatchEvent(new CustomEvent('profile-updated', { detail: { name, image: imageUrl } }));
+        const effectiveName = (displayName && displayName.trim()) ? displayName.trim() : name;
+        window.dispatchEvent(new CustomEvent('profile-updated', { detail: { name: effectiveName, image: imageUrl } }));
       } catch {}
       // Close only if not in required mode or requirements are satisfied
       if (!isRequired || areRequiredFieldsSatisfied()) {
@@ -275,11 +278,15 @@ export default function ProfileDialog() {
           </div>
           {/* Instagram connect removed for MVP */}
           <div className="space-y-1">
+            <div className="text-sm font-medium">Instagram username</div>
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">@</span>
               <Input
                 className="pl-7"
-                placeholder="nytforge"
+                id="profile-instagram-handle"
+                aria-label="Instagram username"
+                aria-describedby="profile-instagram-handle-help"
+                placeholder="your Instagram username"
                 value={name}
                 onChange={(e)=>setName(sanitizeInstagramHandle(e.target.value))}
                 pattern="^[a-z0-9._]{1,30}$"
@@ -289,9 +296,20 @@ export default function ProfileDialog() {
                 spellCheck={false}
               />
             </div>
-            <div className="text-xs text-muted-foreground">Your instagram handle (max 30 characters).{isRequired && requiredFields.includes('name') && (!name || !name.trim()) ? (
+            <div id="profile-instagram-handle-help" className="text-xs text-muted-foreground">Your Instagram handle (username). The @ is shown for clarity and isn’t saved.{isRequired && requiredFields.includes('name') && (!name || !name.trim()) ? (
               <span className="ml-2 text-red-500">Required</span>
             ) : null}</div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-sm font-medium">Display name (optional)</div>
+            <Input
+              placeholder="How should we show your name?"
+              value={displayName}
+              onChange={(e)=> setDisplayName(e.target.value.slice(0,50))}
+              aria-label="Display name"
+              maxLength={50}
+            />
+            <div className="text-xs text-muted-foreground">If empty, we’ll show your Instagram username.</div>
           </div>
           <div className="space-y-2">
             <div className="text-sm font-medium">Avatar</div>

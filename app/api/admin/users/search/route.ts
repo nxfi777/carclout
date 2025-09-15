@@ -19,25 +19,26 @@ export async function GET(req: Request) {
   try { await db.query(`DEFINE ANALYZER IF NOT EXISTS email_search TOKENIZERS punct, class FILTERS lowercase, ascii, edgengram(2,10);`); } catch {}
   // Overwrite indexes to use the new analyzers
   try { await db.query(`DEFINE INDEX OVERWRITE user_name_ft ON TABLE user FIELDS name SEARCH ANALYZER user_search BM25;`); } catch {}
+  try { await db.query(`DEFINE INDEX OVERWRITE user_display_name_ft ON TABLE user FIELDS displayName SEARCH ANALYZER user_search BM25;`); } catch {}
   try { await db.query(`DEFINE INDEX OVERWRITE user_email_ft ON TABLE user FIELDS email SEARCH ANALYZER email_search BM25;`); } catch {}
   
 
-  let rows: Array<{ name?: string; email?: string; credits_balance?: number }> = [];
+  let rows: Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number }> = [];
   try {
     if (q) {
       const res = await db.query(
-        `SELECT name, email, credits_balance FROM user 
-         WHERE name @@ $q OR email @@ $q 
+        `SELECT name, displayName, email, credits_balance FROM user 
+         WHERE displayName @@ $q OR name @@ $q OR email @@ $q 
          LIMIT $limit;`,
         { q, limit }
       );
-      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; email?: string; credits_balance?: number }>) : []);
+      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number }>) : []);
     } else {
       const res = await db.query(
-        `SELECT name, email, credits_balance FROM user ORDER BY string::lower(name) LIMIT $limit;`,
+        `SELECT name, displayName, email, credits_balance FROM user ORDER BY string::lower(displayName ?? name) LIMIT $limit;`,
         { limit }
       );
-      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; email?: string; credits_balance?: number }>) : []);
+      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number }>) : []);
     }
   } catch {
     rows = [];
@@ -45,6 +46,7 @@ export async function GET(req: Request) {
 
   const users = rows.map((r) => ({
     name: r?.name || null,
+    displayName: r?.displayName || null,
     email: String(r?.email || ""),
     credits: typeof r?.credits_balance === "number" ? Number(r.credits_balance) : 0,
   }));

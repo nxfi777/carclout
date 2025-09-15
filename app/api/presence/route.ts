@@ -10,7 +10,7 @@ export async function GET() {
   const meEmail = session?.user?.email as string | undefined;
   const db = await getSurreal();
   const res = await db.query(
-    "SELECT email, name, image, presence_status, presence_updated_at, last_seen, role, plan FROM user LIMIT 1000;"
+    "SELECT email, displayName, name, image, presence_status, presence_updated_at, last_seen, role, plan FROM user LIMIT 1000;"
   );
   const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
   const now = Date.now();
@@ -33,7 +33,10 @@ export async function GET() {
         derived = "offline";
       }
     }
-    return { email: (u as { email?: string })?.email, name: (u as { name?: string })?.name, image: (u as { image?: string })?.image, status: derived, role: (u as { role?: string })?.role, plan: (u as { plan?: string })?.plan };
+    const dn = (u as { displayName?: string })?.displayName;
+    const nm = (u as { name?: string })?.name;
+    const eff = (typeof dn === 'string' && dn.trim().length > 0) ? dn : nm;
+    return { email: (u as { email?: string })?.email, name: eff, image: (u as { image?: string })?.image, status: derived, role: (u as { role?: string })?.role, plan: (u as { plan?: string })?.plan };
   });
   return NextResponse.json({ users });
 }

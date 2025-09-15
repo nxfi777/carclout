@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/user";
 type VehicleDb = { make: string; model: string; type?: string; kitted?: unknown };
 type DbRow = {
   name?: string;
+  displayName?: string;
   image?: string;
   vehicles?: Array<{ make: string; model: string; type?: string; kitted?: boolean }>;
   cars?: VehicleDb[];
@@ -30,7 +31,7 @@ export async function GET() {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const db = await getSurreal();
-  const res = await db.query("SELECT name, image, vehicles, cars, plan, onboardingCompleted, carPhotos, chatProfilePhotos, bio FROM user WHERE email = $email LIMIT 1;", { email: user.email });
+  const res = await db.query("SELECT name, displayName, image, vehicles, cars, plan, onboardingCompleted, carPhotos, chatProfilePhotos, bio FROM user WHERE email = $email LIMIT 1;", { email: user.email });
   const rowRaw = Array.isArray(res) && Array.isArray(res[0]) ? res[0][0] : null;
   const row: DbRow | null = rowRaw as DbRow | null;
   // Backwards compatibility: if vehicles missing, lift cars to vehicles
@@ -38,14 +39,14 @@ export async function GET() {
   const carPhotos = Array.isArray(row?.carPhotos) ? row?.carPhotos.filter((x) => typeof x === 'string') : [];
   const chatProfilePhotos = Array.isArray(row?.chatProfilePhotos) ? row.chatProfilePhotos.filter((x) => typeof x === 'string') : [];
   const bio = typeof row?.bio === 'string' ? row?.bio : '';
-  return NextResponse.json({ profile: { name: row?.name, image: row?.image, vehicles, carPhotos, chatProfilePhotos, bio, plan: row?.plan, onboardingCompleted: !!row?.onboardingCompleted } });
+  return NextResponse.json({ profile: { name: row?.name, displayName: row?.displayName, image: row?.image, vehicles, carPhotos, chatProfilePhotos, bio, plan: row?.plan, onboardingCompleted: !!row?.onboardingCompleted } });
 }
 
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
-  const { name, image, vehicles, carPhotos, chatProfilePhotos, bio: bioRaw, carMake, carModel, vehicleMake, vehicleModel, vehicleType, kitted, onboardingCompleted } = body || {};
+  const { name, displayName: displayNameRaw, image, vehicles, carPhotos, chatProfilePhotos, bio: bioRaw, carMake, carModel, vehicleMake, vehicleModel, vehicleType, kitted, onboardingCompleted } = body || {};
   // If name provided, validate first and bail on error (do not partially update)
   let normalizedName: string | undefined = undefined;
   if (name !== undefined) {
@@ -53,11 +54,26 @@ export async function POST(req: Request) {
     if (!result.valid) return NextResponse.json({ error: result.message || "Invalid handle", code: "INVALID_HANDLE" }, { status: 400 });
     normalizedName = result.value;
   }
+  // Normalize displayName if provided
+  let normalizedDisplayName: string | null | undefined = undefined;
+  if (displayNameRaw !== undefined) {
+    if (displayNameRaw === null) {
+      normalizedDisplayName = null;
+    } else if (typeof displayNameRaw === 'string') {
+      const trimmed = displayNameRaw.replace(/\s+/g, ' ').trim();
+      normalizedDisplayName = trimmed.slice(0, 50);
+    } else {
+      return NextResponse.json({ error: "Invalid displayName", code: "INVALID_DISPLAY_NAME" }, { status: 400 });
+    }
+  }
   const db = await getSurreal();
 
   // Update basic fields (avoid unsupported SurrealQL functions like coalesce())
   if (normalizedName !== undefined) {
     await db.query("UPDATE user SET name = $name WHERE email = $email;", { name: normalizedName, email: user.email });
+  }
+  if (normalizedDisplayName !== undefined) {
+    await db.query("UPDATE user SET displayName = $displayName WHERE email = $email;", { displayName: normalizedDisplayName, email: user.email });
   }
   if (image !== undefined) {
     await db.query("UPDATE user SET image = $image WHERE email = $email;", { image, email: user.email });

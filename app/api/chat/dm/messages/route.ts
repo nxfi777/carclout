@@ -93,19 +93,12 @@ export async function GET(request: Request) {
     { key, me, cutoff: cutoffIso }
   );
   const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
-  // Build display name map for rows missing a safe senderName (or containing an email)
-  const needIds: Array<unknown> = [];
-  for (const r of rows) {
-    const nm: string | undefined = typeof (r as { senderName?: unknown })?.senderName === 'string' ? (r as { senderName?: string }).senderName : undefined;
-    const looksEmail = typeof nm === 'string' && /@/.test(nm);
-    if (!nm || looksEmail) {
-      const sender = (r as { sender?: unknown })?.sender;
-      if (sender) needIds.push(sender);
-    }
-  }
+  // Build display name map for ALL rows so changes propagate instantly
+  const allRefs: Array<unknown> = [];
+  for (const r of rows) { const sender = (r as { sender?: unknown })?.sender; if (sender) allRefs.push(sender); }
   const idStrings = new Set<string>();
   const ids: Array<unknown> = [];
-  for (const u of needIds) {
+  for (const u of allRefs) {
     try {
       const k = typeof (u as { toString?: () => string })?.toString === 'function' ? (u as { toString: () => string }).toString() : String(u);
       if (!idStrings.has(k)) { idStrings.add(k); ids.push(u); }
@@ -114,11 +107,13 @@ export async function GET(request: Request) {
   const nameMap = new Map<string, string>();
   if (ids.length > 0) {
     try {
-      const ures = await db.query("SELECT id, name FROM user WHERE id IN $ids;", { ids });
-      const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as Array<{ id?: unknown; name?: string }>) : [];
+      const ures = await db.query("SELECT id, displayName, name FROM user WHERE id IN $ids;", { ids });
+      const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as Array<{ id?: unknown; displayName?: string; name?: string }>) : [];
       for (const u of urows) {
         const key = typeof (u?.id as { toString?: () => string })?.toString === 'function' ? (u!.id as { toString: () => string }).toString() : String(u?.id);
-        if (key) nameMap.set(key, (u?.name as string | undefined) || 'Member');
+        const dn = (u?.displayName as string | undefined);
+        const nm = (typeof dn === 'string' && dn.trim().length > 0) ? dn : (u?.name as string | undefined);
+        if (key) nameMap.set(key, nm || 'Member');
       }
     } catch {}
     try {
@@ -135,7 +130,8 @@ export async function GET(request: Request) {
     const ridStr = typeof rid === 'object' && typeof rid?.toString === 'function' ? rid.toString() : (rid ? String(rid) : '');
     const nm: string | undefined = typeof (row as { senderName?: unknown })?.senderName === 'string' ? (row as { senderName?: string }).senderName : undefined;
     const looksEmail = typeof nm === 'string' && /@/.test(nm);
-    const safeName = (!nm || looksEmail) ? (nameMap.get(ridStr) || 'Member') : nm;
+    const fromMap = nameMap.get(ridStr);
+    const safeName = fromMap || ((!nm || looksEmail) ? 'Member' : nm);
     return {
       id: (row as { id?: { id?: { toString?: () => string }; toString?: () => string } | string })?.id && typeof (row as { id?: unknown })?.id === 'object'
         ? ((row as { id?: { id?: { toString?: () => string }; toString?: () => string } }).id!.id?.toString?.() || (row as { id?: { toString?: () => string } }).id!.toString?.())
@@ -194,10 +190,10 @@ export async function POST(request: Request) {
   }
 
   // Find sender's RecordId to link
-  const ures = await db.query("SELECT id, name FROM user WHERE email = $email LIMIT 1;", { email: meEmail });
-  const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as { id?: unknown; name?: string } | null) : null;
+  const ures = await db.query("SELECT id, displayName, name FROM user WHERE email = $email LIMIT 1;", { email: meEmail });
+  const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as { id?: unknown; displayName?: string; name?: string } | null) : null;
   const rid = urow?.id as RecordId<"user"> | string | undefined;
-  // Prefer Instagram username, then user.name, then session name, never email
+  // Prefer displayName, then handle (user.name), then session name; ignore email
   let igName: string | undefined;
   try {
     if (rid) {
@@ -207,12 +203,14 @@ export async function POST(request: Request) {
       igName = igrow?.username;
     }
   } catch {}
-  const senderName = igName || (urow?.name as string | undefined) || (session.user.name as string | undefined) || "Member";
+  const dn = urow?.displayName;
+  const senderName = (typeof dn === 'string' && dn.trim().length > 0 ? dn : (urow?.name as string | undefined)) || igName || (session.user.name as string | undefined) || "Member";
 
+  const senderRid = rid instanceof RecordId ? rid : (rid ? new RecordId("user", String(rid)) : undefined);
   const created = await db.create("dm_message", {
     dmKey: key,
     text,
-    sender: rid,
+    sender: senderRid,
     senderEmail: meEmail,
     senderName,
     recipientEmail: targetEmail,

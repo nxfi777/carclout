@@ -9,9 +9,9 @@ export async function GET() {
 
   const db = await getSurreal();
   // Load self profile from DB to ensure latest name/image like the header
-  const selfRes = await db.query("SELECT email, name, image FROM user WHERE email = $me LIMIT 1;", { me });
-  const selfRow = Array.isArray(selfRes) && Array.isArray(selfRes[0]) ? (selfRes[0][0] as { name?: string; image?: string } | null) : null;
-  const selfName = (selfRow?.name as string | undefined) || (session?.user?.name as string | undefined) || me;
+  const selfRes = await db.query("SELECT email, displayName, name, image FROM user WHERE email = $me LIMIT 1;", { me });
+  const selfRow = Array.isArray(selfRes) && Array.isArray(selfRes[0]) ? (selfRes[0][0] as { displayName?: string; name?: string; image?: string } | null) : null;
+  const selfName = ((selfRow?.displayName && selfRow.displayName.trim()) ? selfRow.displayName : selfRow?.name) || (session?.user?.name as string | undefined) || me;
   const selfImage = (selfRow?.image as string | undefined) || (session?.user?.image as string | undefined) || null;
   const res = await db.query(
     "SELECT id, dmKey, text, created_at, senderEmail, recipientEmail FROM dm_message WHERE senderEmail = $me OR recipientEmail = $me ORDER BY created_at DESC LIMIT 500;",
@@ -40,11 +40,15 @@ export async function GET() {
     return NextResponse.json({ conversations: [{ email: me, name: selfName, image: selfImage }] });
   }
 
-  const ures = await db.query("SELECT email, name, image FROM user WHERE email IN $emails;", { emails: filteredOthers });
-  const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as Array<{ email?: string; name?: string; image?: string }>) : [];
+  const ures = await db.query("SELECT email, displayName, name, image FROM user WHERE email IN $emails;", { emails: filteredOthers });
+  const urows = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0] as Array<{ email?: string; displayName?: string; name?: string; image?: string }>) : [];
   const info = new Map<string, { email: string; name?: string; image?: string }>();
   for (const u of urows) {
-    if (u?.email) info.set(u.email, { email: u.email, name: u?.name, image: u?.image });
+    if (u?.email) {
+      const dn = (u?.displayName || '').trim();
+      const nm = (dn ? dn : (u?.name || undefined));
+      info.set(u.email, { email: u.email, name: nm, image: u?.image });
+    }
   }
   const conversations = filteredOthers.map((email) => {
     const fallback = { email, name: email, image: undefined } as { email: string; name?: string; image?: string };

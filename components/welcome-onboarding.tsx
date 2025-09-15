@@ -13,6 +13,7 @@ export default function WelcomeOnboarding() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [carPhotos, setCarPhotos] = useState<string[]>([]);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -31,17 +32,18 @@ export default function WelcomeOnboarding() {
         // Prefill from existing profile data if present
         if (serverProfile) {
           if (typeof serverProfile.name === 'string') setUsername((serverProfile.name || '').toString());
+          if (typeof serverProfile.displayName === 'string') setDisplayName((serverProfile.displayName || '').toString());
           if (Array.isArray(serverProfile.vehicles)) setVehicles(serverProfile.vehicles as Vehicle[]);
           if (Array.isArray(serverProfile.carPhotos)) setCarPhotos((serverProfile.carPhotos as string[]).filter((x)=>typeof x === 'string'));
         }
 
-        // Determine minimum completeness for bypassing welcome (currently: name present)
+        // Determine minimum completeness for bypassing welcome (now: handle (name) required)
         const hasMinimumProfile = !!(serverProfile?.name && String(serverProfile.name).trim().length > 0);
 
         // If onboarding is completed, never show welcome again. If new mandatory fields are missing, open edit profile instead.
         if (done) {
           try { if (typeof window !== 'undefined') localStorage.setItem('ignition_welcome_seen','1'); } catch {}
-          // Detect missing mandatory fields post-onboarding (e.g. name)
+          // Detect missing mandatory fields post-onboarding (e.g. handle)
           if (!hasMinimumProfile && typeof window !== 'undefined') {
             try { window.dispatchEvent(new CustomEvent('require-profile', { detail: { required: ['name'] } })); } catch {}
           }
@@ -84,6 +86,7 @@ export default function WelcomeOnboarding() {
     if (carPhotos.length < 1) { toast.error('Add at least one photo for your vehicle.'); return; }
     const payload = {
       name: sanitizeInstagramHandle(username),
+      displayName: (displayName || '').trim() ? (displayName || '').replace(/\s+/g,' ').trim().slice(0,50) : null,
       vehicles,
       carPhotos,
       onboardingCompleted: true,
@@ -123,11 +126,15 @@ export default function WelcomeOnboarding() {
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1">
+            <div className="text-sm font-medium">Instagram username</div>
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">@</span>
               <Input
                 className="pl-7"
-                placeholder="nytforge"
+                id="welcome-instagram-handle"
+                aria-label="Instagram username"
+                aria-describedby="welcome-instagram-handle-help"
+                placeholder="your Instagram username"
                 value={username}
                 onChange={(e)=>setUsername(sanitizeInstagramHandle(e.target.value))}
                 pattern="^[a-z0-9._]{1,30}$"
@@ -138,7 +145,18 @@ export default function WelcomeOnboarding() {
                 autoFocus
               />
             </div>
-            <div className="text-xs text-muted-foreground">Letters, numbers, periods, and underscores only (max 30). The @ is shown for clarity and isn’t saved.</div>
+            <div id="welcome-instagram-handle-help" className="text-xs text-muted-foreground">Your Instagram handle (username). The @ is shown for clarity and isn’t saved.</div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-sm font-medium">Display name (optional)</div>
+            <Input
+              placeholder="How should we show your name?"
+              value={displayName}
+              onChange={(e)=> setDisplayName(e.target.value.slice(0,50))}
+              aria-label="Display name"
+              maxLength={50}
+            />
+            <div className="text-xs text-muted-foreground">If empty, we’ll show your Instagram username.</div>
           </div>
           <VehiclesEditor
             value={vehicles}

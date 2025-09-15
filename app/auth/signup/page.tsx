@@ -56,11 +56,15 @@ function SignUpPageInner() {
         <CardContent className="relative z-10">
           <form onSubmit={submit} className="space-y-3">
             <div className="space-y-1">
+              <div className="text-sm font-medium">Instagram username</div>
               <div className="relative">
                 <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">@</span>
                 <Input
                   className="pl-7"
-                  placeholder="nytforge"
+                  id="instagram-handle"
+                  aria-label="Instagram username"
+                  aria-describedby="instagram-handle-help"
+                  placeholder="your Instagram username"
                   value={name}
                   onChange={(e) => setName(sanitizeInstagramHandle(e.target.value))}
                   pattern="^[a-z0-9._]{1,30}$"
@@ -71,7 +75,7 @@ function SignUpPageInner() {
                   required
                 />
               </div>
-              <div className="text-xs text-muted-foreground">Letters, numbers, periods, and underscores only (max 30). The @ is shown for clarity and isn’t saved.</div>
+              <div id="instagram-handle-help" className="text-xs text-muted-foreground">Your Instagram handle (username). The @ is shown for clarity and isn’t saved.</div>
             </div>
             <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             <Button type="submit" className="w-full" disabled={loading}>{loading ? "Sending..." : "Send magic link"}</Button>

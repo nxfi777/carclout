@@ -304,7 +304,7 @@ function GrantCreditsForm(){
 function UserCreditsSearch(){
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<Array<{ name?: string|null; email: string; credits: number }>>([]);
+  const [rows, setRows] = useState<Array<{ displayName?: string|null; name?: string|null; email: string; credits: number }>>([]);
   const run = useCallback(async () => {
     setLoading(true);
     try {
@@ -333,7 +333,7 @@ function UserCreditsSearch(){
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <Input value={q} onChange={(e)=> setQ(e.target.value)} placeholder="Search users by name or email" className="flex-1" />
+        <Input value={q} onChange={(e)=> setQ(e.target.value)} placeholder="Search users by display name, handle, or email" className="flex-1" />
         <Button size="sm" onClick={run} disabled={loading}>{loading? 'Searching…' : 'Search'}</Button>
       </div>
       <div className="border rounded">
@@ -345,7 +345,7 @@ function UserCreditsSearch(){
         <ul className="max-h-72 overflow-y-auto divide-y">
           {rows.map((u)=> (
             <li key={u.email} className="grid grid-cols-3 gap-2 px-3 py-2 text-sm items-center">
-              <div className="truncate">{u.name || '—'}</div>
+              <div className="truncate">{u.displayName || u.name || '—'}</div>
               <div className="truncate font-mono">{u.email}</div>
               <div className="text-right">{u.credits}</div>
             </li>

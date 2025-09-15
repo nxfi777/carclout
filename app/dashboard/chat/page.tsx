@@ -175,6 +175,11 @@ function DashboardChatPageInner() {
           setMessages((m.messages || []).map((mm: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string }) => ({ ...mm, status: 'sent' })));
           const pres = await fetch('/api/presence', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({users:[]}));
           setPresence(pres.users || []);
+          // Also refresh DM conversations so names update immediately
+          try {
+            const conv = await fetch('/api/chat/dm/conversations', { cache: 'no-store' }).then(r=>r.json());
+            setDmConversations((conv.conversations || []).slice(0, 50));
+          } catch {}
         } finally {
           setLoading(false);
         }
@@ -682,12 +687,20 @@ function DashboardChatPageInner() {
               <li key={u.email}>
                 <ContextMenu>
                   <ContextMenuTrigger asChild>
-                    <button
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={(e)=>{
                         e.preventDefault();
                         e.stopPropagation();
                         const ev = new MouseEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY });
                         try { (e.currentTarget as HTMLElement).dispatchEvent(ev); } catch {}
+                      }}
+                      onKeyDown={(e)=>{
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          try { (e.currentTarget as HTMLElement).click(); } catch {}
+                        }
                       }}
                       className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${forgeView==='chat' && activeChatType==='dm' && activeDm?.email===u.email? 'bg-white/10' : 'hover:bg-white/5'}`}
                     >
@@ -721,7 +734,7 @@ function DashboardChatPageInner() {
                         >
                           ×
                         </button>
-                    </button>
+                    </div>
                   </ContextMenuTrigger>
                   <UserContextMenu
                     meEmail={me?.email}

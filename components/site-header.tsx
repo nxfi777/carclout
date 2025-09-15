@@ -23,19 +23,21 @@ export default async function SiteHeader() {
   const session = await auth();
   const user = session?.user;
   let dbName: string | undefined;
+  let dbDisplayName: string | undefined;
   let dbImage: string | undefined;
   let dbPlan: string | undefined;
   if (user?.email) {
     try {
       const db = await getSurreal();
-      const res = await db.query("SELECT name, image, plan FROM user WHERE email = $email LIMIT 1;", { email: user.email as string });
-      const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { name?: unknown; image?: unknown; plan?: unknown } | null) : null;
+      const res = await db.query("SELECT name, displayName, image, plan FROM user WHERE email = $email LIMIT 1;", { email: user.email as string });
+      const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { name?: unknown; displayName?: unknown; image?: unknown; plan?: unknown } | null) : null;
       dbName = typeof row?.name === 'string' ? row.name : undefined;
+      dbDisplayName = typeof row?.displayName === 'string' ? row.displayName : undefined;
       dbImage = typeof row?.image === 'string' ? row.image : undefined;
       dbPlan = typeof row?.plan === 'string' ? row.plan : undefined;
     } catch {}
   }
-  const displayName = dbName || user?.name || user?.email || "";
+  const displayName = (dbDisplayName && String(dbDisplayName).trim()) || dbName || user?.name || user?.email || "";
   const displayImage = dbImage || (user?.image as string | undefined);
   let userPlanFromSession: string | undefined;
   try {
