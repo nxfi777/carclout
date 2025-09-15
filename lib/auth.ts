@@ -44,11 +44,16 @@ async function sendVerificationRequest({
 }
 
 function createEmail({ url, email }: { url: string; email: string }) {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.NEXTAUTH_URL ||
+    process.env.AUTH_URL ||
+    "https://ignition.nytforge.com";
   return `
   <div style="background:#0b1020;padding:1rem;margin:0">
     <div style="font-family:Roboto,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;max-width:36rem;margin:0 auto;background:#111a36;color:#e7ecff;border-radius:0.75rem;border:1px solid #263166;padding:1.5rem;">
       <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;color:#aab4ff;font-size:0.75rem;letter-spacing:.14em;text-transform:uppercase">
-        <img src="https://nytforge.com/favicon.ico" style="border-radius:0.25rem;width:1.25rem;height:1.25rem" alt="Nytforge" />
+        <img src="${baseUrl}/favicon.ico" style="border-radius:0.25rem;width:1.25rem;height:1.25rem" alt="Nytforge" />
         <span>NYTFORGE IGNITION</span>
       </div>
       <h1 style="font-size:1.375rem;line-height:1.3;margin:0 0 0.5rem">Sign in to Nytforge Ignition</h1>

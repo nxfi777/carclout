@@ -1,6 +1,12 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
+const BASE_URL =
+  process.env.NEXT_PUBLIC_BASE_URL ||
+  process.env.NEXTAUTH_URL ||
+  process.env.AUTH_URL ||
+  "";
+
 export const middleware = auth((req) => {
   const { pathname, search } = req.nextUrl;
   const isAuthPage = pathname === "/auth/signin" || pathname === "/auth/signup";
@@ -15,7 +21,7 @@ export const middleware = auth((req) => {
 
   // Protect matched routes: redirect unauthenticated users to sign in
   if (!req.auth) {
-    const signInUrl = new URL("/auth/signin", req.nextUrl);
+    const signInUrl = BASE_URL ? new URL("/auth/signin", BASE_URL) : new URL("/auth/signin", req.nextUrl);
     signInUrl.searchParams.set("callbackUrl", pathname + search);
     return NextResponse.redirect(signInUrl);
   }
