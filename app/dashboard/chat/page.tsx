@@ -126,7 +126,12 @@ function DashboardChatPageInner() {
         if (mounted && channelsRes.status === 'fulfilled') setChannels((channelsRes.value.channels || []).map((x: { slug: string; name?: string; requiredReadRole?: ChannelPerms['requiredReadRole']; requiredRole?: ChannelPerms['requiredReadRole']; requiredReadPlan?: ChannelPerms['requiredReadPlan']; locked?: boolean; locked_until?: string | null })=> ({ slug: String(x.slug), name: x.name, requiredReadRole: x.requiredReadRole || x.requiredRole, requiredReadPlan: x.requiredReadPlan, locked: !!x.locked, locked_until: x.locked_until || null })));
         if (mounted && messagesRes.status === 'fulfilled') setMessages(((messagesRes.value.messages || []) as Array<{ id?: string; text: string; userName: string; userEmail?: string; created_at?: string }>).map((mm) => ({ ...mm, status: 'sent' })));
         if (mounted && presenceRes.status === 'fulfilled') setPresence(presenceRes.value.users || []);
-        if (mounted && convRes.status === 'fulfilled') setDmConversations((convRes.value.conversations || []).slice(0, 50));
+        if (mounted && convRes.status === 'fulfilled') {
+          const self = String(meRes.status === 'fulfilled' ? meRes.value?.email || '' : '').toLowerCase();
+          const convs = Array.isArray(convRes.value.conversations) ? convRes.value.conversations : [];
+          const filtered = convs.filter((c: { email: string }) => String(c?.email || '').toLowerCase() !== self);
+          setDmConversations(filtered.slice(0, 50));
+        }
         if (mounted && blocksRes.status === 'fulfilled') setBlocked(Array.isArray(blocksRes.value?.blocked) ? blocksRes.value.blocked : []);
         if (mounted && dmTtlRes.status === 'fulfilled') {
           const v = Number(dmTtlRes.value?.ttlSeconds);
@@ -178,7 +183,10 @@ function DashboardChatPageInner() {
           // Also refresh DM conversations so names update immediately
           try {
             const conv = await fetch('/api/chat/dm/conversations', { cache: 'no-store' }).then(r=>r.json());
-            setDmConversations((conv.conversations || []).slice(0, 50));
+            const self = String(me?.email || '').toLowerCase();
+            const convs = Array.isArray(conv?.conversations) ? conv.conversations : [];
+            const filtered = convs.filter((c: { email: string }) => String(c?.email || '').toLowerCase() !== self);
+            setDmConversations(filtered.slice(0, 50));
           } catch {}
         } finally {
           setLoading(false);
@@ -189,12 +197,18 @@ function DashboardChatPageInner() {
     const onDmHiddenChanged = async () => {
       try {
         const conv = await fetch('/api/chat/dm/conversations', { cache: 'no-store' }).then(r=>r.json());
-        setDmConversations((conv.conversations || []).slice(0, 50));
+        const self = String(me?.email || '').toLowerCase();
+        const convs = Array.isArray(conv?.conversations) ? conv.conversations : [];
+        const filtered = convs.filter((c: { email: string }) => String(c?.email || '').toLowerCase() !== self);
+        setDmConversations(filtered.slice(0, 50));
       } catch {}
     };
     window.addEventListener('dm-hidden-changed', onDmHiddenChanged as EventListener);
-    return () => window.removeEventListener('profile-updated', onProfileUpdated as EventListener);
-  }, [active]);
+    return () => {
+      window.removeEventListener('profile-updated', onProfileUpdated as EventListener);
+      window.removeEventListener('dm-hidden-changed', onDmHiddenChanged as EventListener);
+    };
+  }, [active, me?.email]);
 
   // Presence polling + heartbeat
   useEffect(() => {

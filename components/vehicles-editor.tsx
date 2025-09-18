@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MAKES, MODELS_BY_MAKE, inferTypeFromMake } from "@/lib/vehicles";
 
-export type Vehicle = { make: string; model: string; type: "car" | "bike"; kitted: boolean; colorFinish?: string; accents?: string };
+export type Vehicle = { make: string; model: string; type: "car" | "bike"; kitted: boolean; colorFinish?: string; accents?: string; photos?: string[] };
 
 interface VehiclesEditorProps {
   value: Vehicle[];
@@ -100,7 +100,30 @@ export default function VehiclesEditor({ value, onChange, onWillRemoveVehicle, c
             {value.map((c, i) => (
               <li key={`${c.make}-${c.model}-${i}`} className="space-y-2 border rounded-md p-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{c.make} {c.model} <span className="text-white/50">({c.type})</span></span>
+                  <div className="grid sm:grid-cols-2 gap-2 flex-1">
+                    <div>
+                      <div className="text-xs mb-1 text-white/70">Make</div>
+                      <Input
+                        placeholder="e.g. BMW"
+                        value={c.make}
+                        onChange={(e)=>{
+                          const nextMake = e.target.value;
+                          onChange(value.map((it, idx)=> idx===i ? { ...it, make: nextMake } : it));
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <div className="text-xs mb-1 text-white/70">Model</div>
+                      <Input
+                        placeholder="e.g. M3"
+                        value={c.model}
+                        onChange={(e)=>{
+                          const nextModel = e.target.value;
+                          onChange(value.map((it, idx)=> idx===i ? { ...it, model: nextModel } : it));
+                        }}
+                      />
+                    </div>
+                  </div>
                   <div className="flex items-center gap-3">
                     <label className="text-xs flex items-center gap-2">
                       <Checkbox checked={c.kitted} onCheckedChange={(val) => toggleKitted(i, !!val)} /> kitted?

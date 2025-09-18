@@ -21,6 +21,7 @@ type LearnItem = {
   thumbKey?: string;
   fileKey?: string;
   minRole?: Role;
+  minPlan?: 'base' | 'premium' | 'ultra' | null;
   isPublic?: boolean;
 };
 
@@ -30,7 +31,7 @@ function AdminLearnPageInner() {
   const [tab, setTab] = useState<'tutorials' | 'ebooks' | 'recordings'>('tutorials');
   const [items, setItems] = useState<LearnItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState<{ kind: 'tutorial' | 'ebook'; slug: string; title?: string; description?: string; minRole?: Role; thumbKey?: string; fileKey?: string }>({ kind: 'tutorial', slug: '' });
+  const [form, setForm] = useState<{ kind: 'tutorial' | 'ebook'; slug: string; title?: string; description?: string; minRole?: Role; minPlan?: 'base' | 'premium' | 'ultra' | null; thumbKey?: string; fileKey?: string }>({ kind: 'tutorial', slug: '' });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -241,7 +242,7 @@ function AdminLearnPageInner() {
     } finally { setUploading(false); }
   }
 
-  async function toggleRecording(rec: LearnItem, next: Partial<Pick<LearnItem, 'isPublic' | 'minRole'>>) {
+  async function toggleRecording(rec: LearnItem, next: Partial<Pick<LearnItem, 'isPublic' | 'minRole' | 'minPlan'>>) {
     try {
       const res = await fetch(`/api/livestream/recordings/${encodeURIComponent(rec.slug)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) });
       if (!res.ok) throw new Error('update failed');
@@ -287,6 +288,30 @@ function AdminLearnPageInner() {
                 </Select>
               </div>
               <div className="grid gap-1">
+                <label className="text-sm">Min Plan</label>
+                <Select value={form.minPlan || 'none'} onValueChange={(v)=>setForm(f=>({ ...f, minPlan: (v === 'none' ? null : (v as 'base' | 'premium' | 'ultra')) }))}>
+                  <SelectTrigger><SelectValue placeholder="none" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="base">Base</SelectItem>
+                    <SelectItem value="premium">Premium</SelectItem>
+                    <SelectItem value="ultra">Ultra</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1">
+                <label className="text-sm">Min Plan</label>
+                <Select value={form.minPlan || 'none'} onValueChange={(v)=>setForm(f=>({ ...f, minPlan: (v === 'none' ? null : (v as 'base' | 'premium' | 'ultra')) }))}>
+                  <SelectTrigger><SelectValue placeholder="none" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="base">Base</SelectItem>
+                    <SelectItem value="premium">Premium</SelectItem>
+                    <SelectItem value="ultra">Ultra</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1">
                 <label className="text-sm">Thumb Key</label>
                 <Input value={form.thumbKey || ''} onChange={(e)=>setForm(f=>({ ...f, thumbKey: e.target.value }))} placeholder="admin/learn/tutorials/<slug>/thumb.jpg" />
               </div>
@@ -312,7 +337,7 @@ function AdminLearnPageInner() {
                   <LearnThumb it={it} />
                 </CardContent>
                 <CardHeader>
-                  <CardTitle className="text-base">{it.title || it.slug}<span className="ml-2 text-xs text-white/50">[{it.minRole || 'user'}]</span></CardTitle>
+                  <CardTitle className="text-base">{it.title || it.slug}<span className="ml-2 text-xs text-white/50">[{it.minRole || 'user'}{typeof it.minPlan === 'string' ? ` | ${it.minPlan}` : ''}]</span></CardTitle>
                 </CardHeader>
               </Card>
             ))}
@@ -372,7 +397,7 @@ function AdminLearnPageInner() {
                   <LearnThumb it={it} />
                 </CardContent>
                 <CardHeader>
-                  <CardTitle className="text-base">{it.title || it.slug}<span className="ml-2 text-xs text-white/50">[{it.minRole || 'user'}]</span></CardTitle>
+                  <CardTitle className="text-base">{it.title || it.slug}<span className="ml-2 text-xs text-white/50">[{it.minRole || 'user'}{typeof it.minPlan === 'string' ? ` | ${it.minPlan}` : ''}]</span></CardTitle>
                 </CardHeader>
               </Card>
             ))}
@@ -400,6 +425,15 @@ function AdminLearnPageInner() {
                           <SelectItem value="user">User</SelectItem>
                           <SelectItem value="staff">Staff</SelectItem>
                           <SelectItem value="admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={r.minPlan || 'none'} onValueChange={(v)=>toggleRecording(r, { minPlan: (v === 'none' ? null : (v as 'base' | 'premium' | 'ultra')) })}>
+                        <SelectTrigger className="w-28"><SelectValue placeholder="Plan" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No plan</SelectItem>
+                          <SelectItem value="base">Base</SelectItem>
+                          <SelectItem value="premium">Premium</SelectItem>
+                          <SelectItem value="ultra">Ultra</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

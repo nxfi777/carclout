@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { r2, bucket } from "@/lib/r2";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "stream";
-import { getSessionLite, canAccessByRole, type Role } from "@/lib/chatPerms";
+import { getSessionLite, canAccessByRole, canAccessByPlan, type Role } from "@/lib/chatPerms";
 import { getSurreal } from "@/lib/surrealdb";
 
 function guessContentType(key: string): string {
@@ -61,15 +61,16 @@ export async function GET(req: Request) {
     const slug = parts[3] || undefined;
     if (!kind || !slug) return NextResponse.json({ error: "Bad key" }, { status: 400 });
 
-    // For images (thumb/cover), allow without gating. For video/pdf, enforce role.
+    // For images (thumb/cover), allow without gating. For video/pdf, enforce role and plan.
     if (!isImage) {
       const session = await getSessionLite();
       if (!session?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       const db = await getSurreal();
-      const res = await db.query("SELECT minRole FROM learn_item WHERE slug = $slug LIMIT 1;", { slug });
-      const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { minRole?: Role }) : null;
+      const res = await db.query("SELECT minRole, minPlan FROM learn_item WHERE slug = $slug LIMIT 1;", { slug });
+      const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { minRole?: Role; minPlan?: 'base' | 'premium' | 'ultra' | null }) : null;
       const minRole: Role = row?.minRole ?? (kind === "tutorials" ? "user" : "user");
-      const ok = canAccessByRole(session.role, minRole);
+      const minPlan = (row?.minPlan ?? null) as 'base' | 'premium' | 'ultra' | null;
+      const ok = canAccessByRole(session.role, minRole) && canAccessByPlan(session.plan, (minPlan || undefined) as Exclude<'base' | 'premium' | 'ultra' | null, null> | undefined);
       if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

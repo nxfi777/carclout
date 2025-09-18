@@ -19,6 +19,7 @@ export default function WelcomeOnboarding() {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [pendingVehicle, setPendingVehicle] = useState<Vehicle | null>(null);
   const isAuthRoute = !!(pathname && pathname.startsWith("/auth"));
+  const isDashboardRoute = !!(pathname && pathname.startsWith("/dashboard"));
 
   useEffect(() => {
     (async () => {
@@ -37,15 +38,17 @@ export default function WelcomeOnboarding() {
           if (Array.isArray(serverProfile.carPhotos)) setCarPhotos((serverProfile.carPhotos as string[]).filter((x)=>typeof x === 'string'));
         }
 
-        // Determine minimum completeness for bypassing welcome (now: handle (name) required)
-        const hasMinimumProfile = !!(serverProfile?.name && String(serverProfile.name).trim().length > 0);
+        // Determine minimum completeness for bypassing welcome: require ≥1 vehicle and ≥1 car photo
+        const hasVehicles = Array.isArray(serverProfile?.vehicles) && (serverProfile.vehicles as Vehicle[]).length > 0;
+        const hasCarPhotos = Array.isArray(serverProfile?.carPhotos) && (serverProfile.carPhotos as string[]).length > 0;
+        const hasMinimumProfile = hasVehicles && hasCarPhotos;
 
         // If onboarding is completed, never show welcome again. If new mandatory fields are missing, open edit profile instead.
         if (done) {
           try { if (typeof window !== 'undefined') localStorage.setItem('ignition_welcome_seen','1'); } catch {}
-          // Detect missing mandatory fields post-onboarding (e.g. handle)
-          if (!hasMinimumProfile && typeof window !== 'undefined') {
-            try { window.dispatchEvent(new CustomEvent('require-profile', { detail: { required: ['name'] } })); } catch {}
+          // Detect missing mandatory fields post-onboarding
+          if (!hasMinimumProfile && typeof window !== 'undefined' && isDashboardRoute) {
+            try { window.dispatchEvent(new CustomEvent('require-profile', { detail: { required: ['vehicle'] } })); } catch {}
           }
           setOpen(false);
           return;
@@ -63,7 +66,7 @@ export default function WelcomeOnboarding() {
         if (!seen) setOpen(true);
       } catch {}
     })();
-  }, []);
+  }, [isDashboardRoute]);
 
   // Vehicle selection handled by VehiclesEditor
 
@@ -169,7 +172,20 @@ export default function WelcomeOnboarding() {
             }}
           />
           <div className="space-y-2">
-            <CarPhotosUploader value={carPhotos} onChange={setCarPhotos} vehicles={vehicles} />
+            {vehicles.length > 0 ? (
+              <CarPhotosUploader
+                value={carPhotos}
+                onChange={(next)=> setCarPhotos(next)}
+                vehicles={vehicles}
+                onVehiclesChange={(next)=>{
+                  setVehicles(next);
+                  const flat = ([] as string[]).concat(...next.map(v=> Array.isArray((v as { photos?: string[] }).photos) ? (v as { photos?: string[] }).photos as string[] : []));
+                  setCarPhotos(flat);
+                }}
+              />
+            ) : (
+              <div className="text-xs text-muted-foreground">Add a vehicle above to enable photo uploads.</div>
+            )}
           </div>
           {/* Instagram connect removed for MVP */}
           <div className="flex">

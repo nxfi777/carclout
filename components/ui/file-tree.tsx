@@ -6,6 +6,7 @@ import { confirmToast } from "@/components/ui/toast-helpers";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SHOW_MANAGED_FOLDERS, isManagedRoot } from "@/lib/workspace-visibility";
 
 export interface FileTreeItem {
   name: string;
@@ -271,11 +272,17 @@ export function R2FileTree({
     const children = childrenRaw || [];
     const isSelected = selectedSet.has(itemPath) || selectedSet.has(`${itemPath}/`);
     const topSeg = (itemPath || '').split('/')[0];
-    const isManagedHere = topSeg === 'vehicles' || topSeg === 'designer_masks';
+    const isManagedHere = isManagedRoot(topSeg);
     const hasManagedSelected = selectedSet.size ? Array.from(selectedSet).some((k) => {
       const seg = String(k || '').replace(/\/+$/,'').split('/')[0];
-      return seg === 'vehicles' || seg === 'designer_masks';
+      return isManagedRoot(seg);
     }) : false;
+    const currentScope = scope === 'admin' ? 'admin' : 'user';
+    const showManaged = SHOW_MANAGED_FOLDERS[currentScope];
+    // Hide managed top-level folders based on central visibility toggle
+    if (parentPath === '' && isManagedHere && !showManaged) {
+      return null;
+    }
     return (
       <div key={itemPath} className="text-gray-700 dark:text-gray-300 relative">
         <ContextMenu>
@@ -363,6 +370,12 @@ export function R2FileTree({
 
   const rootChildren = childrenByPath[""];
   const rootLoaded = Array.isArray(rootChildren);
+  const displayRootChildren = React.useMemo(() => {
+    const arr = (rootChildren || []);
+    const currentScope = scope === 'admin' ? 'admin' : 'user';
+    const showManaged = SHOW_MANAGED_FOLDERS[currentScope];
+    return showManaged ? arr : arr.filter((it) => !(it.type === 'folder' && isManagedRoot(it.name)));
+  }, [rootChildren, scope]);
 
   return (
     <div className="font-mono">
@@ -386,10 +399,10 @@ export function R2FileTree({
                 </div>
               ))}
             </div>
-          ) : (rootLoaded && rootChildren.length === 0) ? (
+          ) : (rootLoaded && displayRootChildren.length === 0) ? (
             <div className="py-2 px-2 text-xs text-gray-500 dark:text-gray-400 italic">No items</div>
           ) : (
-            (rootChildren || []).map((item) => renderNode(item, ""))
+            displayRootChildren.map((item) => renderNode(item, ""))
           )
         )}
       </div>

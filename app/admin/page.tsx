@@ -60,6 +60,7 @@ type TemplateDisplay = {
   allowedImageSources?: Array<'vehicle' | 'user'>;
   imageSize?: { width: number; height: number } | null;
   favoriteCount?: number;
+  autoOpenDesigner?: boolean;
   rembg?: {
     enabled?: boolean;
     model?: 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait';
@@ -112,7 +113,7 @@ type GeneratePayload = {
 const _BUILT_IN_TOKENS = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
 
 function AdminPageInner() {
-  const [tab, setTab] = useState<"analytics" | "workspace" | "templates" | "music" | "channels" | "moderation" | "announcements">("analytics");
+  const [tab, setTab] = useState<"analytics" | "workspace" | "templates" | "music" | "moderation" | "announcements">("analytics");
   const [me, setMe] = useState<{ role?: string } | null>(null);
   const searchParams = useSearchParams();
   useEffect(() => {
@@ -122,8 +123,8 @@ function AdminPageInner() {
   }, []);
   useEffect(() => {
     const t = String(searchParams?.get('tab') || '').toLowerCase();
-    if (t === 'analytics' || t === 'workspace' || t === 'templates' || t === 'music' || t === 'channels' || t === 'moderation' || t === 'announcements') {
-      setTab(t as "analytics" | "workspace" | "templates" | "music" | "channels" | "moderation" | "announcements");
+    if (t === 'analytics' || t === 'workspace' || t === 'templates' || t === 'music' || t === 'moderation' || t === 'announcements') {
+      setTab(t as "analytics" | "workspace" | "templates" | "music" | "moderation" | "announcements");
     } else {
       setTab('analytics');
     }
@@ -136,7 +137,6 @@ function AdminPageInner() {
       {tab === 'workspace' && <DashboardWorkspacePanel scope="admin" />}
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'music' && <MusicSuggestions admin />}
-      {tab === 'channels' && <ChannelsTab />}
       {tab === 'moderation' && <ModerationTab />}
       {tab === 'announcements' && <AnnouncementsTab />}
     </main>
@@ -361,105 +361,7 @@ function UserCreditsSearch(){
 
 // Music tab now uses shared component
 
-type Channel = {
-  id?: string;
-  slug: string;
-  name?: string;
-  requiredRole?: "user" | "staff" | "admin" | null;
-  requiredReadRole?: "user" | "staff" | "admin" | null;
-  requiredWriteRole?: "user" | "staff" | "admin" | null;
-  requiredReadPlan?: "base" | "premium" | "ultra" | null;
-  requiredWritePlan?: "base" | "premium" | "ultra" | null;
-};
-function ChannelsTab() {
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [name, setName] = useState("");
-  const [requiredRole, setRequiredRole] = useState<string>("");
-  useEffect(()=>{ (async()=>{ const r=await fetch('/api/chat/channels').then(r=>r.json()); setChannels(r?.channels||[]); })(); },[]);
-  return (
-    <div className="space-y-3">
-      <div className="flex gap-2">
-        <Input value={name} onChange={(e)=>setName(e.target.value)} placeholder="Channel name" className="flex-1 text-sm" />
-        <Input value={requiredRole} onChange={(e)=>setRequiredRole(e.target.value)} placeholder="requiredRole (optional)" className="w-56 text-sm" />
-        <Button onClick={async()=>{ if(!name) return; await fetch('/api/chat/channels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ name, requiredRole: requiredRole || undefined })}); setName(''); const r=await fetch('/api/chat/channels').then(r=>r.json()); setChannels(r?.channels||[]); }} className="px-3 py-2 text-sm">Create</Button>
-      </div>
-      {/* removed erroneous masking controls from Channels tab */}
-      <ul className="space-y-1 text-sm">
-        {channels.map((c: Channel)=> (
-          <li key={c.id||c.slug} className="space-y-2 px-2 py-2 rounded bg-white/5">
-            <div className="flex items-center justify-between">
-              <span>#{c.slug}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-white/50">{c.requiredRole || 'user'}</span>
-                {c.slug !== 'general' && c.slug !== 'livestream' ? (
-                  <Button variant="ghost" className="text-xs px-2 py-1" onClick={async()=>{ const ok = await confirmToast({ title: `Delete #${c.slug}?`, message: 'This action cannot be undone.' }); if(!ok) return; await fetch('/api/chat/channels', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ slug: c.slug }) }); const r=await fetch('/api/chat/channels').then(r=>r.json()); setChannels(r?.channels||[]); toast.success('Channel deleted'); }}>Delete</Button>
-                ) : null}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <Input defaultValue={c.name || ''} placeholder="display name" className="text-sm"
-                onBlur={async(e)=>{ const v=e.target.value.trim(); if (v===c.name) return; await fetch('/api/chat/channels',{method:'PATCH',headers:{'Content-Type':'application/json'}, body: JSON.stringify({ slug:c.slug, name: v })}); const r=await fetch('/api/chat/channels').then(r=>r.json()); setChannels(r?.channels||[]); }} />
-              <UnifiedLevelSelect
-                label="Read"
-                current={computeUnifiedLevel(c, 'read')}
-                onChange={async(level)=>{
-                  const payload: Record<string, unknown> = { slug: c.slug };
-                  if (level === '') { payload.requiredReadPlan = null; payload.requiredReadRole = null; }
-                  else if (level === 'user' || level === 'admin') { payload.requiredReadRole = level; payload.requiredReadPlan = null; }
-                  else { payload.requiredReadPlan = level === 'basic' ? 'base' : (level === 'premium' ? 'premium' : 'ultra'); payload.requiredReadRole = null; }
-                  await fetch('/api/chat/channels',{ method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-                  const r=await fetch('/api/chat/channels').then(r=>r.json()); setChannels(r?.channels||[]);
-                }}
-              />
-              <UnifiedLevelSelect
-                label="Write"
-                current={computeUnifiedLevel(c, 'write')}
-                onChange={async(level)=>{
-                  const payload: Record<string, unknown> = { slug: c.slug };
-                  if (level === '') { payload.requiredWritePlan = null; payload.requiredWriteRole = null; }
-                  else if (level === 'user' || level === 'admin') { payload.requiredWriteRole = level; payload.requiredWritePlan = null; }
-                  else { payload.requiredWritePlan = level === 'basic' ? 'base' : (level === 'premium' ? 'premium' : 'ultra'); payload.requiredWriteRole = null; }
-                  await fetch('/api/chat/channels',{ method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-                  const r=await fetch('/api/chat/channels').then(r=>r.json()); setChannels(r?.channels||[]);
-                }}
-              />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-type UnifiedLevel = '' | 'user' | 'basic' | 'premium' | 'pro' | 'admin';
-function computeUnifiedLevel(c: Channel, kind: 'read' | 'write'): UnifiedLevel {
-  const role = kind === 'read' ? (c.requiredReadRole ?? c.requiredRole ?? null) : (c.requiredWriteRole ?? c.requiredRole ?? null);
-  const plan = kind === 'read' ? (c.requiredReadPlan ?? null) : (c.requiredWritePlan ?? null);
-  if (role === 'admin') return 'admin';
-  if (role === 'user') return 'user';
-  if (plan === 'base') return 'basic';
-  if (plan === 'premium') return 'premium';
-  if (plan === 'ultra') return 'pro';
-  return '';
-}
-
-function UnifiedLevelSelect({ label, current, onChange }: { label: string; current: UnifiedLevel; onChange: (v: UnifiedLevel)=>void }) {
-  return (
-    <Select defaultValue={current || undefined} onValueChange={(v)=> onChange(v === 'clear' ? '' : (v as UnifiedLevel))}>
-      <SelectTrigger size="sm">
-        <SelectValue placeholder={`${label} level`} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="clear">clear to default</SelectItem>
-        <SelectItem value="user">user</SelectItem>
-        <SelectItem value="basic">basic</SelectItem>
-        <SelectItem value="premium">premium</SelectItem>
-        <SelectItem value="pro">pro</SelectItem>
-        <SelectItem value="admin">admin</SelectItem>
-      </SelectContent>
-    </Select>
-  );
-}
+// Channels tab removed
 
 type Mute = { id: string; targetEmail: string; channels?: string[] | null; expires_at?: string | null };
 function ModerationTab() {
@@ -467,7 +369,36 @@ function ModerationTab() {
   const [target, setTarget] = useState("");
   const [channels, setChannels] = useState("");
   const [duration, setDuration] = useState("");
+  const [q, setQ] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [rows, setRows] = useState<Array<{ displayName?: string|null; name?: string|null; email: string }>>([]);
+  const runSearch = useCallback(async () => {
+    setSearchLoading(true);
+    try {
+      const res = await fetch(`/api/admin/users/search?q=${encodeURIComponent(q)}&limit=50`, { cache:'no-store' }).then(r=>r.json()).catch(()=>({ users: [] }));
+      const list = Array.isArray(res?.users) ? res.users : [];
+      setRows(list.map((u: { displayName?: string|null; name?: string|null; email?: string })=> ({ displayName: u?.displayName||null, name: u?.name||null, email: String(u?.email||"") })));
+    } finally { setSearchLoading(false); }
+  }, [q]);
   useEffect(()=>{ (async()=>{ try{ const r=await fetch('/api/admin/mutes',{cache:'no-store'}).then(r=>r.json()); setMutes(r?.mutes||[]);}catch{}})(); },[]);
+  useEffect(()=>{
+    const t = setTimeout(runSearch, 250);
+    let es: EventSource | null = null;
+    (async ()=>{
+      try {
+        es = new EventSource(`/api/admin/users/live?q=${encodeURIComponent(q)}&limit=50`);
+        es.onmessage = (ev) => {
+          try {
+            const data = JSON.parse(ev.data || '{}');
+            const users = Array.isArray(data?.users) ? data.users : [];
+            setRows(users.map((u: { displayName?: string|null; name?: string|null; email?: string })=> ({ displayName: u?.displayName||null, name: u?.name||null, email: String(u?.email||"") })));
+          } catch {}
+        };
+        es.onerror = () => { try { es?.close(); } catch {} };
+      } catch {}
+    })();
+    return ()=> { clearTimeout(t); try { es?.close(); } catch {} };
+  }, [q, runSearch]);
   return (
     <div className="space-y-3">
       <div className="text-sm font-medium">Mute user</div>
@@ -485,6 +416,33 @@ function ModerationTab() {
             const r=await fetch('/api/admin/mutes',{cache:'no-store'}).then(r=>r.json()); setMutes(r?.mutes||[]);
           } catch {}
         }}>Mute</Button>
+      </div>
+      <div className="space-y-2">
+        <div className="text-sm font-medium">Find user</div>
+        <div className="flex items-center gap-2">
+          <Input value={q} onChange={(e)=> setQ(e.target.value)} placeholder="Search users by name or email" className="flex-1" />
+          <Button size="sm" onClick={runSearch} disabled={searchLoading}>{searchLoading? 'Searching…' : 'Search'}</Button>
+        </div>
+        <div className="border rounded">
+          <div className="grid grid-cols-2 gap-2 px-3 py-2 text-xs text-white/60 border-b">
+            <div>Name</div>
+            <div>Email</div>
+          </div>
+          <ul className="max-h-60 overflow-y-auto divide-y">
+            {rows.map((u)=> (
+              <li key={u.email} className="grid grid-cols-2 gap-2 px-3 py-2 text-sm items-center cursor-pointer hover:bg-white/5"
+                onClick={()=>{ setTarget(u.email); try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {} }}
+                title="Click to use this email"
+                aria-label={`Use ${u.email}`}>
+                <div className="truncate">{u.displayName || u.name || '—'}</div>
+                <div className="truncate font-mono">{u.email}</div>
+              </li>
+            ))}
+            {!rows.length ? (
+              <li className="px-3 py-2 text-sm text-white/60">No users found</li>
+            ) : null}
+          </ul>
+        </div>
       </div>
       <div className="text-sm font-medium">Current mutes</div>
       <ul className="space-y-1 text-sm">
@@ -576,6 +534,7 @@ function NewTemplateButton(){
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [allowVehicle, setAllowVehicle] = useState<boolean>(true);
   const [allowUser, setAllowUser] = useState<boolean>(true);
+  const [autoOpenDesigner, setAutoOpenDesigner] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
   // Foreground masking (BiRefNet) options
   const [rembgEnabled, setRembgEnabled] = useState<boolean>(false);
@@ -714,7 +673,7 @@ function NewTemplateButton(){
       const unknownVarDefs: Array<{ key: string; label: string; required: boolean; type: 'select'|'color'|'text'; options?: string[]; defaultValue?: string; }> = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: (cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text')) as 'select'|'color'|'text', options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' && (cfg as { defaultValue?: unknown }).defaultValue ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
       const allowedImageSources = ([allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean) as Array<'vehicle'|'user'>);
       const rembg = { enabled: !!rembgEnabled, model: rembgModel, operating_resolution: rembgRes, output_format: rembgFormat, refine_foreground: !!rembgRefine, output_mask: !!rembgMask } as const;
-      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, rembg };
+      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, rembg, autoOpenDesigner } as unknown as CreateTemplatePayload;
       if (/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug)) payload.imageSize = { width: imageWidth, height: imageHeight };
       const res = await fetch('/api/templates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!res.ok) { const data = await res.json().catch(()=>({})); toast.error(data?.error || 'Failed to create template'); return; }
@@ -933,6 +892,13 @@ function NewTemplateButton(){
                 <div className="text-xs text-white/60">User image(s) will be appended last automatically.</div>
               </div>
             </div>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">Open Designer instantly after generation</div>
+              <div className="text-xs text-white/60">If enabled, users skip the extra step and land in Designer right away.</div>
+            </div>
+            <Switch checked={autoOpenDesigner} onCheckedChange={(v)=> setAutoOpenDesigner(!!v)} />
           </div>
           <DialogFooter>
             <Button size="sm" onClick={save} disabled={busy}>{busy? 'Saving…' : 'Save'}</Button>
@@ -1153,14 +1119,41 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
     (async()=>{
       try {
         const profile = await fetch('/api/profile',{cache:'no-store'}).then(r=>r.json());
-        const keys: string[] = Array.isArray(profile?.profile?.carPhotos) ? profile.profile.carPhotos : [];
-        setVehiclePhotos(keys);
         const vehicles: Vehicle[] = Array.isArray(profile?.profile?.vehicles) ? (profile.profile.vehicles as Vehicle[]) : [];
         setProfileVehicles(vehicles);
+        const keys: string[] = (() => {
+          const flat = vehicles.flatMap((v)=> Array.isArray((v as unknown as { photos?: string[] }).photos) ? ((v as unknown as { photos?: string[] }).photos as string[]) : []);
+          if (flat.length) return flat;
+          return Array.isArray(profile?.profile?.carPhotos) ? profile.profile.carPhotos : [];
+        })();
+        setVehiclePhotos(keys);
         const primary = keys.find(Boolean) || null; setSelectedVehicleKey(primary);
       } catch {}
     })();
   },[]);
+
+  useEffect(()=>{
+    function onProfileUpdated(){
+      (async()=>{
+        try {
+          const profile = await fetch('/api/profile',{cache:'no-store'}).then(r=>r.json());
+          const vehicles: Vehicle[] = Array.isArray(profile?.profile?.vehicles) ? (profile.profile.vehicles as Vehicle[]) : [];
+          setProfileVehicles(vehicles);
+          const keys: string[] = (() => {
+            const flat = vehicles.flatMap((v)=> Array.isArray((v as unknown as { photos?: string[] }).photos) ? ((v as unknown as { photos?: string[] }).photos as string[]) : []);
+            if (flat.length) return flat;
+            return Array.isArray(profile?.profile?.carPhotos) ? profile.profile.carPhotos : [];
+          })();
+          setVehiclePhotos(keys);
+          if (!keys.includes(selectedVehicleKey || '')) {
+            setSelectedVehicleKey(keys.find(Boolean) || null);
+          }
+        } catch {}
+      })();
+    }
+    window.addEventListener('profile-updated', onProfileUpdated as EventListener);
+    return ()=> window.removeEventListener('profile-updated', onProfileUpdated as EventListener);
+  },[selectedVehicleKey]);
 
   // Prefill defaults for color variables from template definitions (without overriding user input)
   useEffect(()=>{
@@ -1345,6 +1338,16 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
     } finally { setBusy(false); setMasking(false); }
   }
 
+  // If admin enabled auto-open, jump into Designer once a result is available
+  useEffect(()=>{
+    try {
+      if (template?.autoOpenDesigner && resultKey && !designing) {
+        openDesigner();
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template?.autoOpenDesigner, resultKey]);
+
   return (
     <div className="space-y-4">
       {busy ? (
@@ -1375,6 +1378,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
             }}
             saveLabel={'Save to workspace'}
             aspectRatio={typeof template?.aspectRatio === 'number' ? Number(template?.aspectRatio) : undefined}
+            onReplaceBgKey={(newKey, newUrl)=>{ try { if (newKey) { setActiveKey(newKey); if (newUrl) setActiveUrl(newUrl); } } catch {} }}
           />
         </div>
       ) : resultUrl ? (
@@ -1544,6 +1548,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   const [rembgFormat, setRembgFormat] = useState<'png' | 'webp'>(template?.rembg?.output_format || 'png');
   const [rembgRefine, setRembgRefine] = useState<boolean>(template?.rembg?.refine_foreground !== false);
   const [rembgMask, setRembgMask] = useState<boolean>(!!template?.rembg?.output_mask);
+  const [autoOpenDesigner, setAutoOpenDesigner] = useState<boolean>(!!template?.autoOpenDesigner);
 
   useEffect(()=>{
     setName(String(template?.name || ''));
@@ -1565,6 +1570,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     setRembgFormat((template?.rembg?.output_format as 'png'|'webp') || 'png');
     setRembgRefine(template?.rembg?.refine_foreground !== false);
     setRembgMask(!!template?.rembg?.output_mask);
+    setAutoOpenDesigner(!!template?.autoOpenDesigner);
   }, [template]);
 
   // Detect unknown tokens from prompt and seed/edit token configs
@@ -1614,7 +1620,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       const res = await fetch('/api/templates', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, name: name.trim(), description: description || '', prompt: prompt.trim(), falModelSlug: falModelSlug || undefined, variables: unknownVarDefs, imageSize: { width: imageWidth, height: imageHeight }, fixedAspectRatio: !!fixedAspect, aspectRatio: fixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined, allowedImageSources, rembg })
+        body: JSON.stringify({ id, name: name.trim(), description: description || '', prompt: prompt.trim(), falModelSlug: falModelSlug || undefined, variables: unknownVarDefs, imageSize: { width: imageWidth, height: imageHeight }, fixedAspectRatio: !!fixedAspect, aspectRatio: fixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined, allowedImageSources, autoOpenDesigner, rembg })
       });
       const data = await res.json().catch(()=>({}));
       if (!res.ok) { toast.error(data?.error || 'Failed to update template'); return; }
@@ -1635,6 +1641,13 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
             </SelectContent>
           </Select>
         </div>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="space-y-1">
+          <div className="text-sm font-medium">Open Designer instantly after generation</div>
+          <div className="text-xs text-white/60">If enabled, users skip the extra step and land in Designer right away.</div>
+        </div>
+        <Switch checked={autoOpenDesigner} onCheckedChange={(v)=> setAutoOpenDesigner(!!v)} />
       </div>
       <Textarea value={description} onChange={(e)=> setDescription(e.target.value)} placeholder="Description (optional)" rows={2} />
       <Textarea value={prompt} onChange={(e)=> setPrompt(e.target.value)} placeholder="Prompt" rows={6} />

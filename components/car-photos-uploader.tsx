@@ -10,6 +10,7 @@ interface CarPhotosUploaderProps {
   value: string[];
   onChange: (next: string[]) => void;
   vehicles?: Vehicle[];
+  onVehiclesChange?: (next: Vehicle[]) => void;
   initialVehicleIndex?: number;
   max?: number; // max per vehicle
   className?: string;
@@ -17,7 +18,7 @@ interface CarPhotosUploaderProps {
 
 // Removed unused type alias per lint
 
-export default function CarPhotosUploader({ value, onChange, vehicles = [], initialVehicleIndex = 0, max = 30, className }: CarPhotosUploaderProps) {
+export default function CarPhotosUploader({ value, onChange, vehicles = [], onVehiclesChange, initialVehicleIndex = 0, max = 30, className }: CarPhotosUploaderProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -46,8 +47,21 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], init
   const selectedVehicle = vehicles[selectedVehicleIndex];
   const selectedSlug = vehicles.length ? uniqueSlugForIndex(vehicles, selectedVehicleIndex) : baseSlug(selectedVehicle);
 
-  // Filter keys by selected vehicle folder when vehicles list provided
+  const flattenVehiclePhotos = useCallback((list: Vehicle[] | undefined): string[] => {
+    if (!Array.isArray(list)) return value || [];
+    const out: string[] = [];
+    for (const v of list) {
+      const arr = (v as unknown as { photos?: string[] })?.photos;
+      if (Array.isArray(arr)) {
+        for (const k of arr) if (typeof k === 'string') out.push(k);
+      }
+    }
+    return out;
+  }, [value]);
+
+  // Determine keys for selected vehicle from per-vehicle photos when available; fallback by filtering global list
   const keysForSelected = useMemo(() => {
+    if (selectedVehicle?.photos && Array.isArray(selectedVehicle.photos)) return selectedVehicle.photos.filter(Boolean) as string[];
     if (!vehicles.length || !selectedSlug) return value || [];
     const prefix = `/vehicles/${selectedSlug}/`;
     return (value || []).filter((k) => {
@@ -56,7 +70,7 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], init
       const sub = (k || "").slice(idx);
       return sub.startsWith(prefix);
     });
-  }, [value, vehicles, selectedSlug]);
+  }, [value, vehicles, selectedVehicle, selectedSlug]);
 
   const canAddCount = Math.max(0, max - (keysForSelected?.length || 0));
 
@@ -68,12 +82,19 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], init
   }
 
   function applyReorderForSelected(newOrder: string[]) {
-    // Rebuild global value preserving non-folder keys' relative order
-    const firstIdx = (value || []).findIndex(belongsToSelectedFolder);
-    const prefix = (value || []).slice(0, Math.max(firstIdx, 0)).filter((k) => !belongsToSelectedFolder(k));
-    const suffix = (value || []).slice(Math.max(firstIdx, 0)).filter((k) => !belongsToSelectedFolder(k));
-    const nextGlobal = [...prefix, ...newOrder, ...suffix];
-    onChange(nextGlobal);
+    if (vehicles.length && onVehiclesChange) {
+      const nextVehicles = (vehicles || []).map((v, i) => (i === selectedVehicleIndex ? ({ ...v, photos: [...newOrder] } as Vehicle) : v));
+      onVehiclesChange(nextVehicles);
+      const flat = flattenVehiclePhotos(nextVehicles);
+      onChange(flat);
+    } else {
+      // Rebuild global value preserving non-folder keys' relative order
+      const firstIdx = (value || []).findIndex(belongsToSelectedFolder);
+      const prefix = (value || []).slice(0, Math.max(firstIdx, 0)).filter((k) => !belongsToSelectedFolder(k));
+      const suffix = (value || []).slice(Math.max(firstIdx, 0)).filter((k) => !belongsToSelectedFolder(k));
+      const nextGlobal = [...prefix, ...newOrder, ...suffix];
+      onChange(nextGlobal);
+    }
   }
 
   function makePrimary(key: string) {
@@ -96,7 +117,11 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], init
 
   // Removed A–Z and Reverse batch sorting per UX request
 
-  const keysNeedingPreview = useMemo(() => (value || []).filter((k) => !previews[k]), [value, previews]);
+  const keysNeedingPreview = useMemo(() => {
+    const all = flattenVehiclePhotos(vehicles);
+    const src = all.length ? all : (value || []);
+    return src.filter((k) => !previews[k]);
+  }, [value, previews, vehicles, flattenVehiclePhotos]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,7 +146,6 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], init
 
   const uploadFiles = useCallback(async (files: File[]) => {
     setUploadErrors(null);
-    const current = value || [];
     if (!files.length) return;
     const allowed = Math.max(0, max - (keysForSelected?.length || 0));
     const take = files.filter((f) => (f.type || "").startsWith("image/")).slice(0, allowed);
@@ -165,11 +189,25 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], init
           setUploadErrors(msg);
         }
       }
-      if (nextKeys.length) onChange([...(current || []), ...nextKeys]);
+      if (nextKeys.length) {
+        if (vehicles.length && onVehiclesChange) {
+          const nextVehicles = (vehicles || []).map((v, i) => {
+            if (i !== selectedVehicleIndex) return v;
+            const existing = Array.isArray(v.photos) ? v.photos : [];
+            return { ...v, photos: [...existing, ...nextKeys] } as Vehicle;
+          });
+          onVehiclesChange(nextVehicles);
+          const flat = flattenVehiclePhotos(nextVehicles);
+          onChange(flat);
+        } else {
+          const current = value || [];
+          onChange([...(current || []), ...nextKeys]);
+        }
+      }
     } finally {
       setIsUploading(false);
     }
-  }, [value, vehicles.length, selectedSlug, keysForSelected?.length, max, onChange]);
+  }, [value, vehicles, onVehiclesChange, selectedVehicleIndex, selectedSlug, keysForSelected?.length, max, onChange, flattenVehiclePhotos]);
 
   const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -196,8 +234,19 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], init
     try {
       await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key, isFolder: false }) });
     } catch {}
-    const next = (value || []).filter((k) => k !== key);
-    onChange(next);
+    if (vehicles.length && onVehiclesChange) {
+      const nextVehicles = (vehicles || []).map((v, i) => {
+        if (i !== selectedVehicleIndex) return v;
+        const existing = Array.isArray(v.photos) ? v.photos : [];
+        return { ...v, photos: existing.filter((k) => k !== key) } as Vehicle;
+      });
+      onVehiclesChange(nextVehicles);
+      const flat = flattenVehiclePhotos(nextVehicles);
+      onChange(flat);
+    } else {
+      const next = (value || []).filter((k) => k !== key);
+      onChange(next);
+    }
   }
 
   return (

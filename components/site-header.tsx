@@ -117,7 +117,6 @@ export default async function SiteHeader() {
                   <HeaderUser name={displayName} email={user.email!} image={displayImage} plan={displayPlan} />
                 </div>
                 <div className="hidden md:flex items-center gap-2">
-                  <ProfileDialog />
                   <BillingDialog />
                   <DailyBonusDialog />
                 </div>
@@ -127,6 +126,12 @@ export default async function SiteHeader() {
         </div>
         {/* Global dialogs */}
         <ProUpsellDialog />
+        {/* Mount dialogs globally so they work across breakpoints */}
+        {user ? (
+          <>
+            <ProfileDialog />
+          </>
+        ) : null}
       </div>
     </header>
   );

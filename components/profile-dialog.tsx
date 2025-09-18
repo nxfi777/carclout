@@ -11,7 +11,7 @@ import { useSession } from "next-auth/react";
 import VehiclesEditor, { type Vehicle } from "@/components/vehicles-editor";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, XIcon } from "lucide-react";
 import CarPhotosUploader from "@/components/car-photos-uploader";
 // import { Checkbox } from "@/components/ui/checkbox";
 
@@ -112,7 +112,14 @@ export default function ProfileDialog() {
   async function save() {
     setIsSaving(true);
     try {
-      // Block save if required fields are missing
+      // Enforce at least one vehicle and one car photo
+      const hasVehicle = Array.isArray(vehicles) && vehicles.length > 0;
+      const hasPhoto = Array.isArray(carPhotos) && carPhotos.length > 0;
+      if (!hasVehicle || !hasPhoto) {
+        toast.error(!hasVehicle ? 'Add at least one vehicle.' : 'Add at least one car photo.');
+        return;
+      }
+      // Block save if other required fields are missing (when forced-open)
       if (!areRequiredFieldsSatisfied()) {
         toast.error('Please fill the required fields before continuing.');
         return;
@@ -157,6 +164,8 @@ export default function ProfileDialog() {
         setOpen(false);
         setIsRequired(false);
         setRequiredFields([]);
+        // After completing required profile, re-prompt daily bonus if needed
+        try { window.dispatchEvent(new CustomEvent('prompt-daily-bonus')); } catch {}
       }
     } finally {
       setIsSaving(false);
@@ -428,7 +437,26 @@ export default function ProfileDialog() {
             />
           </div>
           <div className="space-y-2">
-            <CarPhotosUploader value={carPhotos} onChange={setCarPhotos} vehicles={vehicles} />
+            {vehicles.length > 0 ? (
+              <CarPhotosUploader
+                value={carPhotos}
+                onChange={(next)=>{
+                  setCarPhotos(next);
+                }}
+                vehicles={vehicles}
+                onVehiclesChange={(next)=>{
+                  setVehicles(next);
+                  // Keep global carPhotos as a flattened view for compatibility
+                  const flat = ([] as string[]).concat(...next.map(v=> Array.isArray((v as { photos?: string[] }).photos) ? (v as { photos?: string[] }).photos as string[] : []));
+                  setCarPhotos(flat);
+                  // Clean chatProfilePhotos if items were removed
+                  const setFlat = new Set(flat);
+                  setChatProfilePhotos((prev)=> (prev||[]).filter(k=> setFlat.has(k)));
+                }}
+              />
+            ) : (
+              <div className="text-xs text-muted-foreground">Add a vehicle above to enable photo uploads.</div>
+            )}
           </div>
           {/* Bio */}
           <div className="space-y-1">
@@ -444,23 +472,29 @@ export default function ProfileDialog() {
           {/* Chat profile visibility selection */}
           <div className="space-y-2">
             <div className="text-sm font-medium">Chat profile photos</div>
-            <div className="text-xs text-muted-foreground">Choose up to 6 photos to show on your chat profile.</div>
-            <ChatPhotosChooser
-              allKeys={carPhotos}
-              selected={chatProfilePhotos}
-              onChange={setChatProfilePhotos}
-              previews={photoPreviews}
-              onNeedPreview={async (keys: string[]) => {
-                for (const key of keys) {
-                  if (photoPreviews[key]) continue;
-                  try {
-                    const res = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key }) });
-                    const data = await res.json();
-                    if (typeof data?.url === 'string') setPhotoPreviews(prev => ({ ...prev, [key]: data.url }));
-                  } catch {}
-                }
-              }}
-            />
+            {vehicles.length === 0 ? (
+              <div className="text-xs text-muted-foreground">Add a vehicle and upload photos above to pick your chat profile photos.</div>
+            ) : (
+              <>
+                <div className="text-xs text-muted-foreground">Choose up to 6 photos to show on your chat profile.</div>
+                <ChatPhotosChooser
+                  allKeys={carPhotos}
+                  selected={chatProfilePhotos}
+                  onChange={setChatProfilePhotos}
+                  previews={photoPreviews}
+                  onNeedPreview={async (keys: string[]) => {
+                    for (const key of keys) {
+                      if (photoPreviews[key]) continue;
+                      try {
+                        const res = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key }) });
+                        const data = await res.json();
+                        if (typeof data?.url === 'string') setPhotoPreviews(prev => ({ ...prev, [key]: data.url }));
+                      } catch {}
+                    }
+                  }}
+                />
+              </>
+            )}
           </div>
           <Button onClick={save} disabled={isSaving} className="w-full">
             {isSaving ? (
@@ -526,7 +560,19 @@ function ChatPhotosChooser({ allKeys, selected, onChange, previews, onNeedPrevie
   }
   return (
     <div className="space-y-2">
-      <div className="text-xs text-muted-foreground">Selected {selected.length}/6</div>
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-muted-foreground">Selected {selected.length}/6</div>
+        {selected.length > 0 ? (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-white underline-offset-2 hover:underline"
+            onClick={() => onChange([])}
+            aria-label="Clear selected chat photos"
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
       <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {(allKeys || []).map((key) => {
           const url = previews[key];
@@ -544,6 +590,16 @@ function ChatPhotosChooser({ allKeys, selected, onChange, previews, onNeedPrevie
                 </div>
                 <div className="absolute top-1 left-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded">{isSel ? 'Selected' : 'Tap to select'}</div>
               </button>
+              {isSel ? (
+                <button
+                  type="button"
+                  aria-label="Remove from chat profile"
+                  className="absolute top-1 right-1 rounded-full p-1 bg-black/70 text-white"
+                  onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onChange(selected.filter(k=>k!==key)); }}
+                >
+                  <XIcon className="size-4" />
+                </button>
+              ) : null}
             </li>
           );
         })}

@@ -31,8 +31,23 @@ export function HooksTabContent() {
   const PAGE_SIZE = 24;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const [activeIdx, _setActiveIdx] = useState<number | null>(null);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
+
+  async function downloadVideo(url?: string, name?: string) {
+    try {
+      if (!url) return;
+      const safeName = (name || 'hook').replace(/[^a-z0-9_.-]+/gi, '_');
+      const res = await fetch(url, { cache: 'no-store' });
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${safeName}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { try { URL.revokeObjectURL(a.href); document.body.removeChild(a); } catch {} }, 1000);
+    } catch {}
+  }
 
   // Play/pause active preview without remounting the <video>
   useEffect(() => {
@@ -130,28 +145,28 @@ export function HooksTabContent() {
         </div>
         <div className="flex-1 min-h-0 overflow-auto">
           <div className="grid grid-cols-2 gap-3 pb-6">
-            {toShow.map((it, i) => (
+            {toShow.map((it, _idx) => (
               <button
-                key={`${it.text}-${i}`}
+                key={`${it.text}-${_idx}`}
                 type="button"
-                onClick={() => { if (it.videoUrl) setActiveIdx((idx) => idx === i ? null : i); }}
+                onClick={() => { if (it.videoUrl) downloadVideo(it.videoUrl, it.text); }}
                 className="rounded-lg overflow-hidden bg-white/5 border border-white/10 text-left"
               >
                 <div className="relative w-full aspect-[3/4]">
                   {/* Keep video mounted to leverage browser caching and avoid refetches */}
                   {it.videoUrl ? (
                     <video
-                      ref={(el) => { videoRefs.current[i] = el; }}
+                      ref={(el) => { videoRefs.current[_idx] = el; }}
                       src={it.videoUrl}
                       poster={it.image}
-                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${activeIdx === i ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                       playsInline
                       muted
-                      controls={activeIdx === i}
+                      controls={activeIdx === _idx}
                       preload="metadata"
                     />
                   ) : null}
-                  <NextImage src={it.image} alt="Hook" fill sizes="(max-width: 640px) 50vw, 33vw" className={`object-cover transition-opacity duration-200 ${activeIdx === i ? 'opacity-0' : 'opacity-100'}`} unoptimized />
+                  <NextImage src={it.image} alt="Hook" fill sizes="(max-width: 640px) 50vw, 33vw" className={`object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-0' : 'opacity-100'}`} unoptimized />
                 </div>
               </button>
             ))}
@@ -187,7 +202,12 @@ export function HooksTabContent() {
         }}>Download All</Button>
       </div>
       <div className="w-full h-[65vh] min-h-[24rem]">
-        <ThreeDCarousel items={items} />
+        <ThreeDCarousel
+          items={items}
+          onItemClick={(it, _idx) => {
+            try { if (it?.videoUrl) downloadVideo(it.videoUrl, it.text); } catch {}
+          }}
+        />
       </div>
     </div>
   );
@@ -331,14 +351,14 @@ export default function TabsViewFancy() {
       <div className='flex flex-col gap-4 rounded-xl overflow-hidden h-full'>
         <div className='rounded-xl bg-black/5 dark:bg-white/5 backdrop-filter backdrop-blur-lg p-1 overflow-x-auto'>
           <div className='mx-auto w-max flex items-center gap-2'>
-            {tabs.map((tab) => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`relative group flex items-center gap-3 px-4 py-2 rounded-lg transition-all min-w-fit ${activeTab === tab.id ? 'text-white dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300'}`}>
-                {activeTab === tab.id && (
+            {tabs.map((t) => (
+              <button key={t.id} onClick={() => setActiveTab(t.id)} className={`relative group flex items-center gap-3 px-4 py-2 rounded-lg transition-all min-w-fit ${activeTab === t.id ? 'text-white dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300'}`}>
+                {activeTab === t.id && (
                   <motion.div layoutId='tabBackground' className='absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg' initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} />
                 )}
                 <div className='flex items-center gap-3 z-10'>
-                  <span className='text-xl'>{tab.icon}</span>
-                  <span className='font-medium'>{tab.name}</span>
+                  <span className='text-xl'>{t.icon}</span>
+                  <span className='font-medium'>{t.name}</span>
                 </div>
               </button>
             ))}
@@ -423,6 +443,7 @@ type Template = {
   fixedAspectRatio?: boolean;
   aspectRatio?: number;
   allowedImageSources?: Array<'vehicle'|'user'>;
+  autoOpenDesigner?: boolean;
 };
 
 export function TemplatesTabContent(){
@@ -530,6 +551,7 @@ export function TemplatesTabContent(){
             allowedImageSources: Array.isArray(t.allowedImageSources) ? (t.allowedImageSources as Array<'vehicle'|'user'>) : ['vehicle','user'],
             favoriteCount: Number((t as Record<string, unknown>).favoriteCount || 0),
             isFavorited: Boolean((t as Record<string, unknown>).isFavorited),
+            autoOpenDesigner: Boolean((t as Record<string, unknown>).autoOpenDesigner),
           };
         }));
         if (cancelled) return;
@@ -538,17 +560,44 @@ export function TemplatesTabContent(){
       // Load vehicle photo keys for default vehicle source
       try {
         const profile = await fetch('/api/profile', { cache: 'no-store' }).then(r=>r.json());
-        const keys: string[] = Array.isArray(profile?.profile?.carPhotos) ? profile.profile.carPhotos : [];
-        setVehiclePhotos(keys);
         const vehicles: Vehicle[] = Array.isArray(profile?.profile?.vehicles) ? profile.profile.vehicles : [];
         setProfileVehicles(vehicles);
-        // Choose a primary photo if available
+        const keys: string[] = (() => {
+          const flat = vehicles.flatMap((v: Vehicle) => Array.isArray((v as unknown as { photos?: string[] }).photos) ? ((v as unknown as { photos?: string[] }).photos as string[]) : []);
+          if (flat.length) return flat;
+          return Array.isArray(profile?.profile?.carPhotos) ? profile.profile.carPhotos : [];
+        })();
+        setVehiclePhotos(keys);
         const primary = keys.find(Boolean) || null;
         setSelectedVehicleKey(primary);
       } catch {}
     })();
     return ()=>{cancelled=true};
   },[sortBy, filterBy]);
+
+  useEffect(() => {
+    function onProfileUpdated() {
+      // Refresh vehicles/photos on profile updates without full page reload
+      (async () => {
+        try {
+          const profile = await fetch('/api/profile', { cache: 'no-store' }).then(r=>r.json());
+          const vehicles: Vehicle[] = Array.isArray(profile?.profile?.vehicles) ? profile.profile.vehicles : [];
+          setProfileVehicles(vehicles);
+          const keys: string[] = (() => {
+            const flat = vehicles.flatMap((v: Vehicle) => Array.isArray((v as unknown as { photos?: string[] }).photos) ? ((v as unknown as { photos?: string[] }).photos as string[]) : []);
+            if (flat.length) return flat;
+            return Array.isArray(profile?.profile?.carPhotos) ? profile.profile.carPhotos : [];
+          })();
+          setVehiclePhotos(keys);
+          if (!keys.includes(selectedVehicleKey || '')) {
+            setSelectedVehicleKey(keys.find(Boolean) || null);
+          }
+        } catch {}
+      })();
+    }
+    window.addEventListener('profile-updated', onProfileUpdated as EventListener);
+    return () => window.removeEventListener('profile-updated', onProfileUpdated as EventListener);
+  }, [selectedVehicleKey]);
 
   async function toggleFavorite(id?: string, slug?: string) {
     if (!id && !slug) return;
@@ -901,6 +950,12 @@ export function TemplatesTabContent(){
       if (typeof data?.key === 'string') setResultKey(String(data.key));
       if (typeof data?.url === 'string') setActiveUrl(String(data.url));
       if (typeof data?.key === 'string') setActiveKey(String(data.key));
+      try {
+        const t = activeTemplate;
+        if (t && t.autoOpenDesigner && typeof data?.key === 'string') {
+          setDesignOpen(true);
+        }
+      } catch {}
       setUpscales([]);
     } finally {
       setBusy(false);
@@ -1045,6 +1100,7 @@ export function TemplatesTabContent(){
                       onSave={saveDesignToGenerations}
                       saveLabel={'Save to workspace'}
                       aspectRatio={typeof activeTemplate?.aspectRatio === 'number' ? Number(activeTemplate.aspectRatio) : undefined}
+                  onReplaceBgKey={(newKey, newUrl)=>{ try { if (newKey) { setActiveKey(newKey); if (newUrl) setActiveUrl(newUrl); } } catch {} }}
                     />
                   </div>
                 </AppDialogContent>

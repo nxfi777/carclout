@@ -4,7 +4,7 @@ import React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Menu, Home, Play, BookOpenText, LayoutTemplate, Music2, MessageSquare, MessagesSquare, Folder, Radio, Megaphone, Wrench, Lock } from 'lucide-react';
+import { Menu, Home, Play, BookOpenText, LayoutTemplate, Music2, MessagesSquare, Folder, Radio, Megaphone, Wrench, Lock } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 type DockItem = {
@@ -17,6 +17,7 @@ type DockItem = {
 export default function HeaderDockMenu() {
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -28,6 +29,7 @@ export default function HeaderDockMenu() {
         const me = await fetch('/api/me', { cache: 'no-store' }).then(r=>r.json());
         if (!alive) return;
         setPlan((me?.plan as string | null | undefined) || null);
+        setRole((me?.role as string | null | undefined) || null);
       } catch {}
     })();
     return () => { alive = false; };
@@ -51,22 +53,23 @@ export default function HeaderDockMenu() {
         { icon: <MessagesSquare size={16} />, label: 'Chat', href: '/dashboard/chat', onClick: () => router.push('/dashboard/chat') },
         { icon: <Folder size={16} />, label: 'Workspace', href: '/dashboard/workspace', onClick: () => router.push('/dashboard/workspace') },
       ];
-      // Livestreams (locked on non-pro)
+      // Livestreams (locked on non-pro, admins bypass)
+      const isUnlocked = (plan === 'pro') || (role === 'admin');
       arr.splice(6, 0, {
         icon: (
           <div className="relative">
             <Radio size={16} />
-            {plan !== 'pro' ? (
+            {!isUnlocked ? (
               <span aria-hidden className="absolute -bottom-1.5 -right-1.5 inline-flex items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)]/90" style={{ width: '0.9rem', height: '0.9rem' }}>
                 <Lock className="opacity-80" style={{ width: '0.6rem', height: '0.6rem' }} />
               </span>
             ) : null}
           </div>
         ),
-        label: plan === 'pro' ? 'Livestreams' : 'Livestreams 🔒',
-        href: plan === 'pro' ? '/dashboard/livestreams' : undefined,
+        label: isUnlocked ? 'Livestreams' : 'Livestreams 🔒',
+        href: isUnlocked ? '/dashboard/livestreams' : undefined,
         onClick: () => {
-          if (plan === 'pro') { router.push('/dashboard/livestreams'); return; }
+          if (isUnlocked) { router.push('/dashboard/livestreams'); return; }
           try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
         }
       });
@@ -83,14 +86,13 @@ export default function HeaderDockMenu() {
         { icon: <Megaphone size={16} />, label: 'Announcements', href: qp('announcements'), onClick: () => router.push(qp('announcements')) },
         { icon: <LayoutTemplate size={16} />, label: 'Templates', href: qp('templates'), onClick: () => router.push(qp('templates')) },
         { icon: <Music2 size={16} />, label: 'Music', href: qp('music'), onClick: () => router.push(qp('music')) },
-        { icon: <MessageSquare size={16} />, label: 'Channels', href: qp('channels'), onClick: () => router.push(qp('channels')) },
         { icon: <Wrench size={16} />, label: 'Moderation', href: qp('moderation'), onClick: () => router.push(qp('moderation')) },
         { icon: <BookOpenText size={16} />, label: 'Learn', href: '/admin/learn', onClick: () => router.push('/admin/learn') },
         { icon: <Folder size={16} />, label: 'Workspace', href: qp('workspace'), onClick: () => router.push(qp('workspace')) },
       ];
     }
     return [];
-  }, [mode, router, searchParams, plan]);
+  }, [mode, router, searchParams, plan, role]);
 
   if (!mode) return null;
 

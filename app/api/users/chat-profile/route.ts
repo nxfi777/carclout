@@ -22,7 +22,12 @@ export async function GET(req: Request) {
     const name: string | undefined = typeof rowRaw?.name === 'string' ? (rowRaw.name as string) : undefined;
     const image: string | undefined = typeof rowRaw?.image === 'string' ? (rowRaw.image as string) : undefined;
     const vehicles: VehicleDb[] = Array.isArray((rowRaw as { vehicles?: unknown })?.vehicles) ? (rowRaw as { vehicles?: unknown }).vehicles as VehicleDb[] : [];
-    const carPhotos: string[] = Array.isArray((rowRaw as { carPhotos?: unknown })?.carPhotos) ? ((rowRaw as { carPhotos?: unknown }).carPhotos as unknown[]).filter((x: unknown) => typeof x === "string") as string[] : [];
+    const vehiclePhotosFlat: string[] = Array.isArray((rowRaw as { vehicles?: unknown })?.vehicles)
+      ? ((rowRaw as { vehicles?: unknown }).vehicles as Array<{ photos?: unknown }>).flatMap(v => Array.isArray(v?.photos) ? (v.photos as unknown[]).filter((x)=> typeof x === 'string') as string[] : [])
+      : [];
+    const carPhotos: string[] = vehiclePhotosFlat.length
+      ? vehiclePhotosFlat
+      : (Array.isArray((rowRaw as { carPhotos?: unknown })?.carPhotos) ? ((rowRaw as { carPhotos?: unknown }).carPhotos as unknown[]).filter((x: unknown) => typeof x === "string") as string[] : []);
     const chatProfilePhotosRaw: string[] = Array.isArray((rowRaw as { chatProfilePhotos?: unknown })?.chatProfilePhotos) ? ((rowRaw as { chatProfilePhotos?: unknown }).chatProfilePhotos as unknown[]).filter((x: unknown) => typeof x === "string") as string[] : [];
 
     // Prefer explicit chatProfilePhotos if set; otherwise pick up to 6 from carPhotos

@@ -18,6 +18,8 @@ type TemplateDoc = {
   allowedImageSources?: Array<'vehicle' | 'user'>; // 'user' covers upload + workspace
   variables?: Array<{ key: string; label?: string; type?: string; required?: boolean; defaultValue?: string | number | boolean }>;
   categories?: string[];
+  // When enabled, generation UIs should open the Designer immediately after generation
+  autoOpenDesigner?: boolean;
   // Foreground masking config (BiRefNet / rembg)
   rembg?: {
     enabled?: boolean;
@@ -166,6 +168,7 @@ export async function POST(req: Request) {
           .filter((s) => s.length > 0)
           .slice(0, 20)
       : [],
+    autoOpenDesigner: !!(body as { autoOpenDesigner?: unknown })?.autoOpenDesigner,
     rembg: ((): TemplateDoc['rembg'] => {
       try {
         const incoming = (body as { rembg?: TemplateDoc['rembg'] })?.rembg as TemplateDoc['rembg'];
@@ -216,6 +219,7 @@ export async function POST(req: Request) {
     allowedImageSources = $allowedImageSources,
     variables = $variables,
     categories = $categories,
+    autoOpenDesigner = $autoOpenDesigner,
     rembg = $rembg,
     created_by = $created_by,
     created_at = d"${createdIso}";`;
@@ -274,6 +278,7 @@ export async function PATCH(req: Request) {
     'allowedImageSources',
     'variables',
     'categories',
+    'autoOpenDesigner',
     'rembg',
   ];
   const sets: string[] = [];

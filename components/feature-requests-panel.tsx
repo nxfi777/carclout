@@ -25,6 +25,7 @@ export default function FeatureRequestsPanel({ showForm = true }: { showForm?: b
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [busy, setBusy] = useState(false);
+  const [votingId, setVotingId] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -106,6 +107,8 @@ export default function FeatureRequestsPanel({ showForm = true }: { showForm?: b
   }
 
   async function vote(id: string, stance: 'up' | 'down') {
+    if (votingId) return; // prevent double-click spam
+    setVotingId(id);
     try {
       const r = await fetch('/api/feature-requests/vote', { method:'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: id, stance }) });
       const j = await r.json();
@@ -113,6 +116,8 @@ export default function FeatureRequestsPanel({ showForm = true }: { showForm?: b
       setItems(prev => prev.map(it => it.id === id ? { ...it, wanted: j?.wanted ?? it.wanted, notWanted: j?.notWanted ?? it.notWanted, myVote: j?.myVote ?? stance } : it));
     } catch (e) {
       toast.error((e as Error).message || 'Failed to vote');
+    } finally {
+      setVotingId(null);
     }
   }
 
@@ -150,10 +155,10 @@ export default function FeatureRequestsPanel({ showForm = true }: { showForm?: b
               <li key={item.id} className="rounded border border-[color:var(--border)]/70 bg-[color:var(--card)]">
                 <div className="p-3 flex items-start gap-3">
                   <div className="flex flex-col items-center gap-1 w-16 shrink-0">
-                    <Button variant={item.myVote==='up'? 'default':'outline'} size="sm" className="w-full" onClick={()=>vote(item.id, 'up')}>
+                    <Button variant={item.myVote==='up'? 'default':'outline'} size="sm" className="w-full" onClick={()=>vote(item.id, 'up')} disabled={votingId===item.id}>
                       ▲ {item.wanted}
                     </Button>
-                    <Button variant={item.myVote==='down'? 'destructive':'outline'} size="sm" className="w-full" onClick={()=>vote(item.id, 'down')}>
+                    <Button variant={item.myVote==='down'? 'destructive':'outline'} size="sm" className="w-full" onClick={()=>vote(item.id, 'down')} disabled={votingId===item.id}>
                       ▼ {item.notWanted}
                     </Button>
                   </div>

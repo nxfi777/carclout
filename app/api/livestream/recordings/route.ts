@@ -6,13 +6,15 @@ import type { Role } from "@/lib/chatPerms";
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const body = (await req.json().catch(() => ({} as Record<string, unknown>))) as { slug?: unknown; videoKey?: unknown; thumbKey?: unknown; isPublic?: unknown; minRole?: unknown; startAt?: unknown; endAt?: unknown };
+  const body = (await req.json().catch(() => ({} as Record<string, unknown>))) as { slug?: unknown; videoKey?: unknown; thumbKey?: unknown; isPublic?: unknown; minRole?: unknown; minPlan?: unknown; startAt?: unknown; endAt?: unknown };
   const slug: string = String(body?.slug || '').trim();
   const videoKey: string = String(body?.videoKey || '').trim();
   const thumbKey: string = String(body?.thumbKey || '').trim();
   const isPublic: boolean = !!body?.isPublic;
   const rawRole = typeof body?.minRole === 'string' ? (body.minRole as string) : undefined;
   const minRole: Role | undefined = rawRole === 'admin' || rawRole === 'staff' || rawRole === 'user' ? (rawRole as Role) : undefined;
+  const rawPlan = typeof body?.minPlan === 'string' ? (body.minPlan as string).toLowerCase() : undefined;
+  const minPlan: 'base' | 'premium' | 'ultra' | undefined = rawPlan === 'base' || rawPlan === 'premium' || rawPlan === 'ultra' ? (rawPlan as 'base' | 'premium' | 'ultra') : undefined;
   const startAt: string | undefined = body?.startAt ? new Date(String(body.startAt)).toISOString() : undefined;
   const endAt: string | undefined = body?.endAt ? new Date(String(body.endAt)).toISOString() : undefined;
   if (!slug || !videoKey || !thumbKey) return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
@@ -26,11 +28,12 @@ export async function POST(req: Request) {
     chatChannel = 'livestream',
     isPublic = $isPublic,
     ${minRole ? 'minRole = $minRole,' : ''}
+    ${minPlan ? 'minPlan = $minPlan,' : ''}
     createdBy = $createdBy,
     created_at = d"${createdIso}"${startAt ? `,
     start_at = d"${startAt}"` : ''}${endAt ? `,
     end_at = d"${endAt}"` : ''};`;
-  const res = await db.query(query, { slug, videoKey, thumbKey, createdBy: user.email, isPublic, minRole });
+  const res = await db.query(query, { slug, videoKey, thumbKey, createdBy: user.email, isPublic, minRole, minPlan });
   const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as Record<string, unknown>) : (Array.isArray(res) ? (res[0] as Record<string, unknown>) : (res as unknown as Record<string, unknown>));
   return NextResponse.json({ recording: row });
 }

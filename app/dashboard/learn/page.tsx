@@ -17,6 +17,7 @@ type LearnItem = {
   thumbKey?: string;
   fileKey?: string;
   minRole?: Role;
+  minPlan?: 'base' | 'premium' | 'ultra' | null;
   isPublic?: boolean;
 };
 

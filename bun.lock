@@ -53,15 +53,15 @@
         "ogl": "^1.0.11",
         "pdfjs-dist": "^5.4.149",
         "react": "19.1.1",
-        "react-day-picker": "^9.9.0",
+        "react-day-picker": "^9.10.0",
         "react-dom": "19.1.1",
-        "react-easy-crop": "^5.5.0",
+        "react-easy-crop": "^5.5.1",
         "recharts": "^3.2.0",
         "sanity": "^4.8.1",
         "sonner": "^2.0.7",
         "spark-md5": "3.0.2",
         "stream-chat": "^9.19.1",
-        "stream-chat-react": "^13.6.4",
+        "stream-chat-react": "^13.6.5",
         "stripe": "^18.5.0",
         "styled-components": "^6.1.19",
         "surrealdb": "^1.3.2",
@@ -2657,13 +2657,13 @@
 
     "react-compiler-runtime": ["react-compiler-runtime@19.1.0-rc.3", "", { "peerDependencies": { "react": "^17.0.0 || ^18.0.0 || ^19.0.0 || ^0.0.0-experimental" } }, "sha512-Cssogys2XZu6SqxRdX2xd8cQAf57BBvFbLEBlIa77161lninbKUn/EqbecCe7W3eqDQfg3rIoOwzExzgCh7h/g=="],
 
-    "react-day-picker": ["react-day-picker@9.9.0", "", { "dependencies": { "@date-fns/tz": "^1.4.1", "date-fns": "^4.1.0", "date-fns-jalali": "^4.1.0-0" }, "peerDependencies": { "react": ">=16.8.0" } }, "sha512-NtkJbuX6cl/VaGNb3sVVhmMA6LSMnL5G3xNL+61IyoZj0mUZFWTg4hmj7PHjIQ8MXN9dHWhUHFoJWG6y60DKSg=="],
+    "react-day-picker": ["react-day-picker@9.10.0", "", { "dependencies": { "@date-fns/tz": "^1.4.1", "date-fns": "^4.1.0", "date-fns-jalali": "^4.1.0-0" }, "peerDependencies": { "react": ">=16.8.0" } }, "sha512-tedecLSd+fpSN+J08601MaMsf122nxtqZXxB6lwX37qFoLtuPNuRJN8ylxFjLhyJS1kaLfAqL1GUkSLd2BMrpQ=="],
 
     "react-dom": ["react-dom@19.1.1", "", { "dependencies": { "scheduler": "^0.26.0" }, "peerDependencies": { "react": "^19.1.1" } }, "sha512-Dlq/5LAZgF0Gaz6yiqZCf6VCcZs1ghAJyrsu84Q/GT0gV+mCxbfmKNoGRKBYMJ8IEdGPqu49YWXD02GCknEDkw=="],
 
     "react-dropzone": ["react-dropzone@14.3.8", "", { "dependencies": { "attr-accept": "^2.2.4", "file-selector": "^2.1.0", "prop-types": "^15.8.1" }, "peerDependencies": { "react": ">= 16.8 || 18.0.0" } }, "sha512-sBgODnq+lcA4P296DY4wacOZz3JFpD99fp+hb//iBO2HHnyeZU3FwWyXJ6salNpqQdsZrgMrotuko/BdJMV8Ug=="],
 
-    "react-easy-crop": ["react-easy-crop@5.5.0", "", { "dependencies": { "normalize-wheel": "^1.0.1", "tslib": "^2.0.1" }, "peerDependencies": { "react": ">=16.4.0", "react-dom": ">=16.4.0" } }, "sha512-OZzU+yXMhe69vLkDex+5QxcfT94FdcgVCyW2dBUw35ZoC3Is42TUxUy04w8nH1mfMKaizVdC3rh/wUfNW1mK4w=="],
+    "react-easy-crop": ["react-easy-crop@5.5.1", "", { "dependencies": { "normalize-wheel": "^1.0.1", "tslib": "^2.0.1" }, "peerDependencies": { "react": ">=16.4.0", "react-dom": ">=16.4.0" } }, "sha512-8m6lCmfr6cSE9/447iHu+OniJuy7sdFbTqbsYyAXKygXJplvGCLpodujodWQeBGse11nDIgCbMUKbgucIxQWSQ=="],
 
     "react-fast-compare": ["react-fast-compare@3.2.2", "", {}, "sha512-nsO+KSNgo1SbJqJEYRE9ERzo7YtYbou/OqjSQKxV7jcKox7+usiUVZOAC+XnDOABXggQTno0Y1CpVnuWEc1boQ=="],
 
@@ -2891,7 +2891,7 @@
 
     "stream-chat": ["stream-chat@9.19.1", "", { "dependencies": { "@types/jsonwebtoken": "^9.0.8", "@types/ws": "^8.5.14", "axios": "^1.6.0", "base64-js": "^1.5.1", "form-data": "^4.0.4", "isomorphic-ws": "^5.0.0", "jsonwebtoken": "^9.0.2", "linkifyjs": "^4.3.2", "ws": "^8.18.1" } }, "sha512-gii7sdM+MWMkJk3rdUDlDSr21DYfF5L3K2W9GDGb+8ofcbi1IHk5lOnP5R+ItsdtkvYKKw9E5/N1RjfhTyqxvQ=="],
 
-    "stream-chat-react": ["stream-chat-react@13.6.4", "", { "dependencies": { "@braintree/sanitize-url": "^6.0.4", "@popperjs/core": "^2.11.5", "@react-aria/focus": "^3", "clsx": "^2.0.0", "dayjs": "^1.10.4", "emoji-regex": "^9.2.0", "fix-webm-duration": "^1.0.5", "hast-util-find-and-replace": "^5.0.1", "i18next": "^25.2.1", "linkifyjs": "^4.3.2", "lodash.debounce": "^4.0.8", "lodash.defaultsdeep": "^4.6.1", "lodash.mergewith": "^4.6.2", "lodash.throttle": "^4.1.1", "lodash.uniqby": "^4.7.0", "nanoid": "^3.3.4", "react-dropzone": "^14.2.3", "react-fast-compare": "^3.2.2", "react-image-gallery": "1.2.12", "react-markdown": "^9.0.3", "react-player": "2.10.1", "react-popper": "^2.3.0", "react-textarea-autosize": "^8.3.0", "react-virtuoso": "^2.16.5", "remark-gfm": "^4.0.1", "tslib": "^2.6.2", "unist-builder": "^4.0.0", "unist-util-visit": "^5.0.0", "use-sync-external-store": "^1.4.0" }, "optionalDependencies": { "@stream-io/transliterate": "^1.5.5" }, "peerDependencies": { "@breezystack/lamejs": "^1.2.7", "@emoji-mart/data": "^1.1.0", "@emoji-mart/react": "^1.1.0", "emoji-mart": "^5.4.0", "react": "^19.0.0 || ^18.0.0 || ^17.0.0 || ^16.14.0", "react-dom": "^19.0.0 || ^18.0.0 || ^17.0.0 || ^16.14.0", "stream-chat": "^9.19.0" }, "optionalPeers": ["@breezystack/lamejs", "@emoji-mart/data", "@emoji-mart/react", "emoji-mart"] }, "sha512-3hlh5jt/oj1ZHuP4jLIbecJKP1bDb4R4ws+ifw9XsVK6xYcV8NJu9oAFogTeNHFI9XT9/fsLAjfnEHAwVA+JLw=="],
+    "stream-chat-react": ["stream-chat-react@13.6.5", "", { "dependencies": { "@braintree/sanitize-url": "^6.0.4", "@popperjs/core": "^2.11.5", "@react-aria/focus": "^3", "clsx": "^2.0.0", "dayjs": "^1.10.4", "emoji-regex": "^9.2.0", "fix-webm-duration": "^1.0.5", "hast-util-find-and-replace": "^5.0.1", "i18next": "^25.2.1", "linkifyjs": "^4.3.2", "lodash.debounce": "^4.0.8", "lodash.defaultsdeep": "^4.6.1", "lodash.mergewith": "^4.6.2", "lodash.throttle": "^4.1.1", "lodash.uniqby": "^4.7.0", "nanoid": "^3.3.4", "react-dropzone": "^14.2.3", "react-fast-compare": "^3.2.2", "react-image-gallery": "1.2.12", "react-markdown": "^9.0.3", "react-player": "2.10.1", "react-popper": "^2.3.0", "react-textarea-autosize": "^8.3.0", "react-virtuoso": "^2.16.5", "remark-gfm": "^4.0.1", "tslib": "^2.6.2", "unist-builder": "^4.0.0", "unist-util-visit": "^5.0.0", "use-sync-external-store": "^1.4.0" }, "optionalDependencies": { "@stream-io/transliterate": "^1.5.5" }, "peerDependencies": { "@breezystack/lamejs": "^1.2.7", "@emoji-mart/data": "^1.1.0", "@emoji-mart/react": "^1.1.0", "emoji-mart": "^5.4.0", "react": "^19.0.0 || ^18.0.0 || ^17.0.0 || ^16.14.0", "react-dom": "^19.0.0 || ^18.0.0 || ^17.0.0 || ^16.14.0", "stream-chat": "^9.19.0" }, "optionalPeers": ["@breezystack/lamejs", "@emoji-mart/data", "@emoji-mart/react", "emoji-mart"] }, "sha512-zflbCJoINcfElPb0Qhe9Go9MCidA/tDcnfASXQn7QxAFdujiYu8mky+jK2AErRvdT/SOvJEy41hfnkBj3w7F/A=="],
 
     "stream-each": ["stream-each@1.2.3", "", { "dependencies": { "end-of-stream": "^1.1.0", "stream-shift": "^1.0.0" } }, "sha512-vlMC2f8I2u/bZGqkdfLQW/13Zihpej/7PmSiMQsbYddxuTsJp8vRe2x2FvVExZg7FaOds43ROAuFJwPR4MTZLw=="],
 

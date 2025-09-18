@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
-import { getSessionLite, canAccessByRole, type Role } from "@/lib/chatPerms";
+import { getSessionLite, canAccessByRole, canAccessByPlan, type Role } from "@/lib/chatPerms";
 
 type LearnItem = {
   id?: string;
@@ -11,6 +11,7 @@ type LearnItem = {
   thumbKey?: string; // admin/learn/... or admin/hooks/... or admin/... livestreams
   fileKey?: string; // video or pdf key
   minRole?: Role;
+  minPlan?: "base" | "premium" | "ultra" | null;
   isPublic?: boolean; // for recordings
 };
 
@@ -24,8 +25,9 @@ export async function GET() {
     const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
     const items: LearnItem[] = rows
       .filter((r) => {
-        const required: Role | undefined = (r?.minRole as Role | undefined) ?? undefined;
-        return canAccessByRole(session.role, required);
+        const requiredRole: Role | undefined = (r?.minRole as Role | undefined) ?? undefined;
+        const requiredPlan = ((r as { minPlan?: string | null }).minPlan as "base" | "premium" | "ultra" | null | undefined) ?? undefined;
+        return canAccessByRole(session.role, requiredRole) && canAccessByPlan(session.plan, requiredPlan as Exclude<"base" | "premium" | "ultra" | null, null> | undefined);
       })
       .map((r) => ({
         id: (r as { id?: { toString?: () => string } | string })?.id?.toString?.() || (r as { id?: string }).id,
@@ -36,15 +38,17 @@ export async function GET() {
         thumbKey: (r as { thumbKey?: string })?.thumbKey,
         fileKey: (r as { fileKey?: string })?.fileKey,
         minRole: (r as { minRole?: Role })?.minRole,
+        minPlan: (r as { minPlan?: "base" | "premium" | "ultra" | null })?.minPlan ?? null,
       }));
 
     // Merge in public livestream recordings that are flagged for learn
     try {
-      const rec = await db.query("SELECT slug, thumbKey, videoKey, isPublic, minRole FROM livestream_recording ORDER BY created_at DESC LIMIT 200;");
+      const rec = await db.query("SELECT slug, thumbKey, videoKey, isPublic, minRole, minPlan FROM livestream_recording ORDER BY created_at DESC LIMIT 200;");
       const recRows = Array.isArray(rec) && Array.isArray(rec[0]) ? (rec[0] as Array<Record<string, unknown>>) : [];
       const recItems: LearnItem[] = recRows
         .filter((r) => !!(r as { isPublic?: unknown })?.isPublic)
         .filter((r) => canAccessByRole(session.role, ((r as { minRole?: Role }).minRole)))
+        .filter((r) => canAccessByPlan(session.plan, (((r as { minPlan?: "base" | "premium" | "ultra" | null }).minPlan) || undefined) as Exclude<"base" | "premium" | "ultra" | null, null> | undefined))
         .map((r) => ({
           kind: "recording",
           slug: (r as { slug?: string; id?: string }).slug || (r as { id?: string }).id || "rec",
@@ -52,6 +56,7 @@ export async function GET() {
           thumbKey: (r as { thumbKey?: string }).thumbKey,
           fileKey: (r as { videoKey?: string }).videoKey,
           minRole: (r as { minRole?: Role }).minRole,
+          minPlan: (r as { minPlan?: "base" | "premium" | "ultra" | null }).minPlan ?? null,
           isPublic: true,
         }));
       items.push(...recItems);
@@ -66,7 +71,7 @@ export async function GET() {
 // Admin upsert for tutorials/ebooks
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { kind, slug, title, description, thumbKey, fileKey, minRole } = body || {};
+  const { kind, slug, title, description, thumbKey, fileKey, minRole, minPlan } = body || {};
   if (!kind || !slug) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   const session = await getSessionLite();
   if (session.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -81,11 +86,12 @@ export async function POST(req: Request) {
       thumbKey: $thumbKey,
       fileKey: $fileKey,
       minRole: $minRole,
+      minPlan: $minPlan,
       updated_at: d"${createdIso}",
       created_at: d"${createdIso}"
     } RETURN AFTER;
   `;
-  const res = await db.query(query, { kind, slug, title, description, thumbKey, fileKey, minRole });
+  const res = await db.query(query, { kind, slug, title, description, thumbKey, fileKey, minRole, minPlan });
   const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as Record<string, unknown>) : null;
   return NextResponse.json({ item: row as unknown });
 }

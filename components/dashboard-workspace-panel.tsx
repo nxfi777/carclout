@@ -24,6 +24,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
 import TextBehindEditor from "@/components/templates/text-behind-editor";
+import { SHOW_MANAGED_FOLDERS, isManagedRoot, isManagedPath as isManagedPathUtil } from "@/lib/workspace-visibility";
 import { ChevronLeft, List as ListIcon, LayoutGrid } from "lucide-react";
 import dynamic from "next/dynamic";
 import carLoadAnimation from "@/public/carload.json";
@@ -102,10 +103,8 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [designOpen, setDesignOpen] = useState(false);
   const [designKey, setDesignKey] = useState<string | null>(null);
   const [upscaleBusy, setUpscaleBusy] = useState(false);
-  const isManagedPath = useMemo(() => {
-    const p = path || '';
-    return p === 'vehicles' || p.startsWith('vehicles/') || p === 'designer_masks' || p.startsWith('designer_masks/');
-  }, [path]);
+  const isManagedRootName = useMemo(() => (name: string) => isManagedRoot(name), []);
+  const isManagedPath = useMemo(() => isManagedPathUtil(path || ''), [path]);
 
   useEffect(() => {
     let cancelled = false;
@@ -826,7 +825,12 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
 
   const sortedItems = useMemo(() => {
     const last = path.split('/').pop() || '';
-    const visible = items.filter((it) => !(it.type === 'folder' && it.name === last));
+    const visibleUnfiltered = items.filter((it) => !(it.type === 'folder' && it.name === last));
+    const currentScope = scope === 'admin' ? 'admin' : 'user';
+    const showManaged = SHOW_MANAGED_FOLDERS[currentScope];
+    const visible = showManaged || (path && path.length > 0)
+      ? visibleUnfiltered
+      : visibleUnfiltered.filter((it) => !(it.type === 'folder' && isManagedRootName(it.name)));
     const arr = [...visible];
     arr.sort((a, b) => {
       if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
@@ -837,7 +841,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [items, sortBy, sortDir, path]);
+  }, [items, sortBy, sortDir, path, scope, isManagedRootName]);
 
   // Reset cached view URLs on path change
   useEffect(() => { setViewUrls({}); }, [path]);
@@ -1475,7 +1479,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         </section>
       </div>
       {preview ? (
-        <div className="fixed inset-0 bg-black/70 grid place-items-center z-50" onClick={()=>setPreview(null)}>
+        <div className="fixed inset-0 bg-black/70 grid place-items-center z-[12000]" onClick={()=>setPreview(null)}>
           <div className="bg-[var(--popover)] rounded-lg p-3 max-w-[90vw] max-h-[85vh]" onClick={(e)=>e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-2">
               <div className="text-sm font-medium truncate">{preview.name}</div>
@@ -1503,7 +1507,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           </DialogHeader>
           <div className="mt-2">
             {designKey ? (
-              <TextBehindEditor bgKey={designKey} rembg={{ enabled: true }} onClose={()=> setDesignOpen(false)} onSave={saveDesignToWorkspace} saveLabel={path==='vehicles' ? 'Save (choose folder)' : 'Save to workspace'} />
+              <TextBehindEditor bgKey={designKey} rembg={{ enabled: true }} onClose={()=> setDesignOpen(false)} onSave={saveDesignToWorkspace} saveLabel={path==='vehicles' ? 'Save (choose folder)' : 'Save to workspace'} onReplaceBgKey={(newKey)=>{ try { if (newKey) { setDesignKey(newKey); } } catch {} }} />
             ) : null}
           </div>
         </DialogContent>

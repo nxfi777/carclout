@@ -5,10 +5,84 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Droplet, Pipette, AlignCenterHorizontal, AlignCenterVertical, Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
+import {
+  Inter,
+  Poppins,
+  Montserrat,
+  Oswald,
+  Bebas_Neue,
+  Lato,
+  Open_Sans,
+  Roboto_Condensed,
+  Anton,
+  Barlow_Condensed,
+  Playfair_Display,
+  Merriweather,
+  DM_Sans,
+  Sora,
+  Exo_2,
+  Orbitron,
+  Rajdhani,
+  Roboto_Mono,
+  Source_Code_Pro,
+  Fira_Code,
+  Raleway,
+  Nunito,
+  Ubuntu,
+  Work_Sans,
+  PT_Sans,
+  PT_Serif,
+  Rubik,
+  Manrope,
+  Cabin,
+  Quicksand,
+  Alegreya,
+  Libre_Baskerville,
+  Arvo,
+  Noto_Sans,
+  Noto_Serif,
+} from "next/font/google";
 import carLoadAnimation from "@/public/carload.json";
 import { cn } from "@/lib/utils";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
+
+// Google fonts (loaded once and reused). We load a standard 400 weight for preview.
+const inter = Inter({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const poppins = Poppins({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const montserrat = Montserrat({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const oswald = Oswald({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const bebasNeue = Bebas_Neue({ subsets: ["latin"], weight: "400", display: "swap" });
+const lato = Lato({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const openSans = Open_Sans({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const robotoCondensed = Roboto_Condensed({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const anton = Anton({ subsets: ["latin"], weight: "400", display: "swap" });
+const barlowCondensed = Barlow_Condensed({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const playfair = Playfair_Display({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const merriweather = Merriweather({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const dmSans = DM_Sans({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const sora = Sora({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const exo2 = Exo_2({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const orbitron = Orbitron({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const rajdhani = Rajdhani({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const robotoMono = Roboto_Mono({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const sourceCodePro = Source_Code_Pro({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const firaCode = Fira_Code({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const raleway = Raleway({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const nunito = Nunito({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const ubuntu = Ubuntu({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const workSans = Work_Sans({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const ptSans = PT_Sans({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const ptSerif = PT_Serif({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const rubik = Rubik({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const manrope = Manrope({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const cabin = Cabin({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const quicksand = Quicksand({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const alegreya = Alegreya({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const libreBaskerville = Libre_Baskerville({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const arvo = Arvo({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const notoSans = Noto_Sans({ subsets: ["latin"], weight: ["400"], display: "swap" });
+const notoSerif = Noto_Serif({ subsets: ["latin"], weight: ["400"], display: "swap" });
 
 type RembgConfig = {
   enabled?: boolean;
@@ -109,7 +183,7 @@ function ValueSlider({
   );
 }
 
-export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave, saveLabel, aspectRatio }: { bgKey: string; rembg?: RembgConfig; defaultHeadline?: string; onClose?: ()=>void; onSave?: (blob: Blob) => Promise<void> | void; saveLabel?: string; aspectRatio?: number; }){
+export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave, saveLabel, aspectRatio, onReplaceBgKey }: { bgKey: string; rembg?: RembgConfig; defaultHeadline?: string; onClose?: ()=>void; onSave?: (blob: Blob) => Promise<void> | void; saveLabel?: string; aspectRatio?: number; onReplaceBgKey?: (newKey: string, newUrl?: string) => void; }){
   const [busy, setBusy] = useState(true);
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const [fgUrl, setFgUrl] = useState<string | null>(null);
@@ -119,6 +193,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
   const [fontWeight, setFontWeight] = useState<number>(800);
   const [fontFamily, setFontFamily] = useState<string>('system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif');
   const [letterSpacing, setLetterSpacing] = useState<number>(0);
+  const [lineSpacing, setLineSpacing] = useState<number>(1.1);
   const [squish, setSquish] = useState<number>(1);
   const [color, setColor] = useState<string>("#ffffff");
   const [x, setX] = useState<number>(50);
@@ -138,7 +213,56 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [upscaling, setUpscaling] = useState(false);
   void aspectRatio;
+
+  const fontOptions = [
+    // System/common fonts
+    { label: 'System UI', value: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' },
+    { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
+    { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
+    { label: 'Georgia', value: 'Georgia, serif' },
+    { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+    { label: 'Courier New', value: '"Courier New", Courier, monospace' },
+    { label: 'Impact', value: 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif' },
+
+    // Google fonts (preloaded above)
+    { label: 'Inter', value: inter.style.fontFamily },
+    { label: 'Poppins', value: poppins.style.fontFamily },
+    { label: 'Montserrat', value: montserrat.style.fontFamily },
+    { label: 'Oswald', value: oswald.style.fontFamily },
+    { label: 'Bebas Neue', value: bebasNeue.style.fontFamily },
+    { label: 'Lato', value: lato.style.fontFamily },
+    { label: 'Open Sans', value: openSans.style.fontFamily },
+    { label: 'Roboto Condensed', value: robotoCondensed.style.fontFamily },
+    { label: 'Anton', value: anton.style.fontFamily },
+    { label: 'Barlow Condensed', value: barlowCondensed.style.fontFamily },
+    { label: 'Playfair Display', value: playfair.style.fontFamily },
+    { label: 'Merriweather', value: merriweather.style.fontFamily },
+    { label: 'DM Sans', value: dmSans.style.fontFamily },
+    { label: 'Sora', value: sora.style.fontFamily },
+    { label: 'Exo 2', value: exo2.style.fontFamily },
+    { label: 'Orbitron', value: orbitron.style.fontFamily },
+    { label: 'Rajdhani', value: rajdhani.style.fontFamily },
+    { label: 'Roboto Mono', value: robotoMono.style.fontFamily },
+    { label: 'Source Code Pro', value: sourceCodePro.style.fontFamily },
+    { label: 'Fira Code', value: firaCode.style.fontFamily },
+    { label: 'Raleway', value: raleway.style.fontFamily },
+    { label: 'Nunito', value: nunito.style.fontFamily },
+    { label: 'Ubuntu', value: ubuntu.style.fontFamily },
+    { label: 'Work Sans', value: workSans.style.fontFamily },
+    { label: 'PT Sans', value: ptSans.style.fontFamily },
+    { label: 'PT Serif', value: ptSerif.style.fontFamily },
+    { label: 'Rubik', value: rubik.style.fontFamily },
+    { label: 'Manrope', value: manrope.style.fontFamily },
+    { label: 'Cabin', value: cabin.style.fontFamily },
+    { label: 'Quicksand', value: quicksand.style.fontFamily },
+    { label: 'Alegreya', value: alegreya.style.fontFamily },
+    { label: 'Libre Baskerville', value: libreBaskerville.style.fontFamily },
+    { label: 'Arvo', value: arvo.style.fontFamily },
+    { label: 'Noto Sans', value: notoSans.style.fontFamily },
+    { label: 'Noto Serif', value: notoSerif.style.fontFamily },
+  ];
 
   useEffect(()=>{
     let cancelled = false;
@@ -190,6 +314,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
     weight: number,
     fontFamilyValue: string,
     letterSpacingEm: number,
+    lineHeightEm: number,
     squishFactor: number
   ){
     ctx.fillStyle = colorValue;
@@ -198,7 +323,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
     const xCenter = (px / 100) * cw;
     const yCenter = (py / 100) * ch;
     const lines = String(textValue || '').split(/\n+/g);
-    const lineHeight = sizePx * 1.1;
+    const lineHeight = sizePx * (lineHeightEm || 1.1);
     const totalH = (lines.length - 1) * lineHeight;
     const letterSpacingPx = letterSpacingEm * sizePx;
 
@@ -257,7 +382,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
         ctx.shadowBlur = glowBlur;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
-        drawHeadline(ctx, canvas.width, canvas.height, x, y, text, color, fontSize, fontWeight, fontFamily, letterSpacing, squish);
+        drawHeadline(ctx, canvas.width, canvas.height, x, y, text, color, fontSize, fontWeight, fontFamily, letterSpacing, lineSpacing, squish);
         ctx.restore();
       }
       if (shadow) {
@@ -266,7 +391,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
         ctx.shadowBlur = shadowBlur;
         ctx.shadowOffsetX = shadowX;
         ctx.shadowOffsetY = shadowY;
-        drawHeadline(ctx, canvas.width, canvas.height, x, y, text, color, fontSize, fontWeight, fontFamily, letterSpacing, squish);
+        drawHeadline(ctx, canvas.width, canvas.height, x, y, text, color, fontSize, fontWeight, fontFamily, letterSpacing, lineSpacing, squish);
         ctx.restore();
       }
       ctx.save();
@@ -274,7 +399,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
       ctx.shadowBlur = 0;
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 0;
-      drawHeadline(ctx, canvas.width, canvas.height, x, y, text, color, fontSize, fontWeight, fontFamily, letterSpacing, squish);
+      drawHeadline(ctx, canvas.width, canvas.height, x, y, text, color, fontSize, fontWeight, fontFamily, letterSpacing, lineSpacing, squish);
       ctx.restore();
       ctx.drawImage(fgImg, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise<Blob | null>((resolve)=> canvas.toBlob(resolve, 'image/png'));
@@ -288,7 +413,31 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
     setDownloading(true);
     try {
       const blob = await composeToBlob();
-      if (!blob) return;
+      if (!blob) {
+        try {
+          // Fallback to data URL if toBlob failed
+          const fallbackCanvas = document.createElement('canvas');
+          const ctx = fallbackCanvas.getContext('2d');
+          if (ctx && bgUrl && fgUrl) {
+            const bgImg = await loadImageSafe(bgUrl);
+            const fgImg = await loadImageSafe(fgUrl);
+            const dimBg = bgImg as HTMLImageElement & { width?: number; height?: number };
+            fallbackCanvas.width = bgImg.naturalWidth || dimBg.width || 0;
+            fallbackCanvas.height = bgImg.naturalHeight || dimBg.height || 0;
+            ctx.drawImage(bgImg, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
+            drawHeadline(ctx, fallbackCanvas.width, fallbackCanvas.height, x, y, text, color, fontSize, fontWeight, fontFamily, letterSpacing, lineSpacing, squish);
+            ctx.drawImage(fgImg, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
+            const dataUrl = fallbackCanvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = `design-${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 500);
+          }
+        } catch {}
+        return;
+      }
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `design-${Date.now()}.png`;
@@ -310,6 +459,31 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
     } finally {
       setSaving(false);
     }
+  }
+
+  async function upscaleBackground(){
+    if (upscaling) return;
+    setUpscaling(true);
+    try {
+      // Try to estimate original dimensions for better credits calculation
+      let payload: { r2_key: string; original_width?: number; original_height?: number } = { r2_key: bgKey };
+      try {
+        const v = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key: bgKey }) }).then(r=>r.json()).catch(()=>({}));
+        const url: string | null = v?.url || null;
+        if (url) {
+          const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img=new Image(); img.onload=()=> resolve({ w: img.naturalWidth||img.width, h: img.naturalHeight||img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
+          if (dims && dims.w>0 && dims.h>0) { payload = { r2_key: bgKey, original_width: dims.w, original_height: dims.h }; }
+        }
+      } catch {}
+      const res = await fetch('/api/tools/upscale', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const data = await res.json().catch(()=>({}));
+      if (res.status === 402) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Not enough credits.'); } catch {} setUpscaling(false); return; }
+      if (!res.ok || !data?.key) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.(String((data as { error?: string })?.error || 'Upscale failed')); } catch {} setUpscaling(false); return; }
+      // Notify parent so it can swap to upscaled background
+      if (typeof onReplaceBgKey === 'function') {
+        try { onReplaceBgKey(String(data.key), typeof data?.url === 'string' ? String(data.url) : undefined); } catch {}
+      }
+    } catch {} finally { setUpscaling(false); }
   }
 
   if (busy) {
@@ -393,7 +567,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
             <img ref={bgImgRef} src={bgUrl} alt="bg" className="w-full h-auto block select-none max-h-[56vh] object-contain" />
             {/* text layer */}
             <div className="absolute left-0 top-0 w-full h-full select-none">
-              <div style={{ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: `translate(-50%, -50%) scaleX(${squish})`, transformOrigin: 'center', color, fontSize: `${fontSize}px`, fontWeight: fontWeight, fontFamily, lineHeight: 1.1, letterSpacing: `${letterSpacing}em`, textShadow: [glow ? `0 0 ${glowBlur}px ${glowColor}` : '', shadow ? `${shadowX}px ${shadowY}px ${shadowBlur}px ${shadowColor}` : ''].filter(Boolean).join(', '), whiteSpace: 'pre-wrap', textAlign: 'center', userSelect: 'none' }}>{text}</div>
+              <div style={{ position: 'absolute', left: `${x}%`, top: `${y}%`, transform: `translate(-50%, -50%) scaleX(${squish})`, transformOrigin: 'center', color, fontSize: `${fontSize}px`, fontWeight: fontWeight, fontFamily, lineHeight: lineSpacing, letterSpacing: `${letterSpacing}em`, textShadow: [glow ? `0 0 ${glowBlur}px ${glowColor}` : '', shadow ? `${shadowX}px ${shadowY}px ${shadowBlur}px ${shadowColor}` : ''].filter(Boolean).join(', '), whiteSpace: 'pre-wrap', textAlign: 'center', userSelect: 'none' }}>{text}</div>
             </div>
             {/* foreground */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -409,15 +583,15 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
             <div className="space-y-1">
               <div className="text-xs text-white/70">Font</div>
               <Select value={fontFamily} onValueChange={(v)=> setFontFamily(v)}>
-                <SelectTrigger className="h-9 w-full sm:min-w-[8rem]"><SelectValue placeholder="Font" /></SelectTrigger>
+                <SelectTrigger className="h-9 w-full sm:min-w-[8rem]" style={{ fontFamily }}>
+                  <SelectValue placeholder="Font" />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif'}>System UI</SelectItem>
-                  <SelectItem value={'Arial, Helvetica, sans-serif'}>Arial</SelectItem>
-                  <SelectItem value={'Helvetica, Arial, sans-serif'}>Helvetica</SelectItem>
-                  <SelectItem value={'Georgia, serif'}>Georgia</SelectItem>
-                  <SelectItem value={'"Times New Roman", Times, serif'}>Times New Roman</SelectItem>
-                  <SelectItem value={'"Courier New", Courier, monospace'}>Courier New</SelectItem>
-                  <SelectItem value={'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif'}>Impact</SelectItem>
+                  {fontOptions.map((opt)=> (
+                    <SelectItem key={opt.label} value={opt.value}>
+                      <span style={{ fontFamily: opt.value }}>{opt.label}</span>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -441,6 +615,10 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
             <div className="space-y-1">
               <div className="text-xs text-white/70">Letter spacing (em)</div>
               <ValueSlider min={-0.1} max={1} step={0.01} value={[letterSpacing]} onValueChange={(vals: number[])=> setLetterSpacing(parseFloat(String(vals?.[0] ?? 0)))} className="w-full" />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-white/70">Line spacing (em)</div>
+              <ValueSlider min={0.6} max={2} step={0.01} value={[lineSpacing]} onValueChange={(vals: number[])=> setLineSpacing(parseFloat(String(vals?.[0] ?? 1.1)))} className="w-full" />
             </div>
             <div className="space-y-1 sm:col-span-2">
               <div className="text-xs text-white/70">Width scale (%)</div>
@@ -526,6 +704,10 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
             ) : null}
           </div>
           <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
+        <Button className="w-full sm:w-auto" variant="outline" onClick={upscaleBackground} disabled={upscaling}>
+          {upscaling ? <Loader2 className="size-4 animate-spin" /> : null}
+          {upscaling ? 'Upscaling…' : 'Upscale background'}
+        </Button>
             {onSave ? (
               <Button className="w-full sm:w-auto" disabled={saving} onClick={saveComposite}>{saveLabel || 'Save'}</Button>
             ) : null}

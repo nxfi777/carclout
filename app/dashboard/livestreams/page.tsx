@@ -5,6 +5,7 @@ import LivestreamPanel from '@/components/livestream-panel';
 
 export default function DashboardLivestreamsPage() {
   const [isLive, setIsLive] = useState<boolean | null>(null);
+  const [isCohost, setIsCohost] = useState<boolean | null>(null);
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -12,6 +13,10 @@ export default function DashboardLivestreamsPage() {
         const s = await fetch('/api/livestream/status', { cache: 'no-store' }).then((r) => r.json());
         if (mounted) setIsLive(!!s?.isLive);
       } catch { if (mounted) setIsLive(false); }
+      try {
+        const p = await fetch('/api/livestream/permissions', { cache: 'no-store' }).then((r) => r.json());
+        if (mounted) setIsCohost(!!p?.isCohost);
+      } catch { if (mounted) setIsCohost(false); }
       try {
         const es = new EventSource('/api/livestream/status/live');
         es.onmessage = (ev) => {
@@ -27,8 +32,8 @@ export default function DashboardLivestreamsPage() {
     return () => { mounted = false; };
   }, []);
 
-  if (isLive === null) return <div className="p-6">Checking livestreams…</div>;
-  if (!isLive) return <div className="p-6 text-white/80">No livestreams right now, check back later.</div>;
+  if (isLive === null || isCohost === null) return <div className="p-6">Checking livestreams…</div>;
+  if (!isLive && !isCohost) return <div className="p-6 text-white/80">No livestreams right now, check back later.</div>;
   return (
     <div className="p-3 flex-1 flex min-h-0 overflow-hidden">
       <div className="w-full h-full min-h-0">

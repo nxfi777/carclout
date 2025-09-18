@@ -32,10 +32,11 @@ interface CardProps {
   active: boolean;
   onHoverStart: () => void;
   onHoverEnd: () => void;
+  onClick?: () => void;
 }
 
 //  Card Component (Memoized for Performance) ---------------------------
-const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, onHoverStart, onHoverEnd }: CardProps) => {
+const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, onHoverStart, onHoverEnd, onClick }: CardProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -58,6 +59,7 @@ const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, onHov
       onMouseLeave={onHoverEnd}
       onTouchStart={onHoverStart}
       onTouchEnd={onHoverEnd}
+      onClick={onClick}
     >
       <div
         className="w-full h-full rounded-2xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg dark:shadow-gray-900/50 transition-transform duration-300 hover:scale-105 hover:shadow-2xl dark:hover:shadow-gray-900/70 hover:z-10"
@@ -92,9 +94,10 @@ interface ThreeDCarouselProps {
   cardW?: number;
   cardH?: number;
   gap?: number;
+  onItemClick?: (item: ThreeDCarouselItem, index: number) => void;
 }
 
-const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, cardH = CARD_H, gap = 16 }: ThreeDCarouselProps) => {
+const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, cardH = CARD_H, gap = 16, onItemClick }: ThreeDCarouselProps) => {
   const parentRef = useRef<HTMLDivElement>(null);
   const wheelRef = useRef<HTMLDivElement>(null);
 
@@ -109,6 +112,61 @@ const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, car
   const animationFrameRef = useRef<number | null>(null);
 
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const lastHoverIdxRef = useRef<number | null>(null);
+
+  // Initialize or resume AudioContext on first user gesture
+  useEffect(() => {
+    function tryInit() {
+      try {
+        if (audioCtxRef.current) return;
+        const Ctor = (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext || AudioContext;
+        audioCtxRef.current = new Ctor();
+      } catch {}
+    }
+    const onAny = () => {
+      tryInit();
+      try { audioCtxRef.current?.resume().catch(() => {}); } catch {}
+    };
+    window.addEventListener('pointerdown', onAny, { once: true });
+    window.addEventListener('keydown', onAny, { once: true });
+    return () => {
+      try { window.removeEventListener('pointerdown', onAny); } catch {}
+      try { window.removeEventListener('keydown', onAny); } catch {}
+    };
+  }, []);
+
+  const playHoverTone = useCallback((index: number) => {
+    try {
+      const ctx = audioCtxRef.current || new (AudioContext as unknown as { new(): AudioContext })();
+      audioCtxRef.current = ctx;
+      if (ctx.state === 'suspended') { try { ctx.resume().catch(() => {}); } catch {} }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      // Map index to a pleasant short blip frequency
+      const base = 520;
+      const freq = base + ((index % 12) * 28);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.14);
+      osc.onended = () => { try { osc.disconnect(); gain.disconnect(); } catch {} };
+    } catch {}
+  }, []);
+
+  // Play subtle hover tone when active card changes
+  useEffect(() => {
+    if (hoverIdx === null) return;
+    if (hoverIdx === lastHoverIdxRef.current) return;
+    lastHoverIdxRef.current = hoverIdx;
+    playHoverTone(hoverIdx);
+  }, [hoverIdx, playHoverTone]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -217,6 +275,12 @@ const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, car
               active={hoverIdx === idx}
               onHoverStart={() => setHoverIdx(idx)}
               onHoverEnd={() => setHoverIdx(v => v === idx ? null : v)}
+              onClick={() => {
+                try {
+                  const it = items[idx];
+                  if (onItemClick) { onItemClick(it, idx); return; }
+                } catch {}
+              }}
             />
           ))}
         </div>

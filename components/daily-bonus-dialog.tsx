@@ -13,7 +13,19 @@ export default function DailyBonusDialog() {
   const [alreadyClaimed, setAlreadyClaimed] = useState(false);
 
   useEffect(() => {
+    async function needsProfileCompletion(): Promise<boolean> {
+      try {
+        const prof = await fetch('/api/profile', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
+        const vehicles = Array.isArray(prof?.profile?.vehicles) ? (prof.profile.vehicles as unknown[]) : [];
+        const carPhotos = Array.isArray(prof?.profile?.carPhotos) ? (prof.profile.carPhotos as unknown[]) : [];
+        const needs = vehicles.length < 1 || carPhotos.length < 1;
+        return needs;
+      } catch { return false; }
+    }
+
     async function onPrompt() {
+      // Defer when profile is incomplete to avoid dialog clashes
+      if (await needsProfileCompletion()) return;
       try {
         // Check if already claimed today without mutating any state
         const chk = await fetch('/api/activity/streak?days=1', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({}));

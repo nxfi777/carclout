@@ -119,25 +119,31 @@ function WelcomePageInner() {
         {/* Optional: Quick selection of chat profile photos for new users */}
         <div className="mt-[2rem]">
           <h2 className="text-lg font-semibold mb-2">Optional: Pick photos for your chat profile</h2>
-          <div className="text-xs text-muted-foreground mb-2">Choose up to 6 vehicle photos to display alongside your name in chat.</div>
-          <WelcomeChatPhotoPicker
-            allKeys={carPhotos}
-            selected={chatProfilePhotos}
-            onChange={setChatProfilePhotos}
-            previews={previews}
-            onNeedPreview={async(keys:string[])=>{
-              for (const key of keys) {
-                if (previews[key]) continue;
-                try {
-                  const res = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key }) }).then(r=>r.json());
-                  if (typeof res?.url === 'string') setPreviews(prev=>({ ...prev, [key]: res.url }));
-                } catch {}
-              }
-            }}
-            onSave={async()=>{
-              try { await fetch('/api/profile', { method:'POST', body: JSON.stringify({ chatProfilePhotos }) }); } catch {}
-            }}
-          />
+          {carPhotos.length === 0 ? (
+            <div className="text-xs text-muted-foreground">Add a vehicle and upload photos first in your profile.</div>
+          ) : (
+            <>
+              <div className="text-xs text-muted-foreground mb-2">Choose up to 6 vehicle photos to display alongside your name in chat.</div>
+              <WelcomeChatPhotoPicker
+                allKeys={carPhotos}
+                selected={chatProfilePhotos}
+                onChange={setChatProfilePhotos}
+                previews={previews}
+                onNeedPreview={async(keys:string[])=>{
+                  for (const key of keys) {
+                    if (previews[key]) continue;
+                    try {
+                      const res = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key }) }).then(r=>r.json());
+                      if (typeof res?.url === 'string') setPreviews(prev=>({ ...prev, [key]: res.url }));
+                    } catch {}
+                  }
+                }}
+                onSave={async()=>{
+                  try { await fetch('/api/profile', { method:'POST', body: JSON.stringify({ chatProfilePhotos }) }); } catch {}
+                }}
+              />
+            </>
+          )}
         </div>
       </section>
     </main>
@@ -158,6 +164,19 @@ function WelcomeChatPhotoPicker({ allKeys, selected, onChange, previews, onNeedP
   if (!Array.isArray(allKeys) || allKeys.length === 0) return null;
   return (
     <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-muted-foreground">Selected {selected.length}/{MAX}</div>
+        {selected.length > 0 ? (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-white underline-offset-2 hover:underline"
+            onClick={() => onChange([])}
+            aria-label="Clear selected chat photos"
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
       <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {allKeys.map((k)=>{
           const url = previews[k];
@@ -176,12 +195,21 @@ function WelcomeChatPhotoPicker({ allKeys, selected, onChange, previews, onNeedP
                   )}
                 </div>
               </button>
+              {isSel ? (
+                <button
+                  type="button"
+                  aria-label="Remove from chat profile"
+                  className="absolute top-1 right-1 rounded-full p-1 bg-black/70 text-white"
+                  onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onChange(selected.filter(x=>x!==k)); }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+                </button>
+              ) : null}
             </li>
           );
         })}
       </ul>
-      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-        <div>Selected {selected.length}/{MAX}</div>
+      <div className="mt-2 flex items-center justify-end text-xs text-muted-foreground">
         <Button size="sm" variant="outline" onClick={onSave}>Save</Button>
       </div>
     </div>

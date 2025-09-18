@@ -7,7 +7,7 @@ type DbRow = {
   name?: string;
   displayName?: string;
   image?: string;
-  vehicles?: Array<{ make: string; model: string; type?: string; kitted?: boolean }>;
+  vehicles?: Array<{ make: string; model: string; type?: string; kitted?: boolean; colorFinish?: string; accents?: string; photos?: string[] }>;
   cars?: VehicleDb[];
   plan?: unknown;
   onboardingCompleted?: boolean;
@@ -36,7 +36,11 @@ export async function GET() {
   const row: DbRow | null = rowRaw as DbRow | null;
   // Backwards compatibility: if vehicles missing, lift cars to vehicles
   const vehicles = row?.vehicles || (Array.isArray(row?.cars) ? row.cars.map((c) => ({ make: c.make, model: c.model, type: c.type || 'car', kitted: !!c.kitted }) as { make: string; model: string; type?: string; kitted?: boolean }) : []);
-  const carPhotos = Array.isArray(row?.carPhotos) ? row?.carPhotos.filter((x) => typeof x === 'string') : [];
+  // Compute flattened carPhotos from vehicles.photos for compatibility if present
+  const flattenedFromVehicles = Array.isArray(vehicles)
+    ? (vehicles as Array<{ photos?: unknown }>).flatMap((v) => (Array.isArray(v?.photos) ? (v.photos as string[]).filter((x) => typeof x === 'string') : []))
+    : [];
+  const carPhotos = flattenedFromVehicles.length ? flattenedFromVehicles : (Array.isArray(row?.carPhotos) ? row?.carPhotos.filter((x) => typeof x === 'string') : []);
   const chatProfilePhotos = Array.isArray(row?.chatProfilePhotos) ? row.chatProfilePhotos.filter((x) => typeof x === 'string') : [];
   const bio = typeof row?.bio === 'string' ? row?.bio : '';
   return NextResponse.json({ profile: { name: row?.name, displayName: row?.displayName, image: row?.image, vehicles, carPhotos, chatProfilePhotos, bio, plan: row?.plan, onboardingCompleted: !!row?.onboardingCompleted } });
@@ -79,9 +83,13 @@ export async function POST(req: Request) {
     await db.query("UPDATE user SET image = $image WHERE email = $email;", { image, email: user.email });
   }
 
-  // Replace entire vehicles array
+  // Replace entire vehicles array; also compute and store flattened carPhotos for compatibility
   if (Array.isArray(vehicles)) {
     await db.query("UPDATE user SET vehicles = $vehicles WHERE email = $email;", { vehicles, email: user.email });
+    try {
+      const flat = vehicles.flatMap((v: unknown) => Array.isArray((v as { photos?: unknown }).photos) ? ((v as { photos: unknown[] }).photos as unknown[]).filter((x)=> typeof x === 'string') as string[] : []);
+      await db.query("UPDATE user SET carPhotos = $carPhotos WHERE email = $email;", { carPhotos: flat, email: user.email });
+    } catch {}
   }
 
   // Replace car photos (array of storage keys); legacy single list kept for compatibility
