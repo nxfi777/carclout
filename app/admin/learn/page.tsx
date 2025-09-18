@@ -58,10 +58,12 @@ function AdminLearnPageInner() {
   const recordings = useMemo(() => items.filter(i => i.kind === 'recording'), [items]);
 
   async function saveLearnItem() {
-    if (!form.slug.trim()) return;
+    const computedSlug = (form.slug || '').trim() || createSlug(form.title || '');
+    if (!computedSlug) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/learn/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const payload = { ...form, slug: computedSlug };
+      const res = await fetch('/api/learn/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) {
         const data = await res.json().catch(()=>({}));
         toast.error(data?.error || 'Save failed');
@@ -206,15 +208,16 @@ function AdminLearnPageInner() {
   async function handleDropTutorial(files: File[]) {
     const first = files.find(f => (f.type||'').startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(f.name));
     if (!first) return;
-    if (!form.slug.trim()) { alert('Set a slug first'); return; }
     setUploading(true);
     try {
-      const slug = form.slug.trim().toLowerCase() || createSlug(first.name);
+      const inferredTitle = (form.title || '').trim() || (first.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim());
+      const normalizedTitle = inferredTitle.charAt(0).toUpperCase() + inferredTitle.slice(1);
+      const slug = createSlug(inferredTitle);
       const bundlePath = `learn/tutorials/${slug}`;
       const { videoFile, thumbFile } = await createHookBundleFiles(first);
       const coverKey = await uploadAdminFile(bundlePath, thumbFile);
       const videoKey = await uploadAdminFile(bundlePath, videoFile);
-      setForm(f => ({ ...f, kind: 'tutorial', slug, thumbKey: coverKey, fileKey: videoKey }));
+      setForm(f => ({ ...f, kind: 'tutorial', title: f.title || normalizedTitle, slug, thumbKey: coverKey, fileKey: videoKey }));
       // Auto-save metadata
       await saveLearnItem();
     } catch (e) {
@@ -225,17 +228,18 @@ function AdminLearnPageInner() {
   async function handleDropEbook(files: File[]) {
     const first = files.find(f => (f.type||'').startsWith('application/pdf') || /\.pdf$/i.test(f.name));
     if (!first) return;
-    if (!form.slug.trim()) { alert('Set a slug first'); return; }
     setUploading(true);
     try {
-      const slug = form.slug.trim().toLowerCase() || createSlug(first.name);
+      const inferredTitle = (form.title || '').trim() || (first.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim());
+      const normalizedTitle = inferredTitle.charAt(0).toUpperCase() + inferredTitle.slice(1);
+      const slug = createSlug(inferredTitle);
       const basePath = `learn/ebooks/${slug}`;
       let coverFile: File | null = null;
       try { coverFile = await createPdfCoverImageFile(first); } catch {}
       if (coverFile) await uploadAdminFile(basePath, coverFile);
       const pdfKey = await uploadAdminFile(basePath, new File([await first.arrayBuffer()], 'file.pdf', { type: 'application/pdf' }));
       const coverKey = `${'admin'}/${basePath}/cover.jpg`.replace(/^admin\//,'admin/');
-      setForm(f => ({ ...f, kind: 'ebook', slug, thumbKey: coverKey, fileKey: pdfKey }));
+      setForm(f => ({ ...f, kind: 'ebook', title: f.title || normalizedTitle, slug, thumbKey: coverKey, fileKey: pdfKey }));
       await saveLearnItem();
     } catch (e) {
       alert((e as Error)?.message || 'Upload failed');
@@ -264,10 +268,7 @@ function AdminLearnPageInner() {
           <Card>
             <CardHeader><CardTitle>Add Tutorial</CardTitle></CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
-              <div className="grid gap-1">
-                <label className="text-sm">Slug</label>
-                <Input value={form.slug} onChange={(e)=>setForm(f=>({ ...f, slug: e.target.value }))} placeholder="my-tutorial" />
-              </div>
+              {/* Slug removed: now auto-generated from Title */}
               <div className="grid gap-1">
                 <label className="text-sm">Title</label>
                 <Input value={form.title || ''} onChange={(e)=>setForm(f=>({ ...f, title: e.target.value }))} placeholder="Title" />
@@ -311,19 +312,12 @@ function AdminLearnPageInner() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-1">
-                <label className="text-sm">Thumb Key</label>
-                <Input value={form.thumbKey || ''} onChange={(e)=>setForm(f=>({ ...f, thumbKey: e.target.value }))} placeholder="admin/learn/tutorials/<slug>/thumb.jpg" />
-              </div>
-              <div className="grid gap-1">
-                <label className="text-sm">Video Key</label>
-                <Input value={form.fileKey || ''} onChange={(e)=>setForm(f=>({ ...f, fileKey: e.target.value }))} placeholder="admin/learn/tutorials/<slug>/video.mp4" />
-              </div>
+              {/* Manual keys removed: use drag-and-drop bundle */}
               <div className="md:col-span-2">
                 <Button disabled={saving} onClick={saveLearnItem}>Save</Button>
               </div>
               <div className="md:col-span-2">
-                <div className="text-xs text-white/60 mb-2">Or drag and drop a video to auto-generate thumbnail + video bundle</div>
+                <div className="text-xs text-white/60 mb-2">Drag and drop a video to auto-generate thumbnail + video bundle</div>
                 <DropZone onDrop={handleDropTutorial} className="h-28 rounded-md border border-dashed" />
                 {uploading ? <div className="text-xs mt-2 text-white/70">Uploading…</div> : null}
               </div>
@@ -348,10 +342,7 @@ function AdminLearnPageInner() {
           <Card>
             <CardHeader><CardTitle>Add E‑book</CardTitle></CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
-              <div className="grid gap-1">
-                <label className="text-sm">Slug</label>
-                <Input value={form.slug} onChange={(e)=>setForm(f=>({ ...f, slug: e.target.value }))} placeholder="my-ebook" />
-              </div>
+              {/* Slug removed: now auto-generated from Title */}
               <div className="grid gap-1">
                 <label className="text-sm">Title</label>
                 <Input value={form.title || ''} onChange={(e)=>setForm(f=>({ ...f, title: e.target.value }))} placeholder="Title" />
@@ -371,19 +362,12 @@ function AdminLearnPageInner() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-1">
-                <label className="text-sm">Cover Key</label>
-                <Input value={form.thumbKey || ''} onChange={(e)=>setForm(f=>({ ...f, thumbKey: e.target.value }))} placeholder="admin/learn/ebooks/<slug>/cover.jpg" />
-              </div>
-              <div className="grid gap-1">
-                <label className="text-sm">PDF Key</label>
-                <Input value={form.fileKey || ''} onChange={(e)=>setForm(f=>({ ...f, fileKey: e.target.value }))} placeholder="admin/learn/ebooks/<slug>/file.pdf" />
-              </div>
+              {/* Manual keys removed: use drag-and-drop bundle */}
               <div className="md:col-span-2">
                 <Button disabled={saving} onClick={saveLearnItem}>Save</Button>
               </div>
               <div className="md:col-span-2">
-                <div className="text-xs text-white/60 mb-2">Or drag and drop a PDF to auto-generate a cover image</div>
+                <div className="text-xs text-white/60 mb-2">Drag and drop a PDF to auto-generate a cover image</div>
                 <DropZone onDrop={handleDropEbook} className="h-28 rounded-md border border-dashed" />
                 {uploading ? <div className="text-xs mt-2 text-white/70">Uploading…</div> : null}
               </div>

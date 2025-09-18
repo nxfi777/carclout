@@ -24,17 +24,12 @@ import {
   YAxis,
   ResponsiveContainer
 } from "recharts";
-import dynamic from "next/dynamic";
-import carLoadAnimation from "@/public/carload.json";
-import { R2FileTree } from "@/components/ui/file-tree";
+import UseTemplateContent, { type UseTemplateTemplate } from "@/components/templates/use-template-content";
 import { Skeleton } from "@/components/ui/skeleton";
-import FixedAspectCropper from "@/components/ui/fixed-aspect-cropper";
-import TextBehindEditor from "@/components/templates/text-behind-editor";
 import { toast } from "sonner";
 import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
 
-// Disable SSR for Lottie
-const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
+//
 
 // Shared types used across this admin page
 type TemplateVariableDef = {
@@ -71,7 +66,7 @@ type TemplateDisplay = {
   } | null;
 };
 
-type Vehicle = { make: string; model: string; type: string; colorFinish?: string; accents?: string };
+//
 
 type CreateTemplatePayload = {
   name: string;
@@ -84,6 +79,7 @@ type CreateTemplatePayload = {
   fixedAspectRatio: boolean;
   aspectRatio?: number;
   allowedImageSources: Array<'vehicle' | 'user'>;
+  autoOpenDesigner?: boolean;
   variables: Array<{
     key: string;
     label: string;
@@ -102,13 +98,7 @@ type CreateTemplatePayload = {
   };
 };
 
-type GeneratePayload = {
-  templateId?: string;
-  templateSlug?: string;
-  userImageKeys: string[];
-  userImageDataUrls?: string[];
-  variables: Record<string, string>;
-};
+//
 
 const _BUILT_IN_TOKENS = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
 
@@ -1057,7 +1047,22 @@ function TemplatesTab() {
               <TabsTrigger value="edit">Edit</TabsTrigger>
             </TabsList>
             <TabsContent value="test">
-              {active ? (<AdminTestTemplate template={active} />) : null}
+              {active ? (
+                <UseTemplateContent
+                  template={{
+                    id: active.id,
+                    name: active.name,
+                    desc: active.description,
+                    slug: active.slug,
+                    variables: active.variables,
+                    prompt: active.prompt,
+                    fixedAspectRatio: active.fixedAspectRatio,
+                    aspectRatio: active.aspectRatio,
+                    allowedImageSources: active.allowedImageSources as Array<'vehicle'|'user'> | undefined,
+                    autoOpenDesigner: active.autoOpenDesigner,
+                  } as UseTemplateTemplate}
+                />
+              ) : null}
             </TabsContent>
             <TabsContent value="edit">
               {active ? (
@@ -1073,6 +1078,8 @@ function TemplatesTab() {
   );
 }
 
+//
+/*
 function AdminTestTemplate({ template }: { template: TemplateDisplay }){
   const [source, setSource] = useState<'vehicle'|'upload'|'workspace'>(()=>{
     const srcs: string[] = Array.isArray(template?.allowedImageSources) ? template.allowedImageSources : ['vehicle','user'];
@@ -1208,9 +1215,10 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
 
   function baseSlug(v: Vehicle): string { if (!v) return ''; const name = `${v.make||''} ${v.model||''}`.trim().toLowerCase(); return name.replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
   function uniqueSlugForIndex(list: Vehicle[], index:number): string { const v = list[index]; if (!v) return ''; const base = baseSlug(v); let prior=0; for (let i=0;i<index;i++){ const u=list[i]; if (u&&u.make===v.make&&u.model===v.model&&u.type===v.type) prior++; } const suf = prior>0?`-${prior}`:''; return `${base}${suf}`; }
-  function findVehicleForSelected(): Vehicle | null { if (!selectedVehicleKey || !profileVehicles.length) return null; const idx = selectedVehicleKey.indexOf('/vehicles/'); if (idx===-1) return null; const sub = selectedVehicleKey.slice(idx); const m = sub.match(/\/vehicles\/([^/]+)\/ /); const slug = m?.[1] || ''; const slugs = profileVehicles.map((_:Vehicle,i:number)=> uniqueSlugForIndex(profileVehicles as Vehicle[], i)); const at = slugs.findIndex((s:string)=> s===slug); return at>=0 ? profileVehicles[at] : null; }
+  function findVehicleForSelected(): Vehicle | null { if (!selectedVehicleKey || !profileVehicles.length) return null; const idx = selectedVehicleKey.indexOf('/vehicles/'); if (idx===-1) return null; const sub = selectedVehicleKey.slice(idx); const m = sub.match(/\/vehicles\/([^/]+)\//); const slug = m?.[1] || ''; const slugs = profileVehicles.map((_:Vehicle,i:number)=> uniqueSlugForIndex(profileVehicles as Vehicle[], i)); const at = slugs.findIndex((s:string)=> s===slug); return at>=0 ? profileVehicles[at] : null; }
 
   async function onUploadChange(e: React.ChangeEvent<HTMLInputElement>) { const file = e.target.files?.[0]; if (!file) return; setUploading(true); try { const form = new FormData(); form.append('file', file); form.append('path','uploads'); const res = await fetch('/api/storage/upload',{ method:'POST', body: form }); const data = await res.json(); if (data?.key) setBrowseSelected(data.key); } finally { setUploading(false); } }
+  async function handleUploadFiles(files: File[]) { const file = Array.isArray(files) ? files[0] : (files as unknown as File[])[0]; if (!file) return; setUploading(true); try { const form = new FormData(); form.append('file', file); form.append('path','uploads'); const res = await fetch('/api/storage/upload',{ method:'POST', body: form }); const data = await res.json(); if (data?.key) setBrowseSelected(data.key); } finally { setUploading(false); } }
 
   async function getUrlForKey(key: string): Promise<string | null> { try { const res = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key }) }).then(r=>r.json()); return res?.url || null; } catch { return null; } }
 
@@ -1384,7 +1392,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
       ) : resultUrl ? (
         <div className="space-y-3">
           <div className="w-full">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {/* eslint-disable-next-line @next/next/no-img-element * /}
             <img src={(activeUrl || resultUrl)} alt="result" className="w-full h-auto rounded" />
           </div>
           <div className="flex items-center justify-between gap-2">
@@ -1503,7 +1511,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
             </div>
           </div>
         ) : source==='upload' ? (
-          <div className="space-y-2"><input type="file" accept="image/*" onChange={onUploadChange} disabled={uploading} />{uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}{browseSelected ? <div className="text-xs text-white/60">Uploaded: {browseSelected}</div> : null}</div>
+          <div className="space-y-2"><DropZone accept="image/*" onDrop={handleUploadFiles} disabled={uploading}><div className="flex flex-col items-center gap-2 py-10"><UploadIcon className="w-[1.25rem] h-[1.25rem] text-white/70" /><div className="text-sm text-white/80">Drag and drop an image</div><div className="text-xs text-white/60">or click to browse</div></div></DropZone>{uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}{browseSelected ? <div className="text-xs text-white/60">Uploaded: {browseSelected}</div> : null}</div>
         ) : (
           <div className="h-[300px] border border-[color:var(--border)] rounded p-2 overflow-hidden"><R2FileTree onFileSelect={(k)=> setBrowseSelected(k)} selectedKeys={browseSelected ? [browseSelected] : []} /></div>
         )}
@@ -1523,6 +1531,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
     </div>
   );
 }
+*/
 
 function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; onSaved?: ()=>void }){
   const [name, setName] = useState<string>(String(template?.name || ''));
@@ -1751,10 +1760,4 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   );
 }
 
-function AdminVehicleImage({ storageKey }: { storageKey: string }){
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(()=>{ let cancelled=false; (async()=>{ try{ const res = await fetch('/api/storage/view',{ method:'POST', body: JSON.stringify({ key: storageKey }) }).then(r=>r.json()); if (!cancelled && res?.url) setUrl(res.url); } catch {} })(); return ()=>{cancelled=true}; },[storageKey]);
-  if (!url) return (<div className="size-full grid place-items-center"><svg className="size-8 text-white/30 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="14" rx="2"/></svg></div>);
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={url} alt="vehicle" className="block w-full aspect-square object-cover" />
-}
+//

@@ -21,7 +21,8 @@ import carLoadAnimation from '@/public/carload.json';
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 import FixedAspectCropper from '@/components/ui/fixed-aspect-cropper';
 import { toast } from 'sonner';
-import { Heart } from 'lucide-react';
+import { Heart, UploadIcon } from 'lucide-react';
+import { DropZone } from '@/components/ui/drop-zone';
  
 
 export function HooksTabContent() {
@@ -679,8 +680,8 @@ export function TemplatesTabContent(){
     } catch {}
   }
 
-  async function onUploadChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function handleUploadFiles(files: File[]) {
+    const file = Array.isArray(files) ? files[0] : (files as unknown as File[])[0];
     if (!file) return;
     setUploading(true);
     try {
@@ -1239,7 +1240,13 @@ export function TemplatesTabContent(){
                     </div>
                   ) : source === 'upload' ? (
                     <div className="space-y-2">
-                      <input type="file" accept="image/*" onChange={onUploadChange} disabled={uploading} />
+                      <DropZone accept="image/*" onDrop={handleUploadFiles} disabled={uploading}>
+                        <div className="flex flex-col items-center gap-2 py-10">
+                          <UploadIcon className="w-[1.25rem] h-[1.25rem] text-white/70" />
+                          <div className="text-sm text-white/80">Drag and drop an image</div>
+                          <div className="text-xs text-white/60">or click to browse</div>
+                        </div>
+                      </DropZone>
                       {uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}
                       {browseSelected ? <div className="text-xs text-white/60">Uploaded: {browseSelected}</div> : null}
                     </div>
