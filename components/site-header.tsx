@@ -13,7 +13,6 @@ import HeaderDock from "./header-dock";
 import HeaderDockMenu from "./header-dock-menu";
 import ProUpsellDialog from "./pro-upsell-dialog";
 import HeaderNavLink from "./header-nav-link";
-import HeaderCredits from "./header-credits";
 import HeaderNotifications from "@/components/header-notifications";
 import { Home } from "lucide-react";
 import { Suspense } from "react";
@@ -108,10 +107,7 @@ export default async function SiteHeader() {
                     <HeaderDockMenu />
                   </Suspense>
                 </div>
-                {/* Show credits inline only on md+; on smaller screens, credits will render inside profile menu */}
-                <div className="hidden md:block">
-                  <HeaderCredits />
-                </div>
+                {/* Credits are shown inside the profile dropdown on all breakpoints */}
                 {/* Single profile trigger across breakpoints; dialogs only on md+ */}
                 <div className="flex items-center gap-2">
                   <HeaderUser name={displayName} email={user.email!} image={displayImage} plan={displayPlan} />

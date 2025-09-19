@@ -7,7 +7,6 @@ import MusicSuggestions from '@/components/music/music-suggestions';
 import { useMemo } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import TextBehindEditor from '@/components/templates/text-behind-editor';
-import { Dialog as AppDialog, DialogContent as AppDialogContent, DialogHeader as AppDialogHeader, DialogTitle as AppDialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { R2FileTree } from '@/components/ui/file-tree';
@@ -463,6 +462,8 @@ export function TemplatesTabContent(){
   const [_browsePath, setBrowsePath] = useState<string>("");
   const [browseSelected, setBrowseSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
+  const [uploadedPreviews, setUploadedPreviews] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   // const [dominantTone, setDominantTone] = useState<string>("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -681,17 +682,39 @@ export function TemplatesTabContent(){
   }
 
   async function handleUploadFiles(files: File[]) {
-    const file = Array.isArray(files) ? files[0] : (files as unknown as File[])[0];
-    if (!file) return;
+    const arr = Array.isArray(files) ? files : (files as unknown as File[]);
+    const images = arr.filter((f) => (f?.type || '').startsWith('image/'));
+    if (!images.length) return;
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('path', 'uploads');
-      const res = await fetch('/api/storage/upload', { method: 'POST', body: form });
-      const data = await res.json();
-      const key: string | undefined = data?.key;
-      if (key) setBrowseSelected(key);
+      const newKeys: string[] = [];
+      const newPreviews: Record<string, string> = {};
+      for (const file of images) {
+        try {
+          const form = new FormData();
+          form.append('file', file);
+          form.append('path', 'uploads');
+          const res = await fetch('/api/storage/upload', { method: 'POST', body: form });
+          const data = await res.json();
+          const key: string | undefined = data?.key;
+          if (key) {
+            newKeys.push(key);
+            try {
+              const vres = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key }) });
+              const vdata = await vres.json();
+              if (typeof vdata?.url === 'string') newPreviews[key] = vdata.url as string;
+            } catch {}
+          }
+        } catch {}
+      }
+      if (newKeys.length) {
+        setUploadedKeys((prev) => Array.from(new Set([...
+          prev,
+          ...newKeys
+        ])));
+        setUploadedPreviews((prev) => ({ ...prev, ...newPreviews }));
+        if (!browseSelected) setBrowseSelected(newKeys[0] || null);
+      }
     } finally {
       setUploading(false);
     }
@@ -997,7 +1020,7 @@ export function TemplatesTabContent(){
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="p-4 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
           <DialogHeader>
-            <DialogTitle>Use template{active ? ` — ${active.name}` : ''}</DialogTitle>
+            <DialogTitle>{designOpen ? 'Designer' : `Use template${active ? ` — ${active.name}` : ''}`}</DialogTitle>
           </DialogHeader>
           {busy ? (
             <div className="p-6 sm:p-10 min-h-[12rem] grid place-items-center">
@@ -1008,6 +1031,19 @@ export function TemplatesTabContent(){
                 <div className="text-sm text-white/80 text-center px-2">Generating… this may take a moment</div>
               </div>
             </div>
+          ) : (designOpen && resultUrl) ? (
+            <div className="mt-2">
+              <TextBehindEditor
+                bgKey={String((activeKey || resultKey) || '')}
+                rembg={{ enabled: true }}
+                defaultHeadline={(findVehicleForSelected()?.make || '').toUpperCase()}
+                onClose={()=> setDesignOpen(false)}
+                onSave={saveDesignToGenerations}
+                saveLabel={'Save to workspace'}
+                aspectRatio={typeof activeTemplate?.aspectRatio === 'number' ? Number(activeTemplate.aspectRatio) : undefined}
+                onReplaceBgKey={(newKey, newUrl)=>{ try { if (newKey) { setActiveKey(newKey); if (newUrl) setActiveUrl(newUrl); } } catch {} }}
+              />
+            </div>
           ) : resultUrl ? (
             <div className="space-y-3">
               <div className="w-full grid place-items-center">
@@ -1017,7 +1053,7 @@ export function TemplatesTabContent(){
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button className="w-full sm:w-auto" onClick={()=>{ setResultUrl(null); }}>Try again</Button>
+                <Button className="w-full sm:w-auto" onClick={()=>{ setDesignOpen(false); setResultUrl(null); }}>Try again</Button>
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
                   <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70 flex-1 sm:flex-none min-w-[9rem]" onClick={()=> setDesignOpen(true)}>Designer</Button>
                   <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70 flex-1 sm:flex-none min-w-[12rem]" disabled={upscaleBusy || !resultKey} onClick={async()=>{
@@ -1087,25 +1123,6 @@ export function TemplatesTabContent(){
                   <div className="text-xs text-white/60">Designer will use the currently selected image. You can&apos;t upscale an image that was already upscaled. Upscaling is limited to 6MP.</div>
                 </div>
               ) : null}
-              <AppDialog open={designOpen} onOpenChange={setDesignOpen}>
-                <AppDialogContent className="sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
-                  <AppDialogHeader>
-                    <AppDialogTitle>Designer</AppDialogTitle>
-                  </AppDialogHeader>
-                  <div className="mt-2">
-                    <TextBehindEditor
-                      bgKey={String((activeKey || resultKey) || '')}
-                      rembg={{ enabled: true }}
-                      defaultHeadline={(findVehicleForSelected()?.make || '').toUpperCase()}
-                      onClose={()=> setDesignOpen(false)}
-                      onSave={saveDesignToGenerations}
-                      saveLabel={'Save to workspace'}
-                      aspectRatio={typeof activeTemplate?.aspectRatio === 'number' ? Number(activeTemplate.aspectRatio) : undefined}
-                  onReplaceBgKey={(newKey, newUrl)=>{ try { if (newKey) { setActiveKey(newKey); if (newUrl) setActiveUrl(newUrl); } } catch {} }}
-                    />
-                  </div>
-                </AppDialogContent>
-              </AppDialog>
             </div>
           ) : (
             <>
@@ -1248,7 +1265,26 @@ export function TemplatesTabContent(){
                         </div>
                       </DropZone>
                       {uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}
-                      {browseSelected ? <div className="text-xs text-white/60">Uploaded: {browseSelected}</div> : null}
+                      {uploadedKeys.length ? (
+                        <div className="space-y-2">
+                          <div className="text-xs text-white/70">Uploaded this session</div>
+                          <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {uploadedKeys.map((k) => (
+                              <li key={k} className={`relative rounded-md overflow-hidden border ${browseSelected === k ? 'ring-2 ring-primary' : 'border-[color:var(--border)]'}`}>
+                                <button type="button" className="block w-full h-full" onClick={() => setBrowseSelected(k)}>
+                                  <div className="aspect-square bg-black/20">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-full object-cover" />
+                                  </div>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {browseSelected && !uploadedKeys.includes(browseSelected) ? (
+                        <div className="text-xs text-white/60">Selected: {browseSelected}</div>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="h-[300px] border border-[color:var(--border)] rounded p-2 overflow-hidden">

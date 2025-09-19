@@ -51,6 +51,8 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultKey, setResultKey] = useState<string | null>(null);
   const [designOpen, setDesignOpen] = useState(false);
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
+  const [uploadedPreviews, setUploadedPreviews] = useState<Record<string, string>>({});
   const [upscales, setUpscales] = useState<Array<{ key: string; url: string }>>([]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [activeUrl, setActiveUrl] = useState<string | null>(null);
@@ -213,17 +215,39 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   }
 
   async function handleUploadFiles(files: File[]) {
-    const file = Array.isArray(files) ? files[0] : (files as unknown as File[])[0];
-    if (!file) return;
+    const arr = Array.isArray(files) ? files : (files as unknown as File[]);
+    const images = arr.filter((f) => (f?.type || "").startsWith("image/"));
+    if (!images.length) return;
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("path", "uploads");
-      const res = await fetch("/api/storage/upload", { method: "POST", body: form });
-      const data = await res.json();
-      const key: string | undefined = data?.key;
-      if (key) setBrowseSelected(key);
+      const newKeys: string[] = [];
+      const newPreviews: Record<string, string> = {};
+      for (const file of images) {
+        try {
+          const form = new FormData();
+          form.append("file", file);
+          form.append("path", "uploads");
+          const res = await fetch("/api/storage/upload", { method: "POST", body: form });
+          const data = await res.json();
+          const key: string | undefined = data?.key;
+          if (key) {
+            newKeys.push(key);
+            try {
+              const vres = await fetch("/api/storage/view", { method: "POST", body: JSON.stringify({ key }) });
+              const vdata = await vres.json();
+              if (typeof vdata?.url === "string") newPreviews[key] = vdata.url as string;
+            } catch {}
+          }
+        } catch {}
+      }
+      if (newKeys.length) {
+        setUploadedKeys((prev) => Array.from(new Set([...
+          prev,
+          ...newKeys
+        ])));
+        setUploadedPreviews((prev) => ({ ...prev, ...newPreviews }));
+        if (!browseSelected) setBrowseSelected(newKeys[0] || null);
+      }
     } finally {
       setUploading(false);
     }
@@ -801,7 +825,26 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                     </div>
                   </DropZone>
                   {uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}
-                  {browseSelected ? <div className="text-xs text-white/60">Uploaded: {browseSelected}</div> : null}
+                  {uploadedKeys.length ? (
+                    <div className="space-y-2">
+                      <div className="text-xs text-white/70">Uploaded this session</div>
+                      <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {uploadedKeys.map((k) => (
+                          <li key={k} className={`relative rounded-md overflow-hidden border ${browseSelected === k ? 'ring-2 ring-primary' : 'border-[color:var(--border)]'}`}>
+                            <button type="button" className="block w-full h-full" onClick={() => setBrowseSelected(k)}>
+                              <div className="aspect-square bg-black/20">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-full object-cover" />
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {browseSelected && !uploadedKeys.includes(browseSelected) ? (
+                    <div className="text-xs text-white/60">Selected: {browseSelected}</div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="h-[300px] border border-[color:var(--border)] rounded p-2 overflow-hidden">

@@ -694,8 +694,8 @@ function NewTemplateButton(){
             </div>
             <div className="rounded border border-[color:var(--border)] p-3 space-y-2">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">Foreground masking (BiRefNet)</div>
-                <Switch checked={rembgEnabled} onCheckedChange={(v)=> setRembgEnabled(!!v)} />
+                <div className="text-sm font-medium">Foreground masking + open Designer</div>
+                <Switch checked={rembgEnabled} onCheckedChange={(v)=> { const vv = !!v; setRembgEnabled(vv); setAutoOpenDesigner(vv); }} />
               </div>
               {rembgEnabled ? (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -883,13 +883,7 @@ function NewTemplateButton(){
               </div>
             </div>
           </div>
-          <div className="flex items-center justify-between gap-2">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">Open Designer instantly after generation</div>
-              <div className="text-xs text-white/60">If enabled, users skip the extra step and land in Designer right away.</div>
-            </div>
-            <Switch checked={autoOpenDesigner} onCheckedChange={(v)=> setAutoOpenDesigner(!!v)} />
-          </div>
+          
           <DialogFooter>
             <Button size="sm" onClick={save} disabled={busy}>{busy? 'Saving…' : 'Save'}</Button>
           </DialogFooter>
@@ -1651,12 +1645,56 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
           </Select>
         </div>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <div className="space-y-1">
-          <div className="text-sm font-medium">Open Designer instantly after generation</div>
-          <div className="text-xs text-white/60">If enabled, users skip the extra step and land in Designer right away.</div>
+      <div className="rounded border border-[color:var(--border)] p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium">Foreground masking + open Designer</div>
+          <Switch checked={rembgEnabled} onCheckedChange={(v)=> { const vv = !!v; setRembgEnabled(vv); setAutoOpenDesigner(vv); }} />
         </div>
-        <Switch checked={autoOpenDesigner} onCheckedChange={(v)=> setAutoOpenDesigner(!!v)} />
+        {rembgEnabled ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div>
+              <div className="text-xs text-white/70 mb-1">Model</div>
+              <Select value={rembgModel} onValueChange={(v)=> setRembgModel(v as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait')}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Select model" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="General Use (Light)">General Use (Light)</SelectItem>
+                  <SelectItem value="General Use (Light 2K)">General Use (Light 2K)</SelectItem>
+                  <SelectItem value="General Use (Heavy)">General Use (Heavy)</SelectItem>
+                  <SelectItem value="Matting">Matting</SelectItem>
+                  <SelectItem value="Portrait">Portrait</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <div className="text-xs text-white/70 mb-1">Resolution</div>
+              <Select value={rembgRes} onValueChange={(v)=> setRembgRes(v as '1024x1024'|'2048x2048')}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Resolution" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1024x1024">1024x1024</SelectItem>
+                  <SelectItem value="2048x2048">2048x2048</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <div className="text-xs text-white/70 mb-1">Output</div>
+              <Select value={rembgFormat} onValueChange={(v)=> setRembgFormat(v as 'png'|'webp')}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Format" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="png">png</SelectItem>
+                  <SelectItem value="webp">webp</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-white/70">Refine foreground</div>
+              <Switch checked={rembgRefine} onCheckedChange={(v)=> setRembgRefine(!!v)} />
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-white/70">Return mask</div>
+              <Switch checked={rembgMask} onCheckedChange={(v)=> setRembgMask(!!v)} />
+            </div>
+          </div>
+        ) : null}
       </div>
       <Textarea value={description} onChange={(e)=> setDescription(e.target.value)} placeholder="Description (optional)" rows={2} />
       <Textarea value={prompt} onChange={(e)=> setPrompt(e.target.value)} placeholder="Prompt" rows={6} />

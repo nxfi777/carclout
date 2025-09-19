@@ -111,6 +111,11 @@ export default function HeaderUser({
           </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-64">
+          {/* Desktop credits summary inside dropdown */}
+          <div className="hidden md:block px-3 pt-3 pb-2">
+            <HeaderCredits />
+          </div>
+          <DropdownMenuSeparator className="hidden md:block" />
           {/* Mobile/tablet full profile summary */}
           <div className="md:hidden px-3 pt-3 pb-2 text-sm">
             <div className="font-medium">{currentName || email}</div>

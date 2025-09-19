@@ -188,7 +188,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const [fgUrl, setFgUrl] = useState<string | null>(null);
   
-  const [text, setText] = useState<string>(String(defaultHeadline || '').toUpperCase());
+  const [text, setText] = useState<string>(String((defaultHeadline && defaultHeadline.trim()) || 'car').toUpperCase());
   const [fontSize, setFontSize] = useState<number>(64);
   const [fontWeight, setFontWeight] = useState<number>(800);
   const [fontFamily, setFontFamily] = useState<string>('system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif');
