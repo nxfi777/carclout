@@ -510,7 +510,7 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
         <div className="min-w-0 flex-shrink-0 w-full xl:w-auto">
           <div
             ref={containerRef}
-            className={`relative w-full max-w-[30rem] overflow-hidden rounded border border-[color:var(--border)] select-none ${pickMode ? 'cursor-crosshair' : 'cursor-pointer'}`}
+            className={`relative w-full max-w-[30rem] overflow-hidden rounded border border-[color:var(--border)] select-none touch-none ${pickMode ? 'cursor-crosshair' : 'cursor-pointer'}`}
             onMouseDown={(e)=>{
               try {
                 if (pickMode) {
@@ -559,6 +559,64 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
                 const up = ()=>{ try{ window.removeEventListener('mousemove', onMoveListener); window.removeEventListener('mouseup', onUpListener);}catch{} };
                 window.addEventListener('mousemove', onMoveListener);
                 window.addEventListener('mouseup', onUpListener);
+              } catch {}
+            }}
+            onTouchStart={(e)=>{
+              try {
+                if (pickMode) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const imgEl = bgImgRef.current; if (!imgEl) return;
+                  const touch = e.touches && e.touches[0]; if (!touch) return;
+                  const rect = imgEl.getBoundingClientRect();
+                  const cx = touch.clientX - rect.left;
+                  const cy = touch.clientY - rect.top;
+                  const scaleW = rect.width;
+                  const scaleH = rect.height;
+                  const cvs = sampleCanvasRef.current || document.createElement('canvas');
+                  sampleCanvasRef.current = cvs;
+                  const ctx = cvs.getContext('2d'); if (!ctx) return;
+                  cvs.width = Math.max(1, Math.round(scaleW));
+                  cvs.height = Math.max(1, Math.round(scaleH));
+                  const draw = async()=>{
+                    const bgImg = await loadImageSafe(bgUrl!);
+                    const fgImg = await loadImageSafe(fgUrl!);
+                    ctx.clearRect(0,0,cvs.width,cvs.height);
+                    ctx.drawImage(bgImg, 0, 0, cvs.width, cvs.height);
+                    ctx.drawImage(fgImg, 0, 0, cvs.width, cvs.height);
+                    const pxData = ctx.getImageData(Math.min(cvs.width-1, Math.max(0, Math.round(cx))), Math.min(cvs.height-1, Math.max(0, Math.round(cy))), 1, 1).data;
+                    const hex = `#${[pxData[0],pxData[1],pxData[2]].map(n=> n.toString(16).padStart(2,'0')).join('')}`.toUpperCase();
+                    if (pickTarget === 'glow') setGlowColor(hex); else if (pickTarget === 'shadow') setShadowColor(hex); else setColor(hex);
+                    setPickMode(false); setPickTarget(null);
+                  };
+                  draw();
+                  return;
+                }
+                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                const t = e.touches && e.touches[0]; if (!t) return;
+                const startX = t.clientX; const startY = t.clientY;
+                const startPX = x; const startPY = y;
+                const move = (tev: TouchEvent)=>{
+                  const touch = tev.touches && tev.touches[0] ? tev.touches[0] : (tev.changedTouches && tev.changedTouches[0] ? tev.changedTouches[0] : null);
+                  if (!touch) return;
+                  try { tev.preventDefault(); } catch {}
+                  const dx = touch.clientX - startX; const dy = touch.clientY - startY;
+                  const w = rect.width; const h = rect.height;
+                  const nx = Math.min(100, Math.max(0, startPX + (dx / w) * 100));
+                  const ny = Math.min(100, Math.max(0, startPY + (dy / h) * 100));
+                  setX(nx); setY(ny);
+                };
+                const onMoveListener = (ev2: Event) => move(ev2 as unknown as TouchEvent);
+                const up = ()=>{
+                  try {
+                    window.removeEventListener('touchmove', onMoveListener as unknown as EventListenerOrEventListenerObject);
+                    window.removeEventListener('touchend', up as unknown as EventListenerOrEventListenerObject);
+                    window.removeEventListener('touchcancel', up as unknown as EventListenerOrEventListenerObject);
+                  } catch {}
+                };
+                window.addEventListener('touchmove', onMoveListener as unknown as EventListenerOrEventListenerObject, { passive: false });
+                window.addEventListener('touchend', up as unknown as EventListenerOrEventListenerObject);
+                window.addEventListener('touchcancel', up as unknown as EventListenerOrEventListenerObject);
               } catch {}
             }}
           >

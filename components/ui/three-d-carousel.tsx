@@ -2,6 +2,7 @@
 
 import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react';
 import Image from 'next/image';
+import { Volume2, VolumeX } from 'lucide-react';
 
 //  Assets ---------------------------------------------------------------
 const FALLBACK =
@@ -62,13 +63,31 @@ const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, canPl
     }
   }, [active, videoUrl, canPlayWithSound]);
 
+  const handleHoverStart = useCallback(() => {
+    try { onHoverStart(); } catch {}
+    const v = videoRef.current;
+    if (!v || !videoUrl) return;
+    try { if (v.src !== videoUrl) { v.src = videoUrl; v.load(); } } catch {}
+    v.loop = true; v.playsInline = true; v.preload = 'metadata';
+    try { v.volume = 1; } catch {}
+    if (canPlayWithSound) {
+      v.muted = false;
+      v.play().catch(() => {
+        try { v.muted = true; v.play().catch(() => {}); } catch {}
+      });
+    } else {
+      v.muted = true;
+      v.play().catch(() => {});
+    }
+  }, [onHoverStart, canPlayWithSound, videoUrl]);
+
   return (
     <div
       className="absolute"
       style={{ width: cardW, height: cardH, transform, transformStyle: 'preserve-3d', willChange: 'transform' }}
-      onMouseEnter={onHoverStart}
+      onMouseEnter={handleHoverStart}
       onMouseLeave={onHoverEnd}
-      onTouchStart={onHoverStart}
+      onTouchStart={handleHoverStart}
       onTouchEnd={onHoverEnd}
       onClick={onClick}
     >
@@ -126,6 +145,7 @@ const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, car
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
   const [canPlaySound, setCanPlaySound] = useState(false);
+  const [muted, setMuted] = useState(false);
 
   // Initialize or resume AudioContext on first user gesture
   useEffect(() => {
@@ -180,6 +200,21 @@ const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, car
     lastHoverIdxRef.current = hoverIdx;
     playHoverTone(hoverIdx);
   }, [hoverIdx, playHoverTone]);
+
+  // Keep active video's mute state in sync with toggle
+  useEffect(() => {
+    try {
+      const wheelEl = wheelRef.current;
+      if (!wheelEl) return;
+      const videos = wheelEl.querySelectorAll('video');
+      videos.forEach((v, idx) => {
+        if (!(v instanceof HTMLVideoElement)) return;
+        if (hoverIdx === idx) {
+          try { v.muted = muted ? true : false; if (!v.paused) { v.play().catch(()=>{}); } } catch {}
+        }
+      });
+    } catch {}
+  }, [muted, hoverIdx]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -277,6 +312,17 @@ const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, car
           className="relative"
           style={{ width: cardW, height: cardH, transformStyle: 'preserve-3d', willChange: 'transform', position: 'absolute', left: '50%', top: '50%', marginLeft: -cardW / 2, marginTop: -cardH / 2 }}
         >
+          {/* Mute/Unmute toggle (overlays center-top of the wheel container) */}
+          <button
+            type="button"
+            aria-label={muted ? 'Unmute previews' : 'Mute previews'}
+            onClick={() => setMuted((m) => !m)}
+            className="absolute z-20 left-1/2 -translate-x-1/2 -top-10 sm:-top-12 bg-black/50 text-white rounded-full px-3 py-2 flex items-center gap-2 backdrop-blur border border-white/10 hover:bg-black/60 active:scale-95"
+            style={{ pointerEvents: 'auto' }}
+          >
+            {muted ? <VolumeX width={16} height={16} /> : <Volume2 width={16} height={16} />}
+            <span className="text-xs hidden sm:inline">{muted ? 'Muted' : 'Sound on'}</span>
+          </button>
           {cards.map((card, idx) => (
             <Card
               key={card.key}
