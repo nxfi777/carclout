@@ -1211,8 +1211,8 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
   function uniqueSlugForIndex(list: Vehicle[], index:number): string { const v = list[index]; if (!v) return ''; const base = baseSlug(v); let prior=0; for (let i=0;i<index;i++){ const u=list[i]; if (u&&u.make===v.make&&u.model===v.model&&u.type===v.type) prior++; } const suf = prior>0?`-${prior}`:''; return `${base}${suf}`; }
   function findVehicleForSelected(): Vehicle | null { if (!selectedVehicleKey || !profileVehicles.length) return null; const idx = selectedVehicleKey.indexOf('/vehicles/'); if (idx===-1) return null; const sub = selectedVehicleKey.slice(idx); const m = sub.match(/\/vehicles\/([^/]+)\//); const slug = m?.[1] || ''; const slugs = profileVehicles.map((_:Vehicle,i:number)=> uniqueSlugForIndex(profileVehicles as Vehicle[], i)); const at = slugs.findIndex((s:string)=> s===slug); return at>=0 ? profileVehicles[at] : null; }
 
-  async function onUploadChange(e: React.ChangeEvent<HTMLInputElement>) { const file = e.target.files?.[0]; if (!file) return; setUploading(true); try { const form = new FormData(); form.append('file', file); form.append('path','uploads'); const res = await fetch('/api/storage/upload',{ method:'POST', body: form }); const data = await res.json(); if (data?.key) setBrowseSelected(data.key); } finally { setUploading(false); } }
-  async function handleUploadFiles(files: File[]) { const file = Array.isArray(files) ? files[0] : (files as unknown as File[])[0]; if (!file) return; setUploading(true); try { const form = new FormData(); form.append('file', file); form.append('path','uploads'); const res = await fetch('/api/storage/upload',{ method:'POST', body: form }); const data = await res.json(); if (data?.key) setBrowseSelected(data.key); } finally { setUploading(false); } }
+  async function onUploadChange(e: React.ChangeEvent<HTMLInputElement>) { const file = e.target.files?.[0]; if (!file) return; setUploading(true); try { const form = new FormData(); form.append('file', file); form.append('path','library'); const res = await fetch('/api/storage/upload',{ method:'POST', body: form }); const data = await res.json(); if (data?.key) setBrowseSelected(data.key); } finally { setUploading(false); } }
+  async function handleUploadFiles(files: File[]) { const file = Array.isArray(files) ? files[0] : (files as unknown as File[])[0]; if (!file) return; setUploading(true); try { const form = new FormData(); form.append('file', file); form.append('path','library'); const res = await fetch('/api/storage/upload',{ method:'POST', body: form }); const data = await res.json(); if (data?.key) setBrowseSelected(data.key); } finally { setUploading(false); } }
 
   async function getUrlForKey(key: string): Promise<string | null> { try { const res = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key }) }).then(r=>r.json()); return res?.url || null; } catch { return null; } }
 
@@ -1372,7 +1372,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
                 const file = new File([blob], filename, { type: 'image/png' });
                 const form = new FormData();
                 form.append('file', file, filename);
-                form.append('path', 'generations');
+                form.append('path', 'library');
                 const res = await fetch('/api/storage/upload', { method:'POST', body: form });
                 if (!res.ok) { try { const d=await res.json(); toast.error(d?.error||'Failed to save'); } catch { toast.error('Failed to save'); } return; }
                 setDesigning(false);

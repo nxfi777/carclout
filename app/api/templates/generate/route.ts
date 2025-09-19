@@ -313,9 +313,9 @@ export async function POST(req: Request) {
     const candidateUrl: string | null = data?.images?.[0]?.url || data?.image?.url || data?.url || null;
     if (!candidateUrl) return NextResponse.json({ error: "Fal did not return an image url" }, { status: 502 });
 
-  // Fetch and persist to R2 under generations folder
+  // Fetch and persist to R2 under unified library folder
     const createdIso = new Date().toISOString();
-    const userKeyPrefix = `${userRoot}/generations/`;
+    const userKeyPrefix = `${userRoot}/library/`;
     await ensureFolder(userKeyPrefix);
 
     const fileRes = await fetch(candidateUrl);

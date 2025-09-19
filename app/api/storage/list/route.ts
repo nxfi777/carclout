@@ -28,10 +28,12 @@ export async function GET(req: Request) {
     try { await ensureFolder(`${root}/learn/tutorials/`); } catch {}
     try { await ensureFolder(`${root}/learn/ebooks/`); } catch {}
   }
-  // Ensure vehicles folder exists at root for user scope
+  // Ensure common folders exist at root for user scope
   if (!path && !isAdminScope) {
     try { await ensureFolder(`${root}/vehicles/`); } catch {}
     try { await ensureFolder(`${root}/designer_masks/`); } catch {}
+    // Unified workspace folder for user uploads and generations
+    try { await ensureFolder(`${root}/library/`); } catch {}
   }
 
   // Prefer shallow list for user scope to avoid deep scans; use deep list only where needed

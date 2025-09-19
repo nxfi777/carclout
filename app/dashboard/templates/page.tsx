@@ -8,7 +8,7 @@ export default function TemplatesPage() {
     <main className="p-3 md:p-4">
       <div className="flex items-center justify-end mb-3">
         <Button asChild variant="secondary" size="sm">
-          <Link href="/dashboard/workspace?path=generations">Recent generations</Link>
+          <Link href="/dashboard/workspace?path=library">Recent images</Link>
         </Button>
       </div>
       <TemplatesTabContent />

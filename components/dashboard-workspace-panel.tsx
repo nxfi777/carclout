@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { DropZone } from "@/components/ui/drop-zone";
 import { R2FileTree } from "@/components/ui/file-tree";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -25,7 +26,7 @@ import { toast } from "sonner";
 import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
 import TextBehindEditor from "@/components/templates/text-behind-editor";
 import { SHOW_MANAGED_FOLDERS, isManagedRoot, isManagedPath as isManagedPathUtil } from "@/lib/workspace-visibility";
-import { ChevronLeft, List as ListIcon, LayoutGrid } from "lucide-react";
+import { ChevronLeft, List as ListIcon, LayoutGrid, MoreHorizontal } from "lucide-react";
 import dynamic from "next/dynamic";
 import carLoadAnimation from "@/public/carload.json";
 
@@ -58,10 +59,11 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [me, setMe] = useState<{ plan?: string | null } | null>(null);
   const [path, setPath] = useState<string>(() => {
     try {
-      if (typeof window === 'undefined') return "";
+      if (typeof window === 'undefined') return "library";
       const qp = new URLSearchParams(window.location.search).get('path') || '';
-      return qp.replace(/^\/+|\/+$/g, "");
-    } catch { return ""; }
+      const cleaned = qp.replace(/^\/+|\/+$/g, "");
+      return cleaned || 'library';
+    } catch { return 'library'; }
   });
   const [items, setItems] = useState<ItemWithTag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,7 +145,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       if (res.status === 400 && (data?.error === 'UPSCALE_LIMIT_6MP')) { toast.error('Upscale exceeds the 6MP limit. Try a smaller image.'); return; }
       if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { toast.error('This image was already upscaled. Use the original.'); return; }
       if (!res.ok || !data?.key) { toast.error(data?.error || 'Upscale failed'); return; }
-      toast.success('Upscaled image saved to /generations');
+      toast.success('Upscaled image saved to /library');
       await refresh(undefined, { force: true });
       setTreeVersion(v=>v+1);
     } catch {} finally { setUpscaleBusy(false); }
@@ -223,11 +225,11 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   }, [scope, treeVersion]);
   useEffect(() => { setSelectedKeys(new Set()); }, [path]);
 
-  // Read initial folder from query param (?path=generations) when present
+  // Read initial folder from query param (?path=library) when present
   useEffect(() => {
     try {
       const qp = searchParams?.get('path') || '';
-      if (!qp) return;
+      if (!qp) { if (!path) setPath('library'); return; }
       const clean = qp.replace(/^\/+|\/+$/g, "");
       if (clean && clean !== path) setPath(clean);
     } catch {}
@@ -990,7 +992,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
 
   async function saveDesignToWorkspace(blob: Blob) {
     try {
-      const targetPath = path === 'vehicles' ? 'generations' : path;
+      const targetPath = path === 'vehicles' ? 'library' : (path || 'library');
       const filename = `design-${Date.now()}.png`;
       const form = new FormData();
       const file = new File([blob], filename, { type: 'image/png' });
@@ -1009,7 +1011,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       }
       await refresh(undefined, { force: true });
       setTreeVersion(v=>v+1);
-      if (path === 'vehicles') toast.success('Saved to generations folder'); else toast.success('Saved to workspace');
+      if (path === 'vehicles') toast.success('Saved to library folder'); else toast.success('Saved to workspace');
       setDesignOpen(false);
       setDesignKey(null);
     } catch {}
@@ -1052,20 +1054,29 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         ) : null}
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" className="hidden md:inline-flex" onClick={()=>{ const parent = path.split('/').slice(0, -1).join('/'); navigate(parent); }} disabled={!path}>Back</Button>
-          <Button size="sm" onClick={()=>uploadRef.current?.click()} disabled={uploading || isManagedPath}>Upload</Button>
           <input ref={uploadRef} type="file" multiple hidden onChange={(e)=>{ const files = Array.from(e.target.files || []); if (files.length) onUpload(files as File[]); e.currentTarget.value=''; }} />
-          <Button size="sm" variant="outline" onClick={async()=>{ if (path === 'vehicles' || (path || '').startsWith('vehicles/')) { toast.info('The vehicles folder is managed automatically. Select a specific vehicle to manage its photos.'); return; } if (path === 'designer_masks' || (path || '').startsWith('designer_masks/')) { toast.info('Designer masks are managed automatically.'); return; } const name = await promptToast({ title: 'New folder name' }); if (!name) return; await fetch('/api/storage/folder', { method:'POST', body: JSON.stringify({ path: path ? `${path}/${name}` : name, scope }) }); await refresh(undefined, { force: true }); setTreeVersion(v=>v+1); }}>New Folder</Button>
-          <Button size="sm" variant="outline" onClick={()=>{ setSelectedKeys(new Set(sortedItems.map(it => itemStorageKey(it)))); }} disabled={sortedItems.length === 0}>Select all</Button>
-          <Button size="sm" variant="outline" onClick={()=>setView(v=>v==='list'?'icons':'list')} aria-label={view==='list' ? 'Switch to icon view' : 'Switch to list view'} title={view==='list' ? 'Icon view' : 'List view'}>
-            {view==='list' ? (<LayoutGrid className="w-4 h-4" />) : (<ListIcon className="w-4 h-4" />)}
-          </Button>
-          {selectedCount > 0 ? (
-            <div className="ml-2 flex items-center gap-2">
-              <div className="text-xs text-white/70">{selectedCount} selected</div>
-              <Button size="sm" variant="destructive" onClick={onBulkDelete} disabled={isManagedPath}>Delete</Button>
-              <Button size="sm" variant="outline" onClick={clearSelection}>Clear</Button>
-            </div>
-          ) : null}
+          <div className="ml-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" aria-label="Open controls">
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-48">
+                <DropdownMenuItem disabled={uploading || isManagedPath} onSelect={()=>{ uploadRef.current?.click(); }}>Upload</DropdownMenuItem>
+                <DropdownMenuItem onSelect={async()=>{ if (path === 'vehicles' || (path || '').startsWith('vehicles/')) { toast.info('The vehicles folder is managed automatically. Select a specific vehicle to manage its photos.'); return; } if (path === 'designer_masks' || (path || '').startsWith('designer_masks/')) { toast.info('Designer masks are managed automatically.'); return; } const name = await promptToast({ title: 'New folder name' }); if (!name) return; await fetch('/api/storage/folder', { method:'POST', body: JSON.stringify({ path: path ? `${path}/${name}` : name, scope }) }); await refresh(undefined, { force: true }); setTreeVersion(v=>v+1); }}>New folder</DropdownMenuItem>
+                <DropdownMenuItem disabled={sortedItems.length === 0} onSelect={()=>{ setSelectedKeys(new Set(sortedItems.map(it => itemStorageKey(it)))); }}>Select all</DropdownMenuItem>
+                <DropdownMenuItem onSelect={()=>setView(v=>v==='list'?'icons':'list')}>{view==='list' ? 'Icon view' : 'List view'}</DropdownMenuItem>
+                {selectedCount > 0 ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem disabled={isManagedPath} onSelect={onBulkDelete}>Delete selected</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={clearSelection}>Clear selection</DropdownMenuItem>
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           {refreshing ? <div className="text-xs text-white/50 animate-pulse">Refreshing…</div> : null}
           {path === 'vehicles' || path.startsWith('vehicles/') ? (
             <div className="ml-2 text-xs px-2 py-1 rounded-md bg-white/5 border border-red-500 text-red-400">

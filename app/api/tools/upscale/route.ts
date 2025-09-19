@@ -117,9 +117,9 @@ export async function POST(req: Request) {
     }
     if (!outUrl) return NextResponse.json({ error: "Upscaler did not return an image" }, { status: 502 });
 
-    // Persist to user workspace under /generations
+    // Persist to user workspace under /library
     const userRoot = `users/${sanitizeUserId(user.email)}`;
-    const prefix = `${userRoot}/generations/`;
+    const prefix = `${userRoot}/library/`;
     await ensureFolder(prefix);
 
     const fileRes = await fetch(outUrl);

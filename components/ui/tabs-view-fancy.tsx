@@ -688,13 +688,13 @@ export function TemplatesTabContent(){
       const file = new File([blob], filename, { type: 'image/png' });
       const form = new FormData();
       form.append('file', file, filename);
-      form.append('path', 'generations');
+      form.append('path', 'library');
       const res = await fetch('/api/storage/upload', { method: 'POST', body: form });
       if (!res.ok) {
         try { const d = await res.json(); toast.error(d?.error || 'Failed to save'); } catch { toast.error('Failed to save'); }
         return;
       }
-      try { toast.success('Saved to /generations'); } catch {}
+      try { toast.success('Saved to /library'); } catch {}
       setDesignOpen(false);
     } catch {}
   }
@@ -711,7 +711,7 @@ export function TemplatesTabContent(){
         try {
           const form = new FormData();
           form.append('file', file);
-          form.append('path', 'uploads');
+          form.append('path', 'library');
           const res = await fetch('/api/storage/upload', { method: 'POST', body: form });
           const data = await res.json();
           const key: string | undefined = data?.key;
@@ -1075,7 +1075,7 @@ export function TemplatesTabContent(){
           ) : resultUrl ? (
             <div className="space-y-3">
               <div className="w-full grid place-items-center">
-                <div className="text-xs text-white/70 mb-1">Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=generations" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/generations</a></div>
+                <div className="text-xs text-white/70 mb-1">Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a></div>
                 {activeUrl || resultUrl ? (
                   <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-full sm:max-w-[32rem] max-h-[56vh] h-auto object-contain" unoptimized />
                 ) : null}
