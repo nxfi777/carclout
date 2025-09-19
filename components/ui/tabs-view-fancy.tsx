@@ -20,7 +20,7 @@ import carLoadAnimation from '@/public/carload.json';
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 import FixedAspectCropper from '@/components/ui/fixed-aspect-cropper';
 import { toast } from 'sonner';
-import { Heart, UploadIcon } from 'lucide-react';
+import { Heart, UploadIcon, Volume2, VolumeX, Play, Pause, Download } from 'lucide-react';
 import { DropZone } from '@/components/ui/drop-zone';
  
 
@@ -33,6 +33,9 @@ export function HooksTabContent() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [activeIdx, _setActiveIdx] = useState<number | null>(null);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
+  const [playingIdx, setPlayingIdx] = useState<number | null>(null);
+  const [mutedByIndex, setMutedByIndex] = useState<Record<number, boolean>>({});
+  const [soundUnlocked, setSoundUnlocked] = useState(false);
 
   async function downloadVideo(url?: string, name?: string) {
     try {
@@ -75,6 +78,17 @@ export function HooksTabContent() {
       window.addEventListener('resize', update);
       return () => window.removeEventListener('resize', update);
     }
+  }, []);
+  useEffect(() => {
+    function unlock() {
+      try { setSoundUnlocked(true); } catch {}
+    }
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
   }, []);
   useEffect(() => {
     let aborted = false;
@@ -130,6 +144,47 @@ export function HooksTabContent() {
   if (isMobile) {
     const toShow = (items || []).slice(0, visibleCount);
     const hasMore = visibleCount < (items?.length || 0);
+
+    function playAt(index: number) {
+      try {
+        const v = videoRefs.current[index];
+        if (!v) return;
+        const isMuted = (mutedByIndex[index] ?? false);
+        v.muted = isMuted;
+        v.playsInline = true;
+        v.preload = 'metadata';
+        if (!isMuted && !soundUnlocked) setSoundUnlocked(true);
+        v.play().catch(() => {});
+        setPlayingIdx(index);
+        _setActiveIdx(index);
+        videoRefs.current.forEach((vv, i) => { if (i !== index) { try { vv?.pause(); } catch {} } });
+      } catch {}
+    }
+    function pauseAt(index: number) {
+      try {
+        const v = videoRefs.current[index];
+        if (!v) return;
+        v.pause();
+        if (playingIdx === index) { setPlayingIdx(null); _setActiveIdx(null); }
+      } catch {}
+    }
+    function togglePlay(index: number) {
+      if (playingIdx === index) pauseAt(index); else playAt(index);
+    }
+    function toggleMute(index: number) {
+      setMutedByIndex((prev) => {
+        const nextMuted = !(prev[index] ?? true);
+        const next = { ...prev, [index]: nextMuted };
+        try {
+          const v = videoRefs.current[index];
+          if (v) {
+            v.muted = nextMuted;
+            if (!nextMuted) { if (!soundUnlocked) setSoundUnlocked(true); v.play().catch(() => {}); }
+          }
+        } catch {}
+        return next;
+      });
+    }
     return (
       <div className="w-full h-full min-h-[65vh]">
         <div className="px-6 pt-1 pb-2">
@@ -145,31 +200,61 @@ export function HooksTabContent() {
         </div>
         <div className="flex-1 min-h-0 overflow-auto">
           <div className="grid grid-cols-2 gap-3 pb-6">
-            {toShow.map((it, _idx) => (
-              <button
-                key={`${it.text}-${_idx}`}
-                type="button"
-                onClick={() => { if (it.videoUrl) downloadVideo(it.videoUrl, it.text); }}
-                className="rounded-lg overflow-hidden bg-white/5 border border-white/10 text-left"
-              >
-                <div className="relative w-full aspect-[3/4]">
-                  {/* Keep video mounted to leverage browser caching and avoid refetches */}
-                  {it.videoUrl ? (
-                    <video
-                      ref={(el) => { videoRefs.current[_idx] = el; }}
-                      src={it.videoUrl}
-                      poster={it.image}
-                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-                      playsInline
-                      muted
-                      controls={activeIdx === _idx}
-                      preload="metadata"
-                    />
-                  ) : null}
-                  <NextImage src={it.image} alt="Hook" fill sizes="(max-width: 640px) 50vw, 33vw" className={`object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-0' : 'opacity-100'}`} unoptimized />
+            {toShow.map((it, _idx) => {
+              const isActive = playingIdx === _idx;
+              const isMuted = mutedByIndex[_idx] ?? false;
+              return (
+                <div
+                  key={`${it.text}-${_idx}`}
+                  className="rounded-lg overflow-hidden bg-white/5 border border-white/10 text-left"
+                >
+                  <div className="relative w-full aspect-[3/4]" onClick={() => togglePlay(_idx)}>
+                    {it.videoUrl ? (
+                      <video
+                        ref={(el) => { videoRefs.current[_idx] = el; }}
+                        src={it.videoUrl}
+                        poster={it.image}
+                        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                        playsInline
+                        muted={isMuted}
+                        preload="metadata"
+                      />
+                    ) : null}
+                    <NextImage src={it.image} alt="Hook" fill sizes="(max-width: 640px) 50vw, 33vw" className={`object-cover transition-opacity duration-200 ${isActive ? 'opacity-0' : 'opacity-100'}`} unoptimized />
+
+                    {/* Controls overlay */}
+                    <div className="absolute inset-0 flex items-start justify-end p-2 gap-2 pointer-events-none">
+                      <button
+                        type="button"
+                        className="pointer-events-auto rounded-full bg-black/50 text-white p-2 hover:bg-black/60 focus:outline-none focus:ring-2 focus:ring-primary"
+                        aria-label={isMuted ? 'Unmute' : 'Mute'}
+                        onClick={(e) => { e.stopPropagation(); toggleMute(_idx); }}
+                      >
+                        {isMuted ? <VolumeX className="w-[1rem] h-[1rem]" /> : <Volume2 className="w-[1rem] h-[1rem]" />}
+                      </button>
+                    </div>
+                    <div className="absolute inset-x-0 bottom-0 p-2 flex items-center justify-between pointer-events-none">
+                      <button
+                        type="button"
+                        className="pointer-events-auto rounded-full bg-black/50 text-white p-2 hover:bg-black/60 focus:outline-none focus:ring-2 focus:ring-primary"
+                        aria-label={isActive ? 'Pause' : 'Play'}
+                        onClick={(e) => { e.stopPropagation(); togglePlay(_idx); }}
+                      >
+                        {isActive ? <Pause className="w-[1rem] h-[1rem]" /> : <Play className="w-[1rem] h-[1rem]" />}
+                      </button>
+                      <button
+                        type="button"
+                        className="pointer-events-auto rounded-full bg-black/50 text-white p-2 hover:bg-black/60 focus:outline-none focus:ring-2 focus:ring-primary"
+                        aria-label="Download"
+                        onClick={(e) => { e.stopPropagation(); if (it.videoUrl) downloadVideo(it.videoUrl, it.text); }}
+                      >
+                        <Download className="w-[1rem] h-[1rem]" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
           <div ref={sentinelRef} className="h-8" aria-hidden />
           {!hasMore ? null : (
@@ -476,6 +561,24 @@ export function TemplatesTabContent(){
   const [cropOpen, setCropOpen] = useState(false);
   const [cropUrl, setCropUrl] = useState<string | null>(null);
   const [pendingKeys, setPendingKeys] = useState<string[] | null>(null);
+  const sessionRef = useRef<number>(0);
+
+  // Reset generated output/designer state when switching templates or closing the dialog
+  function resetTemplateSession() {
+    try {
+      setResultUrl(null);
+      setResultKey(null);
+      setDesignOpen(false);
+      setUpscales([]);
+      setActiveKey(null);
+      setActiveUrl(null);
+      setUpscaleBusy(false);
+      setCropOpen(false);
+      setCropUrl(null);
+      setPendingKeys(null);
+      setBusy(false);
+    } catch {}
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -732,6 +835,12 @@ export function TemplatesTabContent(){
     setVarState({});
   }, [open, active?.id, active?.slug]);
 
+  // When user switches to a different template while the dialog is open, clear previous results/designer
+  useEffect(()=>{
+    sessionRef.current += 1;
+    resetTemplateSession();
+  }, [active?.id, active?.slug]);
+
   // Prefill defaults for color variables from template definitions (without overriding user input)
   useEffect(()=>{
     try {
@@ -805,6 +914,7 @@ export function TemplatesTabContent(){
 
   // Reuse generating logic for both manual and automatic crop flows
   async function finalizeWithCroppedBlob(blob: Blob) {
+    const sess = sessionRef.current;
     const fr = new FileReader();
     const dataUrl: string = await new Promise((resolve)=>{ fr.onloadend=()=> resolve(String(fr.result||'')); fr.readAsDataURL(blob); });
     const variables: Record<string, string> = {};
@@ -845,6 +955,7 @@ export function TemplatesTabContent(){
     const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     let data: Record<string, unknown> = {}; try { data = await res.json(); } catch { data = {}; }
     if (!res.ok) { toast.error(String((data as { error?: string }).error || 'Generation failed')); return; }
+    if (sess !== sessionRef.current) { return; }
     if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
     if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
     if (data?.key) setResultKey(String(data.key));
@@ -869,6 +980,7 @@ export function TemplatesTabContent(){
 
   async function generate() {
     if (!active) return;
+    const sess = sessionRef.current;
     setResultUrl(null);
     try {
       // Prevent negative balance: require at least 6 credits before attempting a generation
@@ -970,6 +1082,7 @@ export function TemplatesTabContent(){
       try { d = await res.json(); } catch { d = {}; }
       const data = d as Record<string, unknown>;
       if (!res.ok) { toast.error(String(data?.error || 'Generation failed')); return; }
+      if (sess !== sessionRef.current) { return; }
       if (typeof data?.url === 'string') setResultUrl(String(data.url));
       if (typeof data?.key === 'string') setResultKey(String(data.key));
       if (typeof data?.url === 'string') setActiveUrl(String(data.url));
@@ -1017,7 +1130,7 @@ export function TemplatesTabContent(){
         </div>
       </div>
       {grid}
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(v)=>{ setOpen(v); if (!v) { resetTemplateSession(); setVarState({}); } }}>
         <DialogContent className="p-4 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
           <DialogHeader>
             <DialogTitle>{designOpen ? 'Designer' : `Use template${active ? ` — ${active.name}` : ''}`}</DialogTitle>

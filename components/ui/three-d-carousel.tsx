@@ -30,13 +30,14 @@ interface CardProps {
   cardW: number;
   cardH: number;
   active: boolean;
+  canPlayWithSound: boolean;
   onHoverStart: () => void;
   onHoverEnd: () => void;
   onClick?: () => void;
 }
 
 //  Card Component (Memoized for Performance) ---------------------------
-const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, onHoverStart, onHoverEnd, onClick }: CardProps) => {
+const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, canPlayWithSound, onHoverStart, onHoverEnd, onClick }: CardProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -44,12 +45,22 @@ const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, onHov
     if (!v) return;
     if (active && videoUrl) {
       try { if (v.src !== videoUrl) { v.src = videoUrl; v.load(); } } catch {}
-      v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'metadata';
-      v.play().catch(() => {});
+      v.loop = true; v.playsInline = true; v.preload = 'metadata';
+      try { v.volume = 1; } catch {}
+      if (canPlayWithSound) {
+        v.muted = false;
+        v.play().catch(() => {
+          // Fallback for autoplay policies: retry muted
+          try { v.muted = true; v.play().catch(() => {}); } catch {}
+        });
+      } else {
+        v.muted = true;
+        v.play().catch(() => {});
+      }
     } else {
       try { v.pause(); } catch {}
     }
-  }, [active, videoUrl]);
+  }, [active, videoUrl, canPlayWithSound]);
 
   return (
     <div
@@ -114,6 +125,7 @@ const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, car
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
+  const [canPlaySound, setCanPlaySound] = useState(false);
 
   // Initialize or resume AudioContext on first user gesture
   useEffect(() => {
@@ -127,6 +139,7 @@ const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, car
     const onAny = () => {
       tryInit();
       try { audioCtxRef.current?.resume().catch(() => {}); } catch {}
+      try { setCanPlaySound(true); } catch {}
     };
     window.addEventListener('pointerdown', onAny, { once: true });
     window.addEventListener('keydown', onAny, { once: true });
@@ -273,6 +286,7 @@ const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, car
               cardW={cardW}
               cardH={cardH}
               active={hoverIdx === idx}
+              canPlayWithSound={canPlaySound}
               onHoverStart={() => setHoverIdx(idx)}
               onHoverEnd={() => setHoverIdx(v => v === idx ? null : v)}
               onClick={() => {

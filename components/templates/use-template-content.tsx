@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import NextImage from "next/image";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
@@ -36,6 +36,7 @@ export type UseTemplateTemplate = {
 };
 
 export function UseTemplateContent({ template }: { template: UseTemplateTemplate }) {
+  const sessionRef = useRef<number>(0);
   const [me, setMe] = useState<{ plan?: string | null } | null>(null);
   const [source, setSource] = useState<"vehicle" | "upload" | "workspace">(() => {
     const srcs: Array<"vehicle" | "user"> = Array.isArray(template?.allowedImageSources) ? (template.allowedImageSources as Array<"vehicle" | "user">) : ["vehicle", "user"];
@@ -61,6 +62,29 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   const [cropUrl, setCropUrl] = useState<string | null>(null);
   const [pendingKeys, setPendingKeys] = useState<string[] | null>(null);
   const [varState, setVarState] = useState<Record<string, string>>({});
+
+  // Reset generated output/designer state when switching templates
+  function resetTemplateSession() {
+    try {
+      setResultUrl(null);
+      setResultKey(null);
+      setDesignOpen(false);
+      setUpscales([]);
+      setActiveKey(null);
+      setActiveUrl(null);
+      setUpscaleBusy(false);
+      setCropOpen(false);
+      setCropUrl(null);
+      setPendingKeys(null);
+      setVarState({});
+      setBusy(false);
+    } catch {}
+  }
+
+  useEffect(() => {
+    sessionRef.current += 1;
+    resetTemplateSession();
+  }, [template?.id, template?.slug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,6 +278,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   }
 
   async function finalizeWithCroppedBlob(blob: Blob) {
+    const sess = sessionRef.current;
     const fr = new FileReader();
     const dataUrl: string = await new Promise((resolve) => {
       fr.onloadend = () => resolve(String(fr.result || ""));
@@ -306,6 +331,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       toast.error(String((data as { error?: string }).error || "Generation failed"));
       return;
     }
+    if (sess !== sessionRef.current) { return; }
     if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
     if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
     if (data?.key) setResultKey(String(data.key));
@@ -355,6 +381,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
 
   async function generate() {
     if (!template) return;
+    const sess = sessionRef.current;
     setResultUrl(null);
     try {
       const bal = await getCredits();
@@ -481,6 +508,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
         toast.error(String(data?.error || "Generation failed"));
         return;
       }
+      if (sess !== sessionRef.current) { return; }
       if (typeof data?.url === "string") setResultUrl(String(data.url));
       if (typeof data?.key === "string") setResultKey(String(data.key));
       if (typeof data?.url === "string") setActiveUrl(String(data.url));
@@ -872,6 +900,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
               setCropOpen(false);
               setBusy(true);
               try {
+                const sess = sessionRef.current;
                 const fr = new FileReader();
                 const dataUrl: string = await new Promise((resolve) => {
                   fr.onloadend = () => resolve(String(fr.result || ""));
@@ -925,6 +954,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                   toast.error(String((data as { error?: string }).error || "Generation failed"));
                   return;
                 }
+                if (sess !== sessionRef.current) { return; }
                 if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
                 if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
                 if (data?.key) setResultKey(String(data.key));
