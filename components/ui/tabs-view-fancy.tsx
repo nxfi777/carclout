@@ -491,6 +491,7 @@ type Template = {
   fixedAspectRatio?: boolean;
   aspectRatio?: number;
   allowedImageSources?: Array<'vehicle'|'user'>;
+  // deprecated
   autoOpenDesigner?: boolean;
 };
 
@@ -619,6 +620,7 @@ export function TemplatesTabContent(){
             allowedImageSources: Array.isArray(t.allowedImageSources) ? (t.allowedImageSources as Array<'vehicle'|'user'>) : ['vehicle','user'],
             favoriteCount: Number((t as Record<string, unknown>).favoriteCount || 0),
             isFavorited: Boolean((t as Record<string, unknown>).isFavorited),
+            // deprecated field ignored
             autoOpenDesigner: Boolean((t as Record<string, unknown>).autoOpenDesigner),
           };
         }));
@@ -1051,8 +1053,7 @@ export function TemplatesTabContent(){
       if (typeof data?.url === 'string') setActiveUrl(String(data.url));
       if (typeof data?.key === 'string') setActiveKey(String(data.key));
       try {
-        const t = activeTemplate;
-        if (t && t.autoOpenDesigner && typeof data?.key === 'string') {
+        if (typeof data?.key === 'string') {
           setDesignOpen(true);
         }
       } catch {}
@@ -1109,6 +1110,30 @@ export function TemplatesTabContent(){
             </div>
           ) : (designOpen && resultUrl) ? (
             <div className="mt-2">
+              <div className="mb-2">
+                <div className="text-xs text-white/70 mb-1">Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a></div>
+              </div>
+              {upscales.length ? (
+                <div className="space-y-2 mb-3">
+                  {upscales.map((u, idx)=> (
+                    <div key={u.key} className="flex items-center gap-2">
+                      <div className="text-xs text-white/70">Attempt {idx+1}</div>
+                      <Select defaultValue={`up-${idx}`} onValueChange={(v)=>{
+                        if (v === 'orig') { setActiveKey(resultKey); setActiveUrl(resultUrl); }
+                        else { setActiveKey(u.key); setActiveUrl(u.url); }
+                      }}>
+                        <SelectTrigger className="h-8">
+                          <SelectValue placeholder="Choose image" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="orig">Original</SelectItem>
+                          <SelectItem value={`up-${idx}`}>Upscale #{idx+1}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <TextBehindEditor
                 bgKey={String((activeKey || resultKey) || '')}
                 rembg={{ enabled: true }}

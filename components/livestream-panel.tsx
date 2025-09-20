@@ -1,12 +1,11 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   StreamVideoClient,
   StreamCall,
   StreamVideo,
   Call,
   SpeakerLayout,
-  CallControls,
   CallParticipantsList,
   LivestreamPlayer,
   StreamTheme,
@@ -24,18 +23,21 @@ export default function LivestreamPanel() {
   const [showChat, setShowChat] = useState(true);
   const callType = "livestream";
   const [callId, setCallId] = useState<string>("ignite-global");
+  const clientRef = useRef<StreamVideoClient | null>(null);
+  const callRef = useRef<Call | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const m = await fetch("/api/me", { cache: "no-store" }).then((r) => r.json()).catch(() => ({}));
-        if (mounted) setMe({ email: m?.email, role: m?.role });
+        const me = await fetch("/api/me", { cache: "no-store" }).then((r) => r.json()).catch(() => ({}));
+        if (mounted) setMe({ email: me?.email, role: me?.role });
+
         // Determine cohost/admin first
         let cohost = false;
         try {
-          const p = await fetch("/api/livestream/permissions", { cache: "no-store" }).then((r) => r.json());
-          cohost = !!p?.isCohost || (m?.role === "admin");
+          const perms = await fetch("/api/livestream/permissions", { cache: "no-store" }).then((r) => r.json());
+          cohost = !!perms?.isCohost || (me?.role === "admin");
           if (mounted) setIsCohost(cohost);
         } catch {}
 
@@ -43,26 +45,34 @@ export default function LivestreamPanel() {
         if (!tokenRes?.apiKey || !tokenRes?.token || !tokenRes?.userId) return;
         const c = new StreamVideoClient({ apiKey: tokenRes.apiKey, user: { id: tokenRes.userId }, token: tokenRes.token });
         if (!mounted) return;
-        // Fetch session slug to tie chat to this livestream session
+        clientRef.current = c;
+
+        // Resolve current session slug before creating/joining the call
+        let sessionSlug = "ignite-global";
         try {
           const st = await fetch('/api/livestream/status', { cache: 'no-store' }).then(r=>r.json());
-          const sessionSlug = String(st?.sessionSlug || 'ignite-global');
-          if (mounted) setCallId(sessionSlug);
+          sessionSlug = String(st?.sessionSlug || 'ignite-global');
         } catch {}
-        const callObj = c.call(callType as unknown as never, (callId || 'ignite-global'));
-        // Prevent camera/mic prompts by default; publishers can enable later
-        try { await callObj.camera.disable(); } catch {}
-        try { await callObj.microphone.disable(); } catch {}
-        await callObj.join({ create: true });
-        setClient(c);
-        setCall(callObj);
+        if (mounted) setCallId(sessionSlug);
+
+        if (cohost) {
+          const callObj = c.call(callType as unknown as never, sessionSlug);
+          // Prevent camera/mic prompts by default; publishers can enable later
+          try { await callObj.camera.disable(); } catch {}
+          try { await callObj.microphone.disable(); } catch {}
+          await callObj.join({ create: true });
+          callRef.current = callObj;
+          if (mounted) setCall(callObj);
+        }
+
+        if (mounted) setClient(c);
       } catch {}
     })();
     return () => {
       mounted = false;
-      try { call?.leave(); } catch {}
+      try { callRef.current?.leave(); } catch {}
     };
-  }, [callId, call]);
+  }, []);
 
   // Render viewer if not cohost/admin
   const viewer = useMemo(() => {
@@ -74,27 +84,27 @@ export default function LivestreamPanel() {
     );
   }, [client, callId]);
 
-  if (!client || !call) return <div className="p-4">Connecting to livestream…</div>;
+  if (!client) return <div className="p-4">Connecting to livestream…</div>;
 
   return (
     <StreamTheme>
       <StreamVideo client={client}>
-        <StreamCall call={call}>
-        {isCohost ? (
-          <div className="space-y-3">
-            <SpeakerLayout />
-            <div className="flex items-center gap-2">
-              <CallControls />
-              <GoLiveToggle call={call} />
-              <RecorderControl call={call} />
-              <button className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-sm" onClick={() => setShowChat(v=>!v)}>
-                {showChat ? 'Hide Chat' : 'Show Chat'}
-              </button>
+        {isCohost && call ? (
+          <StreamCall call={call}>
+            <div className="space-y-3">
+              <SpeakerLayout />
+              <div className="flex items-center gap-2">
+                <GoLiveToggle call={call} />
+                <RecorderControl call={call} />
+                <button className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-sm" onClick={() => setShowChat(v=>!v)}>
+                  {showChat ? 'Hide Chat' : 'Show Chat'}
+                </button>
+              </div>
+              <div className="mt-2">
+                <CallParticipantsList onClose={() => undefined} />
+              </div>
             </div>
-            <div className="mt-2">
-              <CallParticipantsList onClose={() => undefined} />
-            </div>
-          </div>
+          </StreamCall>
         ) : (
           viewer
         )}
@@ -103,7 +113,6 @@ export default function LivestreamPanel() {
             <LivestreamChat initialSession={callId} />
           </div>
         ) : null}
-        </StreamCall>
       </StreamVideo>
     </StreamTheme>
   );

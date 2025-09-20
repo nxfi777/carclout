@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { confirmToast } from "@/components/ui/toast-helpers";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CarFront, SquarePen } from "lucide-react";
+import Chevron from "@/components/ui/chevron";
 
 type ChatMessage = {
   id?: string
@@ -656,9 +657,9 @@ function DashboardChatPageInner() {
         {forgeView === 'chat' && showChannels ? (
         <aside className="h-full min-h-0 border-r border-[color:var(--border)] overflow-y-auto p-2 bg-[var(--card)] md:static absolute inset-0 z-40"> 
           {/* Mobile close */}
-          <button className="md:hidden absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-full border border-[color:var(--border)]/60 bg-white/5 hover:bg-white/10 text-xs" onClick={() => setShowChannels(false)} aria-label="Close channels">
+                  <button className="md:hidden absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-full border border-[color:var(--border)]/60 bg-white/5 hover:bg-white/10 text-xs" onClick={() => setShowChannels(false)} aria-label="Close channels">
             <span className="sr-only">Close</span>
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                    <Chevron direction="left" className="h-4 w-4" />
           </button>
           <div className="text-sm font-semibold px-2 mb-2">Channels {me?.plan === 'pro' ? <span className="ml-2 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[rgba(255,106,0,0.12)] text-[#ff6a00] border border-[#ff6a00]/30">Pro</span> : null}</div>
           <ul className="space-y-1">
@@ -796,7 +797,7 @@ function DashboardChatPageInner() {
                       return next;
                     })}
                   >
-                    {showChannels ? '◀' : '▶'}
+                    <Chevron direction={showChannels ? "left" : "right"} className="h-4 w-4 transition-transform" />
                   </button>
                   <div className="flex items-center gap-2">
                     {activeChatType === 'dm' ? (
@@ -1046,7 +1047,7 @@ function DashboardChatPageInner() {
             {/* Header row: left chevron, right-aligned Online count */}
             <div className="flex items-center gap-2">
               <button className="md:hidden inline-flex items-center justify-center rounded-full border border-[color:var(--border)]/60 bg-white/5 hover:bg-white/10 size-7" onClick={() => setShowMembers(false)} aria-label="Hide members">
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                <Chevron direction="left" className="h-4 w-4" />
               </button>
               <div className="ml-auto text-sm font-semibold text-right w-full">Online <span className="text-white/50">({onlineUsers.length})</span></div>
             </div>

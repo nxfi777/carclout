@@ -56,6 +56,7 @@ type TemplateDisplay = {
   maxUploadImages?: number;
   imageSize?: { width: number; height: number } | null;
   favoriteCount?: number;
+  // deprecated
   autoOpenDesigner?: boolean;
   rembg?: {
     enabled?: boolean;
@@ -527,7 +528,6 @@ function NewTemplateButton(){
   const [allowVehicle, setAllowVehicle] = useState<boolean>(true);
   const [allowUser, setAllowUser] = useState<boolean>(true);
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>('');
-  const [autoOpenDesigner, setAutoOpenDesigner] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
   // Foreground masking (BiRefNet) options
   const [rembgEnabled, setRembgEnabled] = useState<boolean>(false);
@@ -535,7 +535,7 @@ function NewTemplateButton(){
   const [rembgRes, setRembgRes] = useState<'1024x1024' | '2048x2048'>('2048x2048');
   const [rembgFormat, setRembgFormat] = useState<'png' | 'webp'>('png');
   const [rembgRefine, setRembgRefine] = useState<boolean>(true);
-  const [rembgMask, setRembgMask] = useState<boolean>(false);
+  const [rembgMask] = useState<boolean>(false);
   async function uploadAdmin(file: File, subfolder: string): Promise<string | null> {
     const form = new FormData();
     form.append('file', file);
@@ -667,7 +667,7 @@ function NewTemplateButton(){
       const unknownVarDefs: Array<{ key: string; label: string; required: boolean; type: 'select'|'color'|'text'; options?: string[]; defaultValue?: string; }> = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: (cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text')) as 'select'|'color'|'text', options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' && (cfg as { defaultValue?: unknown }).defaultValue ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
       const allowedImageSources = ([allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean) as Array<'vehicle'|'user'>);
       const rembg = { enabled: !!rembgEnabled, model: rembgModel, operating_resolution: rembgRes, output_format: rembgFormat, refine_foreground: !!rembgRefine, output_mask: !!rembgMask } as const;
-      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, rembg, autoOpenDesigner, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined; })() } as unknown as CreateTemplatePayload;
+      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, rembg, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined; })() } as unknown as CreateTemplatePayload;
       if (/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug)) payload.imageSize = { width: imageWidth, height: imageHeight };
       const res = await fetch('/api/templates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!res.ok) { const data = await res.json().catch(()=>({})); toast.error(data?.error || 'Failed to create template'); return; }
@@ -698,8 +698,8 @@ function NewTemplateButton(){
             </div>
             <div className="rounded border border-[color:var(--border)] p-3 space-y-2">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">Foreground masking + open Designer</div>
-                <Switch checked={rembgEnabled} onCheckedChange={(v)=> { const vv = !!v; setRembgEnabled(vv); setAutoOpenDesigner(vv); }} />
+                <div className="text-sm font-medium">Foreground masking</div>
+                <Switch checked={rembgEnabled} onCheckedChange={(v)=> { const vv = !!v; setRembgEnabled(vv); }} />
               </div>
               {rembgEnabled ? (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -739,10 +739,6 @@ function NewTemplateButton(){
                   <div className="flex items-center gap-2">
                     <div className="text-xs text-white/70">Refine foreground</div>
                     <Switch checked={rembgRefine} onCheckedChange={(v)=> setRembgRefine(!!v)} />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-xs text-white/70">Return mask</div>
-                    <Switch checked={rembgMask} onCheckedChange={(v)=> setRembgMask(!!v)} />
                   </div>
                 </div>
               ) : null}
@@ -1058,7 +1054,6 @@ function TemplatesTab() {
                     fixedAspectRatio: active.fixedAspectRatio,
                     aspectRatio: active.aspectRatio,
                     allowedImageSources: active.allowedImageSources as Array<'vehicle'|'user'> | undefined,
-                    autoOpenDesigner: active.autoOpenDesigner,
                     maxUploadImages: typeof active.maxUploadImages === 'number' ? Number(active.maxUploadImages) : undefined,
                   } as UseTemplateTemplate}
                 />
@@ -1346,15 +1341,15 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
     } finally { setBusy(false); setMasking(false); }
   }
 
-  // If admin enabled auto-open, jump into Designer once a result is available
+  // Always jump into Designer once a result is available
   useEffect(()=>{
     try {
-      if (template?.autoOpenDesigner && resultKey && !designing) {
+      if (resultKey && !designing) {
         openDesigner();
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [template?.autoOpenDesigner, resultKey]);
+  }, [resultKey]);
 
   return (
     <div className="space-y-4">
@@ -1557,8 +1552,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   const [rembgRes, setRembgRes] = useState<'1024x1024' | '2048x2048'>(template?.rembg?.operating_resolution || '2048x2048');
   const [rembgFormat, setRembgFormat] = useState<'png' | 'webp'>(template?.rembg?.output_format || 'png');
   const [rembgRefine, setRembgRefine] = useState<boolean>(template?.rembg?.refine_foreground !== false);
-  const [rembgMask, setRembgMask] = useState<boolean>(!!template?.rembg?.output_mask);
-  const [autoOpenDesigner, setAutoOpenDesigner] = useState<boolean>(!!template?.autoOpenDesigner);
+  const [rembgMask] = useState<boolean>(!!template?.rembg?.output_mask);
 
   useEffect(()=>{
     setName(String(template?.name || ''));
@@ -1580,8 +1574,6 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     setRembgRes((template?.rembg?.operating_resolution as '1024x1024'|'2048x2048') || '2048x2048');
     setRembgFormat((template?.rembg?.output_format as 'png'|'webp') || 'png');
     setRembgRefine(template?.rembg?.refine_foreground !== false);
-    setRembgMask(!!template?.rembg?.output_mask);
-    setAutoOpenDesigner(!!template?.autoOpenDesigner);
   }, [template]);
 
   // Detect unknown tokens from prompt and seed/edit token configs
@@ -1632,7 +1624,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       const res = await fetch('/api/templates', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, name: name.trim(), description: description || '', prompt: prompt.trim(), falModelSlug: falModelSlug || undefined, variables: unknownVarDefs, imageSize: { width: imageWidth, height: imageHeight }, fixedAspectRatio: !!fixedAspect, aspectRatio: fixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined, allowedImageSources, autoOpenDesigner, rembg, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n>0 ? Math.min(25, Math.round(n)) : undefined; })() })
+        body: JSON.stringify({ id, name: name.trim(), description: description || '', prompt: prompt.trim(), falModelSlug: falModelSlug || undefined, variables: unknownVarDefs, imageSize: { width: imageWidth, height: imageHeight }, fixedAspectRatio: !!fixedAspect, aspectRatio: fixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined, allowedImageSources, rembg, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n>0 ? Math.min(25, Math.round(n)) : undefined; })() })
       });
       const data = await res.json().catch(()=>({}));
       if (!res.ok) { toast.error(data?.error || 'Failed to update template'); return; }
@@ -1656,8 +1648,8 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       </div>
       <div className="rounded border border-[color:var(--border)] p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-medium">Foreground masking + open Designer</div>
-          <Switch checked={rembgEnabled} onCheckedChange={(v)=> { const vv = !!v; setRembgEnabled(vv); setAutoOpenDesigner(vv); }} />
+          <div className="text-sm font-medium">Foreground masking</div>
+          <Switch checked={rembgEnabled} onCheckedChange={(v)=> { const vv = !!v; setRembgEnabled(vv); }} />
         </div>
         {rembgEnabled ? (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -1697,10 +1689,6 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
             <div className="flex items-center gap-2">
               <div className="text-xs text-white/70">Refine foreground</div>
               <Switch checked={rembgRefine} onCheckedChange={(v)=> setRembgRefine(!!v)} />
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="text-xs text-white/70">Return mask</div>
-              <Switch checked={rembgMask} onCheckedChange={(v)=> setRembgMask(!!v)} />
             </div>
           </div>
         ) : null}
