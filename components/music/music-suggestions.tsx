@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -42,12 +42,15 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCache = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const cacheAtMount = audioCache.current;
     return () => {
       try { audioRef.current?.pause(); } catch {}
       audioRef.current = null;
+      try { abortRef.current?.abort(); } catch {}
       try {
         for (const a of cacheAtMount.values()) { try { a.pause(); } catch {} }
         cacheAtMount.clear();
@@ -55,22 +58,23 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
     };
   }, []);
 
-  async function runSearch(q?: string) {
+  const runSearch = useCallback(async (q?: string, signal?: AbortSignal) => {
     const term = typeof q === "string" ? q : query;
     if (!term.trim()) return;
     setHasSearched(true);
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/music/search?q=${encodeURIComponent(term)}&limit=24`, { cache: "no-store" });
+      const res = await fetch(`/api/music/search?q=${encodeURIComponent(term)}&limit=24`, { cache: "no-store", signal });
       const data = await res.json();
       setResults(Array.isArray(data?.results) ? data.results : []);
-    } catch {
+    } catch (err) {
+      if ((err as { name?: string } | null)?.name === 'AbortError') return;
       setError("Failed to fetch tracks");
     } finally {
       setLoading(false);
     }
-  }
+  }, [query]);
 
   function prefetchTrack(track: UnifiedTrack) {
     if (!track.previewUrl) return;
@@ -112,6 +116,42 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
+
+  useEffect(() => {
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    const term = query.trim();
+    if (!term) {
+      setHasSearched(false);
+      try { abortRef.current?.abort(); } catch {}
+      if (!admin) {
+        setLoadingDefaults(true);
+        (async () => {
+          try {
+            const res = await fetch("/api/music/defaults", { cache: "no-store" });
+            const data = await res.json();
+            setResults(Array.isArray(data?.tracks) ? data.tracks : []);
+          } catch {} finally {
+            setLoadingDefaults(false);
+            setLoading(false);
+          }
+        })();
+      } else {
+        setResults([]);
+        setLoading(false);
+      }
+      return;
+    }
+    setHasSearched(true);
+    debounceRef.current = setTimeout(() => {
+      try { abortRef.current?.abort(); } catch {}
+      const c = new AbortController();
+      abortRef.current = c;
+      runSearch(term, c.signal);
+    }, 300);
+    return () => {
+      if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    };
+  }, [query, admin, runSearch]);
 
   function togglePreview(track: UnifiedTrack) {
     if (!track.previewUrl) return;
@@ -185,11 +225,8 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
           value={query}
           onChange={(e)=>setQuery(e.target.value)}
           placeholder="Search songs, artists, albums…"
-          onKeyDown={(e)=>{ if (e.key==='Enter') runSearch(); }}
+          onKeyDown={(e)=>{ if (e.key==='Enter') { if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; } try { abortRef.current?.abort(); } catch {}; runSearch(); } }}
         />
-        <Button onClick={()=>runSearch()} disabled={loading || !query.trim()}>
-          {loading ? "Searching…" : "Search"}
-        </Button>
       </div>
 
       {error ? (

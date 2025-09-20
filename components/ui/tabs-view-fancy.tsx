@@ -33,6 +33,9 @@ export function HooksTabContent() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [activeIdx, _setActiveIdx] = useState<number | null>(null);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressFiredRef = useRef(false);
+  const [downloadIdx, setDownloadIdx] = useState<number | null>(null);
 
   async function downloadVideo(url?: string, name?: string) {
     try {
@@ -130,6 +133,30 @@ export function HooksTabContent() {
   if (isMobile) {
     const toShow = (items || []).slice(0, visibleCount);
     const hasMore = visibleCount < (items?.length || 0);
+    function startPress(i: number) {
+      try { longPressFiredRef.current = false; } catch {}
+      try { if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } } catch {}
+      try {
+        longPressTimerRef.current = window.setTimeout(() => {
+          try { longPressFiredRef.current = true; setDownloadIdx(i); } catch {}
+        }, 550);
+      } catch {}
+    }
+    function endPress(i: number) {
+      try { if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } } catch {}
+      if (!longPressFiredRef.current) {
+        try {
+          _setActiveIdx(i);
+          const v = videoRefs.current[i];
+          if (v) {
+            try { v.playsInline = true; v.muted = false; v.controls = true; v.play().catch(()=>{}); } catch {}
+          }
+        } catch {}
+      }
+    }
+    function cancelPress() {
+      try { if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } } catch {}
+    }
     return (
       <div className="w-full h-full min-h-[65vh]">
         <div className="px-6 pt-1 pb-2">
@@ -149,8 +176,14 @@ export function HooksTabContent() {
               <button
                 key={`${it.text}-${_idx}`}
                 type="button"
-                onClick={() => { if (it.videoUrl) downloadVideo(it.videoUrl, it.text); }}
-                className="rounded-lg overflow-hidden bg-white/5 border border-white/10 text-left"
+                onClick={(e)=>{ try { e.preventDefault(); e.stopPropagation(); endPress(_idx); } catch {} }}
+                onPointerDown={(e)=>{ try { if ((e as unknown as { pointerType?: string }).pointerType === 'touch') startPress(_idx); } catch {} }}
+                onPointerUp={(e)=>{ try { if ((e as unknown as { pointerType?: string }).pointerType === 'touch') endPress(_idx); } catch {} }}
+                onPointerCancel={()=>{ cancelPress(); }}
+                onPointerLeave={()=>{ cancelPress(); }}
+                onContextMenu={(e)=>{ try { e.preventDefault(); } catch {} }}
+                className="rounded-lg overflow-hidden bg-white/5 border border-white/10 text-left select-none"
+                style={{ WebkitUserSelect: 'none' as unknown as undefined }}
               >
                 <div className="relative w-full aspect-[3/4]">
                   {/* Keep video mounted to leverage browser caching and avoid refetches */}
@@ -161,7 +194,6 @@ export function HooksTabContent() {
                       poster={it.image}
                       className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                       playsInline
-                      muted
                       controls={activeIdx === _idx}
                       preload="metadata"
                     />
@@ -171,6 +203,22 @@ export function HooksTabContent() {
               </button>
             ))}
           </div>
+          <Dialog open={downloadIdx !== null} onOpenChange={(v)=>{ try { if (!v) setDownloadIdx(null); } catch {} }}>
+            <DialogContent className="p-4">
+              <DialogHeader>
+                <DialogTitle>Download hook?</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-2">
+                <Button onClick={async()=>{
+                  try {
+                    const it = toShow[downloadIdx ?? -1];
+                    if (it?.videoUrl) await downloadVideo(it.videoUrl, it.text);
+                  } finally { try { setDownloadIdx(null); } catch {} }
+                }}>Download</Button>
+                <Button variant="outline" onClick={()=> setDownloadIdx(null)}>Cancel</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <div ref={sentinelRef} className="h-8" aria-hidden />
           {!hasMore ? null : (
             <div className="pb-6 px-1">

@@ -23,6 +23,31 @@ function toIdString(id: unknown): string | undefined {
   }
 }
 
+// Normalize Surreal datetime strings to browser-friendly ISO (millisecond precision)
+function normalizeIsoDate(input: unknown): string | null {
+  try {
+    if (typeof input !== "string") return null;
+    let s = input.trim();
+    if (!s) return null;
+    // Replace space between date and time with T
+    if (s.includes(" ")) s = s.replace(" ", "T");
+    // Clamp fractional seconds to 3 digits (Safari/iOS cannot parse >3)
+    s = s.replace(/(\.\d{3})\d+(Z|[+-]\d{2}:?\d{2})$/, "$1$2");
+    s = s.replace(/(\.\d{3})\d+$/, "$1");
+    // If missing seconds e.g. YYYY-MM-DDTHH:MM, add :00
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(Z|[+-]\d{2}:?\d{2})?$/.test(s)) {
+      s = s.replace(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(Z|[+-]\d{2}:?\d{2})?$/, "$1:00$2");
+    }
+    // Ensure UTC Z if no explicit timezone
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(s)) s = `${s}Z`;
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString();
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: Request) {
   const session = await auth().catch(() => null);
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -45,8 +70,8 @@ export async function GET(req: Request) {
     id: toIdString(r.id),
     title: r.title || null,
     caption: r.caption || "",
-    scheduled_at: r.scheduled_at || null,
-    created_at: r.created_at || null,
+    scheduled_at: normalizeIsoDate(r.scheduled_at) || r.scheduled_at || null,
+    created_at: normalizeIsoDate(r.created_at) || r.created_at || null,
     sent_at: r.sent_at || null,
   }));
   return NextResponse.json({ reminders });
@@ -92,8 +117,8 @@ export async function POST(req: Request) {
     id: toIdString(row.id),
     title: row.title || null,
     caption: row.caption || "",
-    scheduled_at: row.scheduled_at || when.toISOString(),
-    created_at: row.created_at || createdIso,
+    scheduled_at: normalizeIsoDate(row.scheduled_at) || when.toISOString(),
+    created_at: normalizeIsoDate(row.created_at) || createdIso,
     sent_at: row.sent_at || null,
   } : null });
 }

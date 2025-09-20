@@ -16,6 +16,8 @@ type TemplateDoc = {
   fixedAspectRatio?: boolean;
   aspectRatio?: number;
   allowedImageSources?: Array<'vehicle' | 'user'>; // 'user' covers upload + workspace
+  // Maximum number of user images allowed per upload action in the Use Template UI
+  maxUploadImages?: number;
   variables?: Array<{ key: string; label?: string; type?: string; required?: boolean; defaultValue?: string | number | boolean }>;
   categories?: string[];
   // When enabled, generation UIs should open the Designer immediately after generation
@@ -160,6 +162,14 @@ export async function POST(req: Request) {
           .filter((s) => s === 'vehicle' || s === 'user')
           .filter((v, i, a) => a.indexOf(v) === i)
       : ['vehicle', 'user'],
+    maxUploadImages: ((): number | undefined => {
+      try {
+        const raw = (body as { maxUploadImages?: unknown })?.maxUploadImages;
+        const n = Math.round(Number(raw));
+        if (Number.isFinite(n) && n > 0) return Math.min(25, Math.max(1, n));
+      } catch {}
+      return undefined;
+    })(),
     variables: Array.isArray(body?.variables) ? (body!.variables as unknown[]).filter(Boolean) as TemplateDoc['variables'] : [],
     categories: Array.isArray((body as { categories?: unknown })?.categories)
       ? ((body as { categories?: unknown }).categories as unknown[])
@@ -217,6 +227,7 @@ export async function POST(req: Request) {
     fixedAspectRatio = $fixedAspectRatio,
     aspectRatio = $aspectRatio,
     allowedImageSources = $allowedImageSources,
+    maxUploadImages = $maxUploadImages,
     variables = $variables,
     categories = $categories,
     autoOpenDesigner = $autoOpenDesigner,
@@ -276,6 +287,7 @@ export async function PATCH(req: Request) {
     'fixedAspectRatio',
     'aspectRatio',
     'allowedImageSources',
+    'maxUploadImages',
     'variables',
     'categories',
     'autoOpenDesigner',

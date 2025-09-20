@@ -279,7 +279,23 @@ function DashboardHomePageInner() {
               {reminders.length ? reminders.map((r)=> (
                 <div key={r.id} className="rounded border border-[color:var(--border)] p-3">
                   <div className="text-sm font-medium">{r.title || 'Reminder'}</div>
-                  <div className="text-xs text-white/70">{r.scheduled_at ? new Date(r.scheduled_at).toLocaleString() : ''}{r.sent_at ? ' • sent' : ''}</div>
+                  <div className="text-xs text-white/70">{(function(){
+                    const raw = r.scheduled_at || '';
+                    try {
+                      let s = raw.trim();
+                      if (!s) return '';
+                      if (s.includes(' ')) s = s.replace(' ', 'T');
+                      s = s.replace(/(\.\d{3})\d+(Z|[+-]\d{2}:?\d{2})$/, '$1$2');
+                      s = s.replace(/(\.\d{3})\d+$/, '$1');
+                      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(Z|[+-]\d{2}:?\d{2})?$/.test(s)) {
+                        s = s.replace(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(Z|[+-]\d{2}:?\d{2})?$/, '$1:00$2');
+                      }
+                      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(s)) s = `${s}Z`;
+                      const d = new Date(s);
+                      if (isNaN(d.getTime())) return 'Invalid Date';
+                      return d.toLocaleString();
+                    } catch { return 'Invalid Date'; }
+                  })()}{r.sent_at ? ' • sent' : ''}</div>
                   {r.caption ? <div className="text-xs text-white/80 mt-1 whitespace-pre-wrap">{r.caption}</div> : null}
                 </div>
               )) : (

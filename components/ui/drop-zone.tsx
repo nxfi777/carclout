@@ -8,9 +8,10 @@ type DropZoneProps = {
   className?: string;
   disabled?: boolean;
   cover?: boolean;
+  maxFiles?: number;
 };
 
-export function DropZone({ onDrop, children, className, accept, disabled, cover }: DropZoneProps) {
+export function DropZone({ onDrop, children, className, accept, disabled, cover, maxFiles }: DropZoneProps) {
   const [isOver, setIsOver] = React.useState(false);
   const ref = React.useRef<HTMLDivElement | null>(null);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
@@ -72,7 +73,10 @@ export function DropZone({ onDrop, children, className, accept, disabled, cover 
     try { if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } catch {}
   }
   function handleFiles(filesLike: FileList | File[]) {
-    const files = Array.from(filesLike || []);
+    let files = Array.from(filesLike || []);
+    if (typeof maxFiles === 'number' && Number.isFinite(maxFiles) && maxFiles > 0 && files.length > maxFiles) {
+      files = files.slice(0, Math.max(1, Math.floor(maxFiles)));
+    }
     if (files.length) onDrop(files);
   }
   function onDropHandler(e: React.DragEvent) {
@@ -84,13 +88,16 @@ export function DropZone({ onDrop, children, className, accept, disabled, cover 
     const dt = e.dataTransfer;
     if (!dt) return;
     if (dt.items && dt.items.length) {
-      const files: File[] = [];
+      let files: File[] = [];
       for (let i = 0; i < dt.items.length; i++) {
         const it = dt.items[i];
         if (it.kind === "file") {
           const f = it.getAsFile();
           if (f) files.push(f);
         }
+      }
+      if (typeof maxFiles === 'number' && Number.isFinite(maxFiles) && maxFiles > 0 && files.length > maxFiles) {
+        files = files.slice(0, Math.max(1, Math.floor(maxFiles)));
       }
       if (files.length) onDrop(files);
     } else if (dt.files && dt.files.length) {

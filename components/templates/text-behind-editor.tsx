@@ -211,6 +211,9 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
   const containerRef = useRef<HTMLDivElement | null>(null);
   const bgImgRef = useRef<HTMLImageElement | null>(null);
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pinchActiveRef = useRef<boolean>(false);
+  const pinchStartDistanceRef = useRef<number | null>(null);
+  const pinchInitialFontRef = useRef<number>(fontSize);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
@@ -596,10 +599,41 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
                 const t = e.touches && e.touches[0]; if (!t) return;
                 const startX = t.clientX; const startY = t.clientY;
                 const startPX = x; const startPY = y;
+                pinchActiveRef.current = false;
+                pinchStartDistanceRef.current = null;
+                pinchInitialFontRef.current = fontSize;
+
+                const distance = (t1: Touch, t2: Touch) => {
+                  const dx = t2.clientX - t1.clientX;
+                  const dy = t2.clientY - t1.clientY;
+                  return Math.hypot(dx, dy);
+                };
+
                 const move = (tev: TouchEvent)=>{
+                  try { tev.preventDefault(); } catch {}
+                  // Pinch to scale when 2 touches
+                  if (tev.touches && tev.touches.length >= 2) {
+                    const t1 = tev.touches[0];
+                    const t2 = tev.touches[1];
+                    const d = distance(t1, t2);
+                    if (!pinchActiveRef.current) {
+                      pinchActiveRef.current = true;
+                      pinchStartDistanceRef.current = d > 0 ? d : 1;
+                      pinchInitialFontRef.current = fontSize;
+                      return;
+                    }
+                    const startD = pinchStartDistanceRef.current || 1;
+                    const scale = Math.max(0.25, Math.min(4, d / startD));
+                    const newSize = Math.round(Math.min(200, Math.max(18, pinchInitialFontRef.current * scale)));
+                    setFontSize(newSize);
+                    return;
+                  }
+                  // Single touch drag when not pinching
+                  if (pinchActiveRef.current) {
+                    return; // ignore drags while pinching
+                  }
                   const touch = tev.touches && tev.touches[0] ? tev.touches[0] : (tev.changedTouches && tev.changedTouches[0] ? tev.changedTouches[0] : null);
                   if (!touch) return;
-                  try { tev.preventDefault(); } catch {}
                   const dx = touch.clientX - startX; const dy = touch.clientY - startY;
                   const w = rect.width; const h = rect.height;
                   const nx = Math.min(100, Math.max(0, startPX + (dx / w) * 100));
@@ -613,6 +647,8 @@ export default function TextBehindEditor({ bgKey, rembg, defaultHeadline, onSave
                     window.removeEventListener('touchend', up as unknown as EventListenerOrEventListenerObject);
                     window.removeEventListener('touchcancel', up as unknown as EventListenerOrEventListenerObject);
                   } catch {}
+                  pinchActiveRef.current = false;
+                  pinchStartDistanceRef.current = null;
                 };
                 window.addEventListener('touchmove', onMoveListener as unknown as EventListenerOrEventListenerObject, { passive: false });
                 window.addEventListener('touchend', up as unknown as EventListenerOrEventListenerObject);

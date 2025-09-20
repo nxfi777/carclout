@@ -33,6 +33,7 @@ export type UseTemplateTemplate = {
   aspectRatio?: number;
   allowedImageSources?: Array<"vehicle" | "user">;
   autoOpenDesigner?: boolean;
+  maxUploadImages?: number;
 };
 
 export function UseTemplateContent({ template }: { template: UseTemplateTemplate }) {
@@ -240,7 +241,18 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
 
   async function handleUploadFiles(files: File[]) {
     const arr = Array.isArray(files) ? files : (files as unknown as File[]);
-    const images = arr.filter((f) => (f?.type || "").startsWith("image/"));
+    let images = arr.filter((f) => (f?.type || "").startsWith("image/"));
+    const limit = ((): number | null => {
+      try {
+        const n = typeof (template as { maxUploadImages?: unknown })?.maxUploadImages === 'number' ? Number((template as { maxUploadImages?: number }).maxUploadImages) : NaN;
+        if (Number.isFinite(n) && n > 0) return Math.max(1, Math.floor(n));
+      } catch {}
+      return null;
+    })();
+    if (limit && images.length > limit) {
+      images = images.slice(0, limit);
+      try { toast.info(`Only the first ${limit} image${limit===1?'':'s'} will be uploaded for this template.`); } catch {}
+    }
     if (!images.length) return;
     setUploading(true);
     try {
@@ -845,7 +857,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                 </div>
               ) : source === "upload" ? (
                 <div className="space-y-2">
-                  <DropZone accept="image/*" onDrop={handleUploadFiles} disabled={uploading}>
+                  <DropZone accept="image/*" onDrop={handleUploadFiles} disabled={uploading} maxFiles={(typeof (template as { maxUploadImages?: number })?.maxUploadImages === 'number' ? (template as { maxUploadImages?: number }).maxUploadImages : undefined)}>
                     <div className="flex flex-col items-center gap-2 py-10">
                       <UploadIcon className="w-[1.25rem] h-[1.25rem] text-white/70" />
                       <div className="text-sm text-white/80">Drag and drop an image</div>
@@ -865,6 +877,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                                 <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-full object-cover" />
                               </div>
                             </button>
+                            <button type="button" className="absolute top-1 right-1 text-xs px-2 py-1 rounded bg-black/60 hover:bg-black/80" onClick={(e)=>{ e.stopPropagation(); setUploadedKeys((prev)=> prev.filter((x)=> x!==k)); setUploadedPreviews((prev)=> { const next = { ...prev } as Record<string, string>; try { delete next[k]; } catch {} return next; }); if (browseSelected === k) setBrowseSelected(null); }}>Remove</button>
                           </li>
                         ))}
                       </ul>

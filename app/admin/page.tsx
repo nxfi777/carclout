@@ -53,6 +53,7 @@ type TemplateDisplay = {
   fixedAspectRatio?: boolean;
   aspectRatio?: number;
   allowedImageSources?: Array<'vehicle' | 'user'>;
+  maxUploadImages?: number;
   imageSize?: { width: number; height: number } | null;
   favoriteCount?: number;
   autoOpenDesigner?: boolean;
@@ -79,6 +80,7 @@ type CreateTemplatePayload = {
   fixedAspectRatio: boolean;
   aspectRatio?: number;
   allowedImageSources: Array<'vehicle' | 'user'>;
+  maxUploadImages?: number;
   autoOpenDesigner?: boolean;
   variables: Array<{
     key: string;
@@ -524,6 +526,7 @@ function NewTemplateButton(){
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [allowVehicle, setAllowVehicle] = useState<boolean>(true);
   const [allowUser, setAllowUser] = useState<boolean>(true);
+  const [maxUploadImages, setMaxUploadImages] = useState<number | ''>('');
   const [autoOpenDesigner, setAutoOpenDesigner] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
   // Foreground masking (BiRefNet) options
@@ -613,6 +616,7 @@ function NewTemplateButton(){
   async function save() {
     if (!name || !prompt) { toast.error('Name and prompt are required'); return; }
     if (!allowVehicle && !allowUser) { toast.error('Enable at least one image source (car or user).'); return; }
+    if (maxUploadImages !== '' && (!Number.isFinite(Number(maxUploadImages)) || Number(maxUploadImages) <= 0)) { toast.error('Max images must be a positive number'); return; }
     // Validate dropdown tokens have >= 2 options
     for (const [key, cfg] of Object.entries(tokenConfigs)) {
       if (cfg.kind === 'select') {
@@ -663,11 +667,11 @@ function NewTemplateButton(){
       const unknownVarDefs: Array<{ key: string; label: string; required: boolean; type: 'select'|'color'|'text'; options?: string[]; defaultValue?: string; }> = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: (cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text')) as 'select'|'color'|'text', options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' && (cfg as { defaultValue?: unknown }).defaultValue ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
       const allowedImageSources = ([allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean) as Array<'vehicle'|'user'>);
       const rembg = { enabled: !!rembgEnabled, model: rembgModel, operating_resolution: rembgRes, output_format: rembgFormat, refine_foreground: !!rembgRefine, output_mask: !!rembgMask } as const;
-      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, rembg, autoOpenDesigner } as unknown as CreateTemplatePayload;
+      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, rembg, autoOpenDesigner, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined; })() } as unknown as CreateTemplatePayload;
       if (/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug)) payload.imageSize = { width: imageWidth, height: imageHeight };
       const res = await fetch('/api/templates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!res.ok) { const data = await res.json().catch(()=>({})); toast.error(data?.error || 'Failed to create template'); return; }
-      setOpen(false); setName(""); setDescription(""); setPrompt(""); setFalModelSlug("fal-ai/gemini-25-flash-image/edit"); setThumbnailFile(null); setAdminImageFiles([]); setAllowVehicle(true); setAllowUser(true); setImageWidth(1280); setImageHeight(1280); setImageSizeEdited(false);
+      setOpen(false); setName(""); setDescription(""); setPrompt(""); setFalModelSlug("fal-ai/gemini-25-flash-image/edit"); setThumbnailFile(null); setAdminImageFiles([]); setAllowVehicle(true); setAllowUser(true); setImageWidth(1280); setImageHeight(1280); setImageSizeEdited(false); setMaxUploadImages('');
       try { const ev = new CustomEvent('admin:templates:created'); window.dispatchEvent(ev); } catch {}
     } finally { setBusy(false); }
   }
@@ -940,6 +944,7 @@ function TemplatesTab() {
           aspectRatio: typeof t?.aspectRatio === 'number' ? Number(t?.aspectRatio) : undefined,
           rembg: t?.rembg || null,
           allowedImageSources: Array.isArray(t?.allowedImageSources) ? t.allowedImageSources : ['vehicle','user'],
+          maxUploadImages: typeof (t as { maxUploadImages?: unknown })?.maxUploadImages === 'number' ? Number((t as { maxUploadImages?: number }).maxUploadImages) : undefined,
           imageSize: (t as { imageSize?: { width: number; height: number } | null })?.imageSize || null,
           favoriteCount: Number((t as { favoriteCount?: number })?.favoriteCount || 0),
         })));
@@ -1054,6 +1059,7 @@ function TemplatesTab() {
                     aspectRatio: active.aspectRatio,
                     allowedImageSources: active.allowedImageSources as Array<'vehicle'|'user'> | undefined,
                     autoOpenDesigner: active.autoOpenDesigner,
+                    maxUploadImages: typeof active.maxUploadImages === 'number' ? Number(active.maxUploadImages) : undefined,
                   } as UseTemplateTemplate}
                 />
               ) : null}
@@ -1545,6 +1551,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   const [allowUser, setAllowUser] = useState<boolean>(() => {
     try { const a = Array.isArray(template?.allowedImageSources) ? template.allowedImageSources : ['vehicle','user']; return a.includes('user'); } catch { return true; }
   });
+  const [maxUploadImages, setMaxUploadImages] = useState<number | ''>(()=>{ try { const n = Number(template?.maxUploadImages || 0); return Number.isFinite(n) && n>0 ? n : ''; } catch { return ''; } });
   const [rembgEnabled, setRembgEnabled] = useState<boolean>(!!template?.rembg?.enabled);
   const [rembgModel, setRembgModel] = useState<'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait'>(template?.rembg?.model || 'General Use (Heavy)');
   const [rembgRes, setRembgRes] = useState<'1024x1024' | '2048x2048'>(template?.rembg?.operating_resolution || '2048x2048');
@@ -1567,6 +1574,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       setAllowVehicle(srcs.includes('vehicle'));
       setAllowUser(srcs.includes('user'));
     } catch {}
+    try { const n = Number(template?.maxUploadImages || 0); setMaxUploadImages(Number.isFinite(n) && n>0 ? n : ''); } catch {}
     setRembgEnabled(!!template?.rembg?.enabled);
     setRembgModel((template?.rembg?.model as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait') || 'General Use (Heavy)');
     setRembgRes((template?.rembg?.operating_resolution as '1024x1024'|'2048x2048') || '2048x2048');
@@ -1615,6 +1623,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
         if (opts.length < 2) { toast.error(`Token ${key} requires at least 2 options.`); return; }
       }
     }
+    if (maxUploadImages !== '' && (!Number.isFinite(Number(maxUploadImages)) || Number(maxUploadImages) <= 0)) { toast.error('Max images must be a positive number'); return; }
     setBusy(true);
     try{
       const unknownVarDefs = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text'), options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' && (cfg as { defaultValue?: unknown }).defaultValue ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
@@ -1623,7 +1632,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       const res = await fetch('/api/templates', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, name: name.trim(), description: description || '', prompt: prompt.trim(), falModelSlug: falModelSlug || undefined, variables: unknownVarDefs, imageSize: { width: imageWidth, height: imageHeight }, fixedAspectRatio: !!fixedAspect, aspectRatio: fixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined, allowedImageSources, autoOpenDesigner, rembg })
+        body: JSON.stringify({ id, name: name.trim(), description: description || '', prompt: prompt.trim(), falModelSlug: falModelSlug || undefined, variables: unknownVarDefs, imageSize: { width: imageWidth, height: imageHeight }, fixedAspectRatio: !!fixedAspect, aspectRatio: fixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined, allowedImageSources, autoOpenDesigner, rembg, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n>0 ? Math.min(25, Math.round(n)) : undefined; })() })
       });
       const data = await res.json().catch(()=>({}));
       if (!res.ok) { toast.error(data?.error || 'Failed to update template'); return; }
@@ -1729,6 +1738,24 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2"><span className="text-xs text-white/70">Car</span><Switch checked={allowVehicle} onCheckedChange={(v)=> setAllowVehicle(!!v)} /></div>
           <div className="flex items-center gap-2"><span className="text-xs text-white/70">User</span><Switch checked={allowUser} onCheckedChange={(v)=> setAllowUser(!!v)} /></div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="space-y-1">
+          <div className="text-sm font-medium">Max images per upload</div>
+          <div className="text-xs text-white/60">Limit how many images users can upload at once when using this template.</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input type="number" className="w-24 h-9" value={maxUploadImages} onChange={(e)=>{ const v = e.target.value; if (v==='') setMaxUploadImages(''); else setMaxUploadImages(Math.max(1, Math.min(25, Math.round(Number(v)||0)))); }} placeholder="e.g. 1" />
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="space-y-1">
+          <div className="text-sm font-medium">Max images per upload</div>
+          <div className="text-xs text-white/60">Limit how many images users can upload at once when using this template.</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input type="number" className="w-24 h-9" value={maxUploadImages} onChange={(e)=>{ const v = e.target.value; if (v === '') setMaxUploadImages(''); else setMaxUploadImages(Math.max(1, Math.min(25, Math.round(Number(v)||0)))); }} placeholder="e.g. 1" />
         </div>
       </div>
       {Object.keys(tokenConfigs).length ? (
