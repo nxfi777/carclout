@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getViewUrl } from "@/lib/view-url-client";
 import { toast } from "sonner";
 import { DropZone } from "@/components/ui/drop-zone";
 
@@ -61,9 +62,9 @@ export default function InstagramDashboardPage() {
     if (!ps?.url || !ps?.key) throw new Error('presign_failed');
     const up = await fetch(ps.url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } });
     if (!up.ok) throw new Error('upload_failed');
-    const view = await fetch('/api/storage/view', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: ps.key }) }).then(r=>r.json());
-    if (!view?.url) throw new Error('view_failed');
-    return view.url as string;
+    const url = await getViewUrl(ps.key);
+    if (!url) throw new Error('view_failed');
+    return url as string;
   }
 
   async function handleDropMedia(files: File[]) {

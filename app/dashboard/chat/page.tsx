@@ -34,6 +34,14 @@ type ForgeView = "chat" | "forge" | "livestream";
 type NonChatView = Exclude<ForgeView, "chat">;
 type ChannelPerms = { slug: string; name?: string; requiredReadRole?: 'user' | 'staff' | 'admin'; requiredReadPlan?: 'base' | 'premium' | 'ultra'; locked?: boolean; locked_until?: string | null };
 
+type ChatProfile = {
+  name?: string;
+  image?: string;
+  vehicles?: Array<{ make?: string; model?: string }>;
+  photos?: string[];
+  bio?: string;
+};
+
 function DashboardChatPageInner() {
   const [loading, setLoading] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
@@ -138,6 +146,39 @@ function DashboardChatPageInner() {
           const v = Number(dmTtlRes.value?.ttlSeconds);
           if (Number.isFinite(v)) setDmTtlSeconds(Math.max(0, Math.floor(v)));
         }
+        // Prefetch chat profiles in bulk to avoid many single requests later
+        try {
+          const emails: string[] = [];
+          if (presenceRes.status === 'fulfilled') {
+            for (const u of (presenceRes.value.users || [])) {
+              const e = String(u?.email || '').toLowerCase();
+              if (e && !emails.includes(e)) emails.push(e);
+            }
+          }
+          if (messagesRes.status === 'fulfilled') {
+            for (const m of (messagesRes.value.messages || [])) {
+              const e = String(m?.userEmail || '').toLowerCase();
+              if (e && !emails.includes(e)) emails.push(e);
+            }
+          }
+          if (convRes.status === 'fulfilled') {
+            for (const c of (convRes.value.conversations || [])) {
+              const e = String(c?.email || '').toLowerCase();
+              if (e && !emails.includes(e)) emails.push(e);
+            }
+          }
+          const uniq = emails.filter(Boolean).slice(0, 200);
+          if (uniq.length) {
+            const qs = uniq.map((e)=> `emails=${encodeURIComponent(e)}`).join('&');
+            const bulk = await fetch(`/api/users/chat-profile?${qs}`, { cache: 'no-store' }).then(r=>r.json()).catch(()=>({ profiles: {} }));
+            const profs = (bulk?.profiles || {}) as Record<string, unknown>;
+            try {
+              if (typeof window !== 'undefined') {
+                window.igniteProfileCache = { ...(window.igniteProfileCache || {}), ...profs };
+              }
+            } catch {}
+          }
+        } catch {}
       } finally {
         if (mounted) setLoading(false);
       }
@@ -1383,13 +1424,26 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/users/chat-profile?email=${encodeURIComponent(email)}`).then(r=>r.json());
+        // Use window-scoped cache if available
+        let res: ChatProfile | null | undefined = undefined;
+        try {
+          if (typeof window !== 'undefined') {
+            const cached = window.igniteProfileCache?.[email.toLowerCase()];
+            if (cached && typeof cached === 'object') {
+              res = cached as ChatProfile;
+            }
+          }
+        } catch {}
+        if (!res) {
+          const fetched = await fetch(`/api/users/chat-profile?email=${encodeURIComponent(email)}`, { cache: 'no-store' }).then(r=>r.json()).catch(() => null);
+          if (fetched && typeof fetched === 'object') res = fetched as ChatProfile;
+        }
         if (!cancelled) setProfile(res || null);
-        const keys = Array.isArray(res?.photos) ? res.photos as string[] : [];
-        for (const key of keys) {
+        const keys = Array.isArray(res?.photos) ? (res?.photos as string[]) : [];
+        if (keys.length) {
           try {
-            const v = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key }) }).then(r=>r.json());
-            if (typeof v?.url === 'string') setPreviews(prev => ({ ...prev, [key]: v.url }));
+            const urls = await (await import('@/lib/view-url-client')).getViewUrls(keys);
+            if (!cancelled) setPreviews(urls);
           } catch {}
         }
       } catch {}

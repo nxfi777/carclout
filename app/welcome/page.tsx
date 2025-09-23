@@ -2,10 +2,6 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect as _useEffect } from "react";
-import { useState as _useState } from "react";
-import { Button } from "@/components/ui/button";
-import PlanSelector from "@/components/plan-selector";
 
 type MeResponse = { name?: string; email?: string; plan?: string | null } | { error: string };
 
@@ -21,11 +17,7 @@ function WelcomePageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [checking, setChecking] = useState(true);
-  const [name, setName] = useState<string>("");
-  const [carPhotos, setCarPhotos] = useState<string[]>([]);
-  const [chatProfilePhotos, setChatProfilePhotos] = useState<string[]>([]);
-  const [previews, setPreviews] = useState<Record<string,string>>({});
-  const [bio, setBio] = useState<string>("");
+  // Removed bio/photos UI state
   const appliedParamsRef = useRef(false);
 
   useEffect(() => {
@@ -39,10 +31,10 @@ function WelcomePageInner() {
         }
         const me: MeResponse = await meRes.json();
         const plan = ("plan" in (me as Record<string, unknown>) ? (me as Record<string, unknown>).plan : null) as string | null | undefined;
-        const displayName = ("name" in (me as Record<string, unknown>) && typeof (me as Record<string, unknown>).name === 'string'
+        // Compute and optionally use displayName if needed in future
+        const _displayName = ("name" in (me as Record<string, unknown>) && typeof (me as Record<string, unknown>).name === 'string')
           ? String((me as Record<string, unknown>).name)
-          : ("email" in (me as Record<string, unknown>) ? String((me as Record<string, unknown>).email) : ""));
-        if (mounted) setName(displayName);
+          : ("email" in (me as Record<string, unknown>) ? String((me as Record<string, unknown>).email) : "");
         const isSubscribed = plan === 'minimum' || plan === 'basic' || plan === 'pro';
         if (isSubscribed) {
           router.replace('/dashboard/home');
@@ -58,26 +50,13 @@ function WelcomePageInner() {
               await fetch('/api/profile', { method: 'POST', body: JSON.stringify({ name: sanitizeInstagramHandle(handle) }) });
             }
           } catch {}
-          // If a plan was preselected before signup, auto-start checkout now
+          // If a plan was preselected before signup, redirect to new plan page instead
           if (chosenPlan === 'minimum' || chosenPlan === 'pro') {
-            try {
-              const res = await fetch('/api/billing/create-checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: chosenPlan }) });
-              const json = await res.json().catch(()=>({}));
-              if (json?.url) {
-                window.location.assign(json.url);
-                return;
-              }
-            } catch {}
+            router.replace(`/plan?plan=${encodeURIComponent(chosenPlan)}`);
+            return;
           }
         }
-        try {
-          const prof = await fetch('/api/profile', { cache: 'no-store' }).then(r=>r.json());
-          if (mounted) {
-            setCarPhotos(Array.isArray(prof?.profile?.carPhotos) ? prof.profile.carPhotos : []);
-            setChatProfilePhotos(Array.isArray(prof?.profile?.chatProfilePhotos) ? prof.profile.chatProfilePhotos : []);
-            setBio(typeof prof?.profile?.bio === 'string' ? prof.profile.bio : '');
-          }
-        } catch {}
+        // Profile prefill removed: bio/photos not shown on welcome page
       } finally {
         if (mounted) setChecking(false);
       }
@@ -91,129 +70,19 @@ function WelcomePageInner() {
     return filtered.slice(0, 30);
   }
 
+  // Legacy route: forward to new plan page (run once)
+  useEffect(() => {
+    const chosen = params.get('plan');
+    const qp = new URLSearchParams();
+    if (chosen) qp.set('plan', chosen);
+    router.replace(`/plan${qp.toString() ? `?${qp.toString()}` : ''}`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (checking) return null;
-
-  return (
-    <main className="container mx-auto px-[1rem] py-[2rem]">
-      <section className="max-w-4xl mx-auto text-center space-y-3 mb-[2rem]">
-        <h1 className="text-2xl md:text-3xl font-semibold">Welcome{ name ? `, ${name.split(' ')[0]}` : '' } 👋</h1>
-        <p className="text-sm md:text-base text-white/70">Choose a plan to unlock your dashboard. You can upgrade or cancel anytime.</p>
-      </section>
-      <section className="max-w-5xl mx-auto">
-        <PlanSelector />
-        {/* Optional: Quick bio */}
-        <div className="mt-[2rem]">
-          <h2 className="text-lg font-semibold mb-2">Optional: Add a short bio</h2>
-          <div className="text-xs text-muted-foreground mb-2">This appears in your chat profile and context menu.</div>
-          <textarea
-            value={bio}
-            onChange={(e)=> setBio(e.target.value.slice(0, 500))}
-            placeholder="Tell others a bit about you or your build (max 500 chars)"
-            className="w-full rounded bg-white/5 px-3 py-2 text-sm min-h-[6rem]"
-          />
-          <div className="text-xs text-muted-foreground mb-2">{bio.length}/500</div>
-          <div className="flex justify-end">
-            <Button size="sm" variant="outline" onClick={async()=>{ try{ await fetch('/api/profile', { method:'POST', body: JSON.stringify({ bio }) }); } catch {} }}>Save bio</Button>
-          </div>
-        </div>
-        {/* Optional: Quick selection of chat profile photos for new users */}
-        <div className="mt-[2rem]">
-          <h2 className="text-lg font-semibold mb-2">Optional: Pick photos for your chat profile</h2>
-          {carPhotos.length === 0 ? (
-            <div className="text-xs text-muted-foreground">Add a vehicle and upload photos first in your profile.</div>
-          ) : (
-            <>
-              <div className="text-xs text-muted-foreground mb-2">Choose up to 6 vehicle photos to display alongside your name in chat.</div>
-              <WelcomeChatPhotoPicker
-                allKeys={carPhotos}
-                selected={chatProfilePhotos}
-                onChange={setChatProfilePhotos}
-                previews={previews}
-                onNeedPreview={async(keys:string[])=>{
-                  for (const key of keys) {
-                    if (previews[key]) continue;
-                    try {
-                      const res = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key }) }).then(r=>r.json());
-                      if (typeof res?.url === 'string') setPreviews(prev=>({ ...prev, [key]: res.url }));
-                    } catch {}
-                  }
-                }}
-                onSave={async()=>{
-                  try { await fetch('/api/profile', { method:'POST', body: JSON.stringify({ chatProfilePhotos }) }); } catch {}
-                }}
-              />
-            </>
-          )}
-        </div>
-      </section>
-    </main>
-  );
+  return null;
 }
 
-function WelcomeChatPhotoPicker({ allKeys, selected, onChange, previews, onNeedPreview, onSave }: { allKeys: string[]; selected: string[]; onChange: (next: string[]) => void; previews: Record<string,string>; onNeedPreview: (keys: string[]) => Promise<void>; onSave: () => Promise<void> }) {
-  const MAX = 6;
-  _useEffect(() => {
-    const need = (allKeys || []).filter(k => !previews[k]).slice(0, 24);
-    if (need.length) { onNeedPreview(need); }
-  }, [allKeys, previews, onNeedPreview]);
-  function toggle(key: string) {
-    const isSel = selected.includes(key);
-    if (isSel) onChange(selected.filter(k => k !== key));
-    else if (selected.length < MAX) onChange([...selected, key]);
-  }
-  if (!Array.isArray(allKeys) || allKeys.length === 0) return null;
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs text-muted-foreground">Selected {selected.length}/{MAX}</div>
-        {selected.length > 0 ? (
-          <button
-            type="button"
-            className="text-xs text-muted-foreground hover:text-white underline-offset-2 hover:underline"
-            onClick={() => onChange([])}
-            aria-label="Clear selected chat photos"
-          >
-            Clear
-          </button>
-        ) : null}
-      </div>
-      <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {allKeys.map((k)=>{
-          const url = previews[k];
-          const isSel = selected.includes(k);
-          return (
-            <li key={k} className={`relative rounded-md overflow-hidden border ${isSel ? 'ring-2 ring-primary' : 'border-[color:var(--border)]'}`}>
-              <button type="button" className="block w-full h-full" onClick={()=>toggle(k)}>
-                <div className="aspect-square bg-black/20">
-                  {url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={url} alt="Car" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full grid place-items-center text-muted-foreground">
-                      <svg className="animate-spin size-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
-                    </div>
-                  )}
-                </div>
-              </button>
-              {isSel ? (
-                <button
-                  type="button"
-                  aria-label="Remove from chat profile"
-                  className="absolute top-1 right-1 rounded-full p-1 bg-black/70 text-white"
-                  onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onChange(selected.filter(x=>x!==k)); }}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-                </button>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-      <div className="mt-2 flex items-center justify-end text-xs text-muted-foreground">
-        <Button size="sm" variant="outline" onClick={onSave}>Save</Button>
-      </div>
-    </div>
-  );
-}
+// Removed WelcomeChatPhotoPicker and related UI
 
 

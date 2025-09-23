@@ -3,6 +3,7 @@
 import React, { useMemo, useRef, useEffect, useCallback, useState } from 'react';
 import Image from 'next/image';
 import { Volume2, VolumeX } from 'lucide-react';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
 
 //  Assets ---------------------------------------------------------------
 const FALLBACK =
@@ -37,10 +38,11 @@ interface CardProps {
   onHoverStart: () => void;
   onHoverEnd: () => void;
   onClick?: () => void;
+  label?: string;
 }
 
 //  Card Component (Memoized for Performance) ---------------------------
-const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, canPlayWithSound, muted, onToggleMute, onHoverStart, onHoverEnd, onClick }: CardProps) => {
+const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, canPlayWithSound, muted, onToggleMute, onHoverStart, onHoverEnd, onClick, label }: CardProps) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -77,50 +79,70 @@ const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, canPl
     });
   }, [onHoverStart, canPlayWithSound, videoUrl, muted]);
 
+  async function handleDownload() {
+    try {
+      if (!videoUrl) return;
+      const safeName = `${label || 'hook'}.mp4`.replace(/[^a-z0-9_.-]+/gi, '_');
+      const res = await fetch(videoUrl, { cache: 'no-store' });
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = safeName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { try { URL.revokeObjectURL(a.href); document.body.removeChild(a); } catch {} }, 1000);
+    } catch {}
+  }
+
   return (
-    <div
-      className="absolute"
-      style={{ width: cardW, height: cardH, transform, transformStyle: 'preserve-3d', willChange: 'transform' }}
-      onMouseEnter={handleHoverStart}
-      onMouseLeave={onHoverEnd}
-      onTouchStart={handleHoverStart}
-      onTouchEnd={onHoverEnd}
-      onClick={onClick}
-    >
-      <div
-        className="w-full h-full rounded-2xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg dark:shadow-gray-900/50 transition-transform duration-300 hover:scale-105 hover:shadow-2xl dark:hover:shadow-gray-900/70 hover:z-10"
-        style={{ backfaceVisibility: 'hidden', position: 'relative' }}
-      >
-        {/* Video layer */}
-        {videoUrl ? (
-          <video
-            ref={videoRef}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: active ? 1 : 0, transition: 'opacity 200ms ease' }}
-            crossOrigin="anonymous"
-          />
-        ) : null}
-        {/* Image layer */}
-        <CarouselImage
-          src={src}
-          width={cardW}
-          height={cardH}
-          active={active}
-        />
-        {/* Per-card mute/unmute toggle */}
-        {videoUrl && active ? (
-          <button
-            type="button"
-            aria-label={muted ? 'Unmute preview' : 'Mute preview'}
-            onClick={(e) => { e.stopPropagation(); onToggleMute(); try { videoRef.current?.play().catch(()=>{}); } catch {} }}
-            className="absolute right-2 top-2 z-20 bg-black/55 text-white rounded-full px-2.5 py-1.5 border border-white/10 hover:bg-black/65 active:scale-95"
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          className="absolute"
+          style={{ width: cardW, height: cardH, transform, transformStyle: 'preserve-3d', willChange: 'transform' }}
+          onMouseEnter={handleHoverStart}
+          onMouseLeave={onHoverEnd}
+          onTouchStart={handleHoverStart}
+          onTouchEnd={onHoverEnd}
+          onClick={onClick}
+        >
+          <div
+            className="w-full h-full rounded-2xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg dark:shadow-gray-900/50 transition-transform duration-300 hover:scale-105 hover:shadow-2xl dark:hover:shadow-gray-900/70 hover:z-10"
+            style={{ backfaceVisibility: 'hidden', position: 'relative' }}
           >
-            <span className="inline-flex items-center gap-2 text-[0.75rem]">
-              {muted ? <VolumeX width={14} height={14} /> : <Volume2 width={14} height={14} />}
-            </span>
-          </button>
-        ) : null}
-      </div>
-    </div>
+            {/* Video layer */}
+            {videoUrl ? (
+              <video
+                ref={videoRef}
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: active ? 1 : 0, transition: 'opacity 200ms ease' }}
+                crossOrigin="anonymous"
+              />
+            ) : null}
+            {/* Image layer */}
+            <CarouselImage
+              src={src}
+              width={cardW}
+              height={cardH}
+              active={active}
+            />
+            {/* Per-card mute/unmute toggle */}
+            {videoUrl && active ? (
+              <button
+                type="button"
+                aria-label={muted ? 'Unmute preview' : 'Mute preview'}
+                onClick={(e) => { e.stopPropagation(); onToggleMute(); try { videoRef.current?.play().catch(()=>{}); } catch {} }}
+                className="absolute right-2 top-2 z-20 bg-black/55 text-white rounded-full w-8 h-8 border border-white/10 hover:bg-black/65 active:scale-95 inline-flex items-center justify-center"
+              >
+                {muted ? <VolumeX width={14} height={14} /> : <Volume2 width={14} height={14} />}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={(e)=>{ try { e.preventDefault(); e.stopPropagation(); } catch {} finally { handleDownload(); } }}>Download video</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 });
 
@@ -345,6 +367,7 @@ const ThreeDCarousel = React.memo(({ items, radius = RADIUS, cardW = CARD_W, car
                   if (onItemClick) { onItemClick(it, idx); return; }
                 } catch {}
               }}
+              label={items[idx]?.text}
             />
           ))}
         </div>

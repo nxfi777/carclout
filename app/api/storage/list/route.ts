@@ -23,10 +23,6 @@ export async function GET(req: Request) {
   if (!path && isAdminScope) {
     try { await ensureFolder(`${root}/hooks/`); } catch {}
     try { await ensureFolder(`${root}/templates/`); } catch {}
-    // Learn content reserved structure
-    try { await ensureFolder(`${root}/learn/`); } catch {}
-    try { await ensureFolder(`${root}/learn/tutorials/`); } catch {}
-    try { await ensureFolder(`${root}/learn/ebooks/`); } catch {}
   }
   // Ensure common folders exist at root for user scope
   if (!path && !isAdminScope) {
@@ -80,11 +76,10 @@ export async function GET(req: Request) {
     return a.name.localeCompare(b.name);
   });
 
-  // If admin is listing inside hooks or learn/tutorials, flatten bundle folders into pseudo entries
+  // If admin is listing inside hooks, flatten bundle folders into pseudo entries
   const isHooksBundleView = isAdminScope && (path === 'hooks' || path.startsWith('hooks/'));
-  const isLearnTutorialsBundleView = isAdminScope && (path === 'learn/tutorials' || path.startsWith('learn/tutorials/'));
   let bundles: BundleEntry[] | undefined;
-  if (isHooksBundleView || isLearnTutorialsBundleView) {
+  if (isHooksBundleView) {
     const folderChildren = Array.from(childrenMap.values()).filter(it => it.type === 'folder');
     const results: BundleEntry[] = [];
     for (const f of folderChildren) {

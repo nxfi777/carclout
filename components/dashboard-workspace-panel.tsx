@@ -24,11 +24,12 @@ import SparkMD5 from "spark-md5";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
-import TextBehindEditor from "@/components/templates/text-behind-editor";
+import Designer from "@/components/designer/designer";
 import { SHOW_MANAGED_FOLDERS, isManagedRoot, isManagedPath as isManagedPathUtil } from "@/lib/workspace-visibility";
-import { ChevronLeft, List as ListIcon, LayoutGrid, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, List as ListIcon, LayoutGrid, MoreHorizontal, RefreshCcw } from "lucide-react";
 import dynamic from "next/dynamic";
 import carLoadAnimation from "@/public/carload.json";
+import { getViewUrl, getViewUrls } from "@/lib/view-url-client";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
@@ -59,11 +60,11 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [me, setMe] = useState<{ plan?: string | null } | null>(null);
   const [path, setPath] = useState<string>(() => {
     try {
-      if (typeof window === 'undefined') return "library";
+      if (typeof window === 'undefined') return scope === 'admin' ? '' : 'library';
       const qp = new URLSearchParams(window.location.search).get('path') || '';
       const cleaned = qp.replace(/^\/+|\/+$/g, "");
-      return cleaned || 'library';
-    } catch { return 'library'; }
+      return cleaned || (scope === 'admin' ? '' : 'library');
+    } catch { return scope === 'admin' ? '' : 'library'; }
   });
   const [items, setItems] = useState<ItemWithTag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,8 +83,8 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [conflictName, setConflictName] = useState<string>("");
   const contentRef = useRef<HTMLDivElement | null>(null);
   const isHooksAdminPath = scope === 'admin' && (!!path && (path === 'hooks' || path.startsWith('hooks')));
-  const isLearnTutorialsAdminPath = scope === 'admin' && (!!path && (path === 'learn/tutorials' || path.startsWith('learn/tutorials')));
-  const isLearnEbooksAdminPath = scope === 'admin' && (!!path && (path === 'learn/ebooks' || path.startsWith('learn/ebooks')));
+  const isLearnTutorialsAdminPath = false;
+  const isLearnEbooksAdminPath = false;
   const selectingRef = useRef(false);
   const [_selecting, setSelecting] = useState(false);
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -105,8 +106,11 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [designOpen, setDesignOpen] = useState(false);
   const [designKey, setDesignKey] = useState<string | null>(null);
   const [upscaleBusy, setUpscaleBusy] = useState(false);
+  const [previewVariants, setPreviewVariants] = useState<{ key?: string; name: string; url: string }[]>([]);
+  const [activePreviewVariantIndex, setActivePreviewVariantIndex] = useState(0);
   const isManagedRootName = useMemo(() => (name: string) => isManagedRoot(name), []);
   const isManagedPath = useMemo(() => isManagedPathUtil(path || ''), [path]);
+  const [_maskHint, setMaskHint] = useState<Record<string, 'exists' | 'missing' | 'checking' | 'unknown'>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -132,8 +136,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     try {
       let payload: { r2_key: string; original_width?: number; original_height?: number } = { r2_key: key };
       try {
-        const v = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key, scope }) }).then(r=>r.json()).catch(()=>({}));
-        const url: string | null = v?.url || null;
+        const url: string | null = await getViewUrl(key, scope);
         if (url) {
           const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img=new window.Image(); img.onload=()=> resolve({ w: img.naturalWidth||img.width, h: img.naturalHeight||img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
           if (dims && dims.w>0 && dims.h>0) { payload = { r2_key: key, original_width: dims.w, original_height: dims.h }; }
@@ -225,15 +228,57 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   }, [scope, treeVersion]);
   useEffect(() => { setSelectedKeys(new Set()); }, [path]);
 
+  // When preview opens (or tree changes), discover upscaled variants saved to /library and prepare a dropdown
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!preview) { setPreviewVariants([]); setActivePreviewVariantIndex(0); return; }
+        const base = String(preview.name || '').replace(/\.[^.]+$/, '');
+        const variants: { key?: string; name: string; url: string }[] = [{ key: preview.key, name: 'Original', url: preview.url }];
+        // Search in user's library for upscaled files derived from this base
+        const scopeParam = scope === 'admin' ? `&scope=admin` : '';
+        const listRes = await fetch(`/api/storage/list?path=${encodeURIComponent('library')}${scopeParam}`, { cache: 'no-store' });
+        const listData = await listRes.json().catch(() => ({}));
+        const libItems: { type?: string; name?: string; key?: string }[] = Array.isArray(listData?.items) ? listData.items : [];
+        const matches = libItems.filter((it) => {
+          const n = String(it?.name || '');
+          return String(it?.type) === 'file' && n.includes(`-${base}-upscaled-`);
+        });
+        if (matches.length) {
+          const keys = matches.map((it) => it.key || `library/${String(it.name)}`);
+          const vb = await fetch('/api/storage/view-bulk', { method: 'POST', body: JSON.stringify({ keys, scope }) });
+          const vdata = await vb.json().catch(() => ({}));
+          const urls: Record<string, string> = (vdata?.urls as Record<string, string>) || {};
+          for (const it of matches) {
+            const k = it.key || `library/${String(it.name)}`;
+            const url = urls[k];
+            if (!url) continue;
+            let label = 'Upscaled';
+            try {
+              const m = String(it.name).match(/-upscaled-(\d+)x/i);
+              if (m && m[1]) label = `Upscaled ${m[1]}x`;
+            } catch {}
+            variants.push({ key: k, name: label, url });
+          }
+        }
+        if (!cancelled) { setPreviewVariants(variants); setActivePreviewVariantIndex(0); }
+      } catch {
+        if (!cancelled) { setPreviewVariants(preview ? [{ key: preview.key, name: 'Original', url: preview.url }] : []); setActivePreviewVariantIndex(0); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [preview, scope, treeVersion]);
+
   // Read initial folder from query param (?path=library) when present
   useEffect(() => {
     try {
       const qp = searchParams?.get('path') || '';
-      if (!qp) { if (!path) setPath('library'); return; }
+      if (!qp) { if (!path && scope !== 'admin') setPath('library'); return; }
       const clean = qp.replace(/^\/+|\/+$/g, "");
       if (clean && clean !== path) setPath(clean);
     } catch {}
-  }, [searchParams, path]);
+  }, [searchParams, path, scope]);
 
   const itemStorageKey = useCallback((it: Item) => (
     it.key || `${path ? `${path}/` : ""}${it.name}${it.type === 'folder' ? '/' : ''}`
@@ -343,7 +388,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         toUpload.push(f);
       }
     }
-    const isHooksAdmin = isHooksAdminPath || isLearnTutorialsAdminPath;
+    const isHooksAdmin = isHooksAdminPath;
     const isPdf = (f: File) => (f.type || '').startsWith('application/pdf') || /\.pdf$/i.test(f.name);
     // Initialize upload progress state
     let totalUnits = 0;
@@ -793,6 +838,42 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     );
   }
 
+  async function computeSha1Hex(input: string): Promise<string> {
+    try {
+      const enc = new TextEncoder();
+      const data = enc.encode(input);
+      const digest = await crypto.subtle.digest('SHA-1', data);
+      const arr = Array.from(new Uint8Array(digest));
+      return arr.map((b) => b.toString(16).padStart(2, '0')).join('');
+    } catch {
+      return '';
+    }
+  }
+
+  async function _ensureMaskHintForKey(fullKeyOrName: string) {
+    try {
+      const key = fullKeyOrName;
+      if (!key) return;
+      setMaskHint((prev) => ({ ...prev, [key]: prev[key] || 'checking' }));
+      // Only compute when we have a full user key (users/<id>/...)
+      const m = key.match(/^(users\/[^/]+)\//);
+      if (!m) { setMaskHint((prev) => ({ ...prev, [key]: 'unknown' })); return; }
+      const userRoot = m[1];
+      const digest = await computeSha1Hex(key);
+      if (!digest) { setMaskHint((prev) => ({ ...prev, [key]: 'unknown' })); return; }
+      const maskKey = `${userRoot}/designer_masks/${digest}.png`;
+      try {
+        const res = await fetch(`/api/storage/file?key=${encodeURIComponent(maskKey)}`, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+        if (res.ok) setMaskHint((prev) => ({ ...prev, [key]: 'exists' }));
+        else setMaskHint((prev) => ({ ...prev, [key]: 'missing' }));
+      } catch {
+        setMaskHint((prev) => ({ ...prev, [key]: 'missing' }));
+      }
+    } catch {
+      // noop
+    }
+  }
+
   function ImageThumb({ storageKey, alt, url: providedUrl }: { storageKey: string; alt: string; url?: string | null }) {
     const [url, setUrl] = useState<string | null>(providedUrl || null);
     useEffect(() => {
@@ -803,9 +884,8 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       }
       (async () => {
         try {
-          const res = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key: storageKey, scope }) });
-          const data = await res.json() as { url?: string };
-          if (!cancelled && data?.url) setUrl(data.url);
+          const u = await getViewUrl(storageKey, scope);
+          if (!cancelled && u) setUrl(u);
         } catch {}
       })();
       return () => { cancelled = true; };
@@ -861,16 +941,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     if (missing.length === 0) return () => { aborted = true; };
     (async () => {
       try {
-        const chunkSize = 100;
-        const updates: Record<string, string> = {};
-        for (let i = 0; i < missing.length; i += chunkSize) {
-          const slice = missing.slice(i, i + chunkSize);
-          const res = await fetch('/api/storage/view-bulk', { method: 'POST', body: JSON.stringify({ keys: slice, scope }) });
-          if (!res.ok) continue;
-          const data = await res.json() as { urls?: Record<string, string> };
-          const urls: Record<string, string> = data?.urls || {};
-          Object.assign(updates, urls);
-        }
+        const updates = await getViewUrls(missing, scope);
         if (!aborted && Object.keys(updates).length > 0) setViewUrls((prev) => ({ ...prev, ...updates }));
       } catch {}
     })();
@@ -1055,7 +1126,17 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" className="hidden md:inline-flex" onClick={()=>{ const parent = path.split('/').slice(0, -1).join('/'); navigate(parent); }} disabled={!path}>Back</Button>
           <input ref={uploadRef} type="file" multiple hidden onChange={(e)=>{ const files = Array.from(e.target.files || []); if (files.length) onUpload(files as File[]); e.currentTarget.value=''; }} />
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async()=>{ await refresh(undefined, { force: true }); setTreeVersion(v=>v+1); }}
+              disabled={refreshing}
+              aria-label="Refresh"
+              title="Refresh"
+            >
+              <RefreshCcw className={cn("w-4 h-4", refreshing && "animate-spin")} />
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" aria-label="Open controls">
@@ -1118,6 +1199,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           <Button size="sm" variant="outline" onClick={()=>{ setSelectedKeys(new Set(sortedItems.map(it => itemStorageKey(it)))); }} disabled={sortedItems.length === 0}>Select all</Button>
           <Button size="sm" variant="outline" onClick={()=>setView(v=>v==='list'?'icons':'list')} aria-label={view==='list' ? 'Switch to icon view' : 'Switch to list view'} title={view==='list' ? 'Icon view' : 'List view'}>
             {view==='list' ? (<LayoutGrid className="w-4 h-4" />) : (<ListIcon className="w-4 h-4" />)}
+          </Button>
+          <Button size="sm" variant="outline" onClick={async()=>{ await refresh(undefined, { force: true }); setTreeVersion(v=>v+1); }} disabled={refreshing} aria-label="Refresh" title="Refresh">
+            <RefreshCcw className={cn("w-4 h-4", refreshing && "animate-spin")} />
           </Button>
           {selectedCount > 0 ? (
             <div className="ml-2 flex items-center gap-2">
@@ -1188,10 +1272,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
               onOpenFile={async (k)=>{
                 try {
                   const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(k);
-                  const res = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key: k, scope }) });
-                  const data = await res.json();
-                  if (!data?.url) return;
-                  if (isImage) setPreview({ url: data.url, name: k.split('/').pop() || k, key: k }); else window.open(data.url, '_blank', 'noopener,noreferrer');
+                  const url = await getViewUrl(k, scope);
+                  if (!url) return;
+                  if (isImage) setPreview({ url, name: k.split('/').pop() || k, key: k }); else window.open(url, '_blank', 'noopener,noreferrer');
                 } catch {}
               }}
               onMove={async (sourceKey, destPath) => {
@@ -1333,10 +1416,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                           if (it.type === 'folder') { if (it.name !== (path.split('/').pop() || '')) navigate(path ? `${path}/${it.name}` : it.name); return; }
                           const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
                           const isImage = /\.(png|jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(it.name);
-                          const res = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key, scope }) });
-                          const data = await res.json();
-                          if (!data?.url) return;
-                          if (isImage) setPreview({ url: data.url, name: it.name, key }); else window.open(data.url, '_blank', 'noopener,noreferrer');
+                          const url = await getViewUrl(key, scope);
+                          if (!url) return;
+                          if (isImage) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
                         }}>{it.name}</button>
                       </div>
                       <div className="text-white/60">{it.type==='file' ? formatSize(it.size) : '—'}</div>
@@ -1352,12 +1434,23 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                             <ContextMenuItem onSelect={async()=>{
                               if (it.type === 'folder') { navigate(path ? `${path}/${it.name}` : it.name); return; }
                               const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
-                              const isImage = /(\.png|jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(it.name);
-                              const res = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key, scope }) });
-                              const data = await res.json();
-                              if (!data?.url) return;
-                              if (isImage) setPreview({ url: data.url, name: it.name, key }); else window.open(data.url, '_blank', 'noopener,noreferrer');
+                              const isImage = /(\.png|\.jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(it.name);
+                              const url = await getViewUrl(key, scope);
+                              if (!url) return;
+                              if (isImage) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
                             }}>Open</ContextMenuItem>
+                            {it.type==='file' ? (
+                              <ContextMenuItem onSelect={()=>{
+                                const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
+                                const scopeParam = scope === 'admin' ? `&scope=admin` : '';
+                                const a = document.createElement('a');
+                                a.href = `/api/storage/file?key=${encodeURIComponent(key)}${scopeParam}&download=1`;
+                                a.download = it.name || `file-${Date.now()}`;
+                                document.body.appendChild(a);
+                                a.click();
+                                setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 1000);
+                              }}>Download</ContextMenuItem>
+                            ) : null}
                             {it.type==='file' && /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(it.name) ? (
                               <>
                                 <ContextMenuItem onSelect={()=>{ const key = it.key || `${path ? `${path}/` : ''}${it.name}`; setDesignKey(key); setDesignOpen(true); }}>Open in Designer</ContextMenuItem>
@@ -1424,10 +1517,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                   if (selectingRef.current) { ev.preventDefault(); ev.stopPropagation(); return; }
                                   if (it.type==='folder') { if (it.name !== (path.split('/').pop() || '')) navigate(path ? `${path}/${it.name}` : it.name); return; }
                                   const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
-                                  const res = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key, scope }) });
-                                  const data = await res.json();
-                                  if (!data?.url) return;
-                                  if (isImage) setPreview({ url: data.url, name: it.name, key }); else window.open(data.url, '_blank', 'noopener,noreferrer');
+                                  const url = await getViewUrl(key, scope);
+                                  if (!url) return;
+                                  if (isImage) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
                                 }}
                               >
                                 <div className="absolute left-2 top-2 z-10" onClick={(e)=>{ e.stopPropagation(); }} onPointerDown={(e)=>{ e.stopPropagation(); }}>
@@ -1451,13 +1543,25 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                               <ContextMenuLabel>{it.name}</ContextMenuLabel>
                               <ContextMenuSeparator />
                               <ContextMenuItem onSelect={async()=>{
-                                if (it.type==='folder') { navigate(path ? `${path}/${it.name}` : it.name); return; }
+                                if (it.type === 'folder') { navigate(path ? `${path}/${it.name}` : it.name); return; }
                                 const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
-                                const res = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key, scope }) });
-                                const data = await res.json();
-                                if (!data?.url) return;
-                                if (isImage) setPreview({ url: data.url, name: it.name, key }); else window.open(data.url, '_blank', 'noopener,noreferrer');
+                                const isImage = /(\.png|\.jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(it.name);
+                                const url = await getViewUrl(key, scope);
+                                if (!url) return;
+                                if (isImage) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
                               }}>Open</ContextMenuItem>
+                              {it.type==='file' ? (
+                                <ContextMenuItem onSelect={()=>{
+                                  const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
+                                  const scopeParam = scope === 'admin' ? `&scope=admin` : '';
+                                  const a = document.createElement('a');
+                                  a.href = `/api/storage/file?key=${encodeURIComponent(key)}${scopeParam}&download=1`;
+                                  a.download = it.name || `file-${Date.now()}`;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 1000);
+                                }}>Download</ContextMenuItem>
+                              ) : null}
                               {it.type==='file' && /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(it.name) ? (
                                 <>
                                   <ContextMenuItem onSelect={()=>{ const key = it.key || `${path ? `${path}/` : ''}${it.name}`; setDesignKey(key); setDesignOpen(true); }}>Open in Designer</ContextMenuItem>
@@ -1498,15 +1602,50 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
             </div>
             <div className="grid place-items-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={preview.url} alt={preview.name} className="max-w-full max-h-[70vh] rounded" />
+              <img src={(previewVariants[activePreviewVariantIndex]?.url || preview.url)} alt={preview.name} className="max-w-full max-h-[70vh] rounded" />
             </div>
-            <div className="mt-3 flex items-center justify-end gap-2">
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {previewVariants.length > 1 ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline">{previewVariants[activePreviewVariantIndex]?.name || 'Original'}</Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="min-w-40">
+                      {previewVariants.map((v, idx) => (
+                        <DropdownMenuItem key={`${v.key || 'original'}-${idx}`} onSelect={()=> setActivePreviewVariantIndex(idx)}>
+                          {v.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={()=>{
+                  const active = previewVariants[activePreviewVariantIndex];
+                  const key = (active?.key || preview.key);
+                  const scopeParam = scope === 'admin' ? `&scope=admin` : '';
+                  const a = document.createElement('a');
+                  if (key) {
+                    a.href = `/api/storage/file?key=${encodeURIComponent(key)}${scopeParam}&download=1`;
+                    a.download = (key.split('/').pop() || preview.name || `image-${Date.now()}`);
+                  } else {
+                    // Fallback to direct URL if no key (should not happen for workspace files)
+                    a.href = (active?.url || preview.url);
+                    a.download = preview.name || `image-${Date.now()}`;
+                  }
+                  document.body.appendChild(a);
+                  a.click();
+                  setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 1000);
+                }}>Download</Button>
               <Button size="sm" variant="outline" onClick={()=>{ if (!preview?.key) return; setDesignKey(preview.key); setDesignOpen(true); }}>Open in Designer</Button>
               <Button size="sm" variant="default" onClick={async()=>{
                 if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
                 if (!preview?.key) return;
                 await doUpscale(preview.key);
               }}>{`Upscale (up to 6MP)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</Button>
+              </div>
             </div>
           </div>
         </div>
@@ -1518,7 +1657,47 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           </DialogHeader>
           <div className="mt-2">
             {designKey ? (
-              <TextBehindEditor bgKey={designKey} rembg={{ enabled: true }} onClose={()=> setDesignOpen(false)} onSave={saveDesignToWorkspace} saveLabel={path==='vehicles' ? 'Save (choose folder)' : 'Save to workspace'} onReplaceBgKey={(newKey)=>{ try { if (newKey) { setDesignKey(newKey); } } catch {} }} />
+              <Designer
+                bgKey={designKey}
+                rembg={{ enabled: true }}
+                onClose={()=> setDesignOpen(false)}
+                onSave={saveDesignToWorkspace}
+                saveLabel={path==='vehicles' ? 'Save (choose folder)' : 'Save to workspace'}
+                onReplaceBgKey={(newKey)=>{ try { if (newKey) { setDesignKey(newKey); } } catch {} }}
+                showAnimate={(() => { try { const name = (designKey || '').split('/').pop() || ''; return /^[0-9T\-:.]+-[a-z0-9\-]+/i.test(name); } catch { return false; } })()}
+                onAnimate={async (blob)=>{
+                  try {
+                    if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                    // Upload current canvas to workspace as start frame
+                    const filename = `design-${Date.now()}.png`;
+                    const file = new File([blob], filename, { type: 'image/png' });
+                    const form = new FormData(); form.append('file', file, filename); form.append('path', 'library');
+                    const up = await fetch('/api/storage/upload', { method: 'POST', body: form });
+                    const dj = await up.json().catch(()=>({}));
+                    const key = typeof dj?.key === 'string' ? String(dj.key) : '';
+                    if (!key) { toast.error('Failed to prepare animation'); return; }
+                    // Attempt to infer template slug from the filename prefix of the original key
+                    let slug: string | undefined = undefined;
+                    try {
+                      const name = (designKey || '').split('/').pop() || '';
+                      const m = name.match(/^[0-9T\-:.]+-([a-z0-9\-]+)/i);
+                      if (m && m[1]) slug = m[1].toLowerCase();
+                    } catch {}
+                    const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateSlug: slug, startKey: key }) });
+                    const out = await resp.json().catch(()=>({}));
+                    if (resp.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
+                    if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); return; }
+                    try { toast.success('Video saved to /library'); } catch {}
+                    {
+                      const outKey = String((out as { key?: string }).key || '');
+                      const name = outKey ? (outKey.split('/').pop() || 'video.mp4') : 'video.mp4';
+                      setPreview({ url: String(out.url), name, key: outKey });
+                    }
+                    await refresh(undefined, { force: true });
+                    setTreeVersion(v=>v+1);
+                  } catch {}
+                }}
+              />
             ) : null}
           </div>
         </DialogContent>

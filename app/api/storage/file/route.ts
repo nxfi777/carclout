@@ -43,13 +43,20 @@ export async function GET(req: Request) {
     const headers = new Headers();
     const contentType = result.ContentType || guessContentType(key);
     headers.set("Content-Type", contentType);
-    headers.set("Cache-Control", "public, max-age=600");
+    headers.set("Cache-Control", "private, max-age=0, must-revalidate");
     headers.set("Access-Control-Allow-Origin", "*");
     headers.set("Cross-Origin-Resource-Policy", "cross-origin");
     headers.set("Accept-Ranges", "bytes");
     if (result.ETag) headers.set("ETag", result.ETag);
     if (result.ContentLength !== undefined) headers.set("Content-Length", String(result.ContentLength));
     if (range && result.ContentRange) headers.set("Content-Range", result.ContentRange);
+
+    // If download=1 query param present, set Content-Disposition to attachment to force download
+    const dl = new URL(req.url).searchParams.get('download');
+    if (dl) {
+      const filename = key.split('/').pop() || 'file';
+      headers.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    }
 
     const status = range ? 206 : 200;
     return new Response(stream, { status, headers });

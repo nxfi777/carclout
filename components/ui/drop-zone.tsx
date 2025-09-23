@@ -16,6 +16,37 @@ export function DropZone({ onDrop, children, className, accept, disabled, cover,
   const ref = React.useRef<HTMLDivElement | null>(null);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const dragCountRef = React.useRef(0);
+  const focusedRef = React.useRef(false);
+  const lastMousePosRef = React.useRef<{ x: number; y: number } | null>(null);
+
+  function isPointerOverSelf(): boolean {
+    const el = ref.current;
+    const pos = lastMousePosRef.current;
+    if (!el || !pos) return false;
+    const r = el.getBoundingClientRect();
+    return pos.x >= r.left && pos.x <= r.right && pos.y >= r.top && pos.y <= r.bottom;
+  }
+
+  function isAccepted(file: File, acceptStr?: string): boolean {
+    if (!acceptStr || !acceptStr.trim()) return true;
+    const tokens = acceptStr.split(",").map((t) => t.trim()).filter(Boolean);
+    if (!tokens.length) return true;
+    const fileType = (file.type || "").toLowerCase();
+    const fileName = (file.name || "").toLowerCase();
+    for (const tokenRaw of tokens) {
+      const token = tokenRaw.toLowerCase();
+      if (!token) continue;
+      if (token.startsWith(".")) {
+        if (fileName.endsWith(token)) return true;
+      } else if (token.endsWith("/*") && token.includes("/")) {
+        const prefix = token.slice(0, token.indexOf("/") + 1);
+        if (fileType.startsWith(prefix)) return true;
+      } else {
+        if (fileType === token) return true;
+      }
+    }
+    return false;
+  }
 
   React.useEffect(() => {
     function prevent(e: DragEvent) {
@@ -54,6 +85,55 @@ export function DropZone({ onDrop, children, className, accept, disabled, cover,
       window.removeEventListener("drop", winDrop);
     };
   }, [disabled]);
+
+  React.useEffect(() => {
+    function onMove(e: PointerEvent) {
+      lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+    }
+    window.addEventListener("pointermove", onMove);
+    return () => window.removeEventListener("pointermove", onMove);
+  }, []);
+
+  React.useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      if (disabled) return;
+      const shouldHandle = focusedRef.current || isPointerOverSelf();
+      if (!shouldHandle) return;
+      const dt = e.clipboardData;
+      if (!dt) return;
+      let files: File[] = [];
+      try {
+        if (dt.files && dt.files.length) {
+          files = Array.from(dt.files as unknown as FileList);
+        } else if (dt.items && dt.items.length) {
+          for (let i = 0; i < dt.items.length; i++) {
+            const it = dt.items[i];
+            if (it.kind === 'file') {
+              const f = it.getAsFile();
+              if (f) files.push(f);
+            }
+          }
+        }
+      } catch {}
+      if (!files.length) return;
+      const accepted = files.filter((f) => isAccepted(f, accept));
+      if (!accepted.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Stop any other paste handlers when interacting with the drop zone
+      try { (e as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.(); } catch {}
+      // Respect maxFiles in our handler too before delegating
+      let toHandle = accepted;
+      if (typeof maxFiles === 'number' && Number.isFinite(maxFiles) && maxFiles > 0 && toHandle.length > maxFiles) {
+        toHandle = toHandle.slice(0, Math.max(1, Math.floor(maxFiles)));
+      }
+      if (toHandle.length) onDrop(toHandle);
+    }
+    window.addEventListener('paste', onPaste, { capture: true });
+    return () => {
+      window.removeEventListener('paste', onPaste, true);
+    };
+  }, [accept, disabled, maxFiles, onDrop]);
 
   function onDragEnter(e: React.DragEvent) {
     e.preventDefault();
@@ -132,6 +212,8 @@ export function DropZone({ onDrop, children, className, accept, disabled, cover,
       onDrop={onDropHandler}
       onClick={onClick}
       onKeyDown={onKeyDown}
+      onFocus={() => { focusedRef.current = true; }}
+      onBlur={() => { focusedRef.current = false; }}
       role="button"
       tabIndex={0}
       aria-disabled={disabled ? true : undefined}

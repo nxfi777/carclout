@@ -1,15 +1,15 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import NextImage from 'next/image';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import MusicSuggestions from '@/components/music/music-suggestions';
 // import { createViewUrl, listAllObjects } from '@/lib/r2';
 import { useMemo } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import TextBehindEditor from '@/components/templates/text-behind-editor';
+import Designer from '@/components/designer/designer';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { R2FileTree } from '@/components/ui/file-tree';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Vehicle } from '@/components/vehicles-editor';
 // import CircularGallery from '@/components/ui/circular-gallery';
@@ -20,8 +20,13 @@ import carLoadAnimation from '@/public/carload.json';
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 import FixedAspectCropper from '@/components/ui/fixed-aspect-cropper';
 import { toast } from 'sonner';
-import { Heart, UploadIcon } from 'lucide-react';
+import { UploadIcon, ChevronRight, SquarePlus, SquareCheckBig, RotateCw } from 'lucide-react';
+import { TemplateCard } from '@/components/templates/template-card';
 import { DropZone } from '@/components/ui/drop-zone';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
+import { confirmToast } from '@/components/ui/toast-helpers';
+import { Separator } from '@/components/ui/separator';
+import { getViewUrl, getViewUrls } from '@/lib/view-url-client';
  
 
 export function HooksTabContent() {
@@ -36,6 +41,7 @@ export function HooksTabContent() {
   const longPressTimerRef = useRef<number | null>(null);
   const longPressFiredRef = useRef(false);
   const [downloadIdx, setDownloadIdx] = useState<number | null>(null);
+  const [playerIdx, setPlayerIdx] = useState<number | null>(null);
 
   async function downloadVideo(url?: string, name?: string) {
     try {
@@ -173,12 +179,13 @@ export function HooksTabContent() {
         <div className="flex-1 min-h-0 overflow-auto">
           <div className="grid grid-cols-2 gap-3 pb-6">
             {toShow.map((it, _idx) => (
-              <button
+              <div
                 key={`${it.text}-${_idx}`}
-                type="button"
-                onClick={(e)=>{ try { e.preventDefault(); e.stopPropagation(); endPress(_idx); } catch {} }}
-                onPointerDown={(e)=>{ try { if ((e as unknown as { pointerType?: string }).pointerType === 'touch') startPress(_idx); } catch {} }}
-                onPointerUp={(e)=>{ try { if ((e as unknown as { pointerType?: string }).pointerType === 'touch') endPress(_idx); } catch {} }}
+                role="button"
+                tabIndex={0}
+                onClick={(e)=>{ try { if (activeIdx === _idx) return; e.preventDefault(); e.stopPropagation(); endPress(_idx); } catch {} }}
+                onPointerDown={(e)=>{ try { if (activeIdx === _idx) return; if ((e as unknown as { pointerType?: string }).pointerType === 'touch') startPress(_idx); } catch {} }}
+                onPointerUp={(e)=>{ try { if (activeIdx === _idx) return; if ((e as unknown as { pointerType?: string }).pointerType === 'touch') endPress(_idx); } catch {} }}
                 onPointerCancel={()=>{ cancelPress(); }}
                 onPointerLeave={()=>{ cancelPress(); }}
                 onContextMenu={(e)=>{ try { e.preventDefault(); } catch {} }}
@@ -192,15 +199,16 @@ export function HooksTabContent() {
                       ref={(el) => { videoRefs.current[_idx] = el; }}
                       src={it.videoUrl}
                       poster={it.image}
-                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                       playsInline
                       controls={activeIdx === _idx}
                       preload="metadata"
+                      onClick={(e)=>{ try { e.stopPropagation(); const v = e.currentTarget as HTMLVideoElement; if (v.paused) v.play().catch(()=>{}); else v.pause(); } catch {} }}
                     />
                   ) : null}
-                  <NextImage src={it.image} alt="Hook" fill sizes="(max-width: 640px) 50vw, 33vw" className={`object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-0' : 'opacity-100'}`} unoptimized />
+                  <NextImage src={it.image} alt="Hook" fill sizes="(max-width: 640px) 50vw, 33vw" className={`object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} />
                 </div>
-              </button>
+              </div>
             ))}
           </div>
           <Dialog open={downloadIdx !== null} onOpenChange={(v)=>{ try { if (!v) setDownloadIdx(null); } catch {} }}>
@@ -252,11 +260,27 @@ export function HooksTabContent() {
       <div className="w-full h-[65vh] min-h-[24rem]">
         <ThreeDCarousel
           items={items}
-          onItemClick={(it, _idx) => {
-            try { if (it?.videoUrl) downloadVideo(it.videoUrl, it.text); } catch {}
-          }}
+          onItemClick={(_it, idx) => { try { setPlayerIdx(idx); } catch {} }}
         />
       </div>
+      <Dialog open={playerIdx !== null} onOpenChange={(v)=>{ try { if (!v) setPlayerIdx(null); } catch {} }}>
+        <DialogContent className="p-2 sm:p-4 md:p-6 lg:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{(() => { try { return items[playerIdx ?? -1]?.text || 'Hook'; } catch { return 'Hook'; } })()}</DialogTitle>
+          </DialogHeader>
+          <div className="relative w-full">
+            {playerIdx !== null ? (
+              <video
+                src={String(items[playerIdx]?.videoUrl || '')}
+                controls
+                autoPlay
+                playsInline
+                className="w-full h-auto max-h-[70vh] rounded-md bg-black"
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -379,14 +403,13 @@ export default function TabsViewFancy() {
   }, []);
 
   useEffect(() => {
-    if (activeTab) {
-      setIsLoading(true);
-      const timer = setTimeout(() => {
-        setIsLoading(false);
-      }, 400);
-      return () => clearTimeout(timer);
-    }
-  }, [activeTab]);
+    if (!activeTab) return;
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [activeTab, setIsLoading]);
 
   const tabs = [
     { id: 1, name: 'Hooks', icon: '🪝', type: 'content', content: <HooksTabContent /> },
@@ -493,6 +516,17 @@ type Template = {
   allowedImageSources?: Array<'vehicle'|'user'>;
   // deprecated
   autoOpenDesigner?: boolean;
+  createdAt?: string;
+  maxUploadImages?: number;
+  video?: {
+    enabled?: boolean;
+    prompt?: string;
+    duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
+    resolution?: '480p'|'720p'|'1080p';
+    aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+    camera_fixed?: boolean;
+    fps?: number;
+  } | null;
 };
 
 export function TemplatesTabContent(){
@@ -500,16 +534,22 @@ export function TemplatesTabContent(){
   const [items, setItems] = useState<Template[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<{ id?: string; name: string; slug?: string } | null>(null);
+  const [chevHover, setChevHover] = useState(false);
   const [me, setMe] = useState<{ plan?: string | null } | null>(null);
   const [source, setSource] = useState<'vehicle' | 'upload' | 'workspace'>('vehicle');
   const [sortBy, setSortBy] = useState<'recent'|'favorites'>('recent');
-  const [filterBy, setFilterBy] = useState<'all'|'favorites'>('all');
+  const [filterBy, setFilterBy] = useState<'all'|'favorites'|'video'>('all');
   const [favBusy, setFavBusy] = useState<Record<string, boolean>>({});
   const [vehiclePhotos, setVehiclePhotos] = useState<string[]>([]);
   const [profileVehicles, setProfileVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicleKey, setSelectedVehicleKey] = useState<string | null>(null);
-  const [_browsePath, setBrowsePath] = useState<string>("");
+  const [_browsePath] = useState<string>("");
   const [browseSelected, setBrowseSelected] = useState<string | null>(null);
+  const [selectedImageKeys, setSelectedImageKeys] = useState<string[]>([]);
+  const [libraryItems, setLibraryItems] = useState<Array<{ key: string; url: string; name: string }>>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [_requiredShake, setRequiredShake] = useState(false);
+  const [requiredImages, setRequiredImages] = useState<number>(1);
   const [uploading, setUploading] = useState(false);
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const [uploadedPreviews, setUploadedPreviews] = useState<Record<string, string>>({});
@@ -525,7 +565,16 @@ export function TemplatesTabContent(){
   const [cropOpen, setCropOpen] = useState(false);
   const [cropUrl, setCropUrl] = useState<string | null>(null);
   const [pendingKeys, setPendingKeys] = useState<string[] | null>(null);
+  // Video animation modal state
+  const [animConfirmOpen, setAnimConfirmOpen] = useState(false);
+  const [animBusy, setAnimBusy] = useState(false);
+  const [animStartKey, setAnimStartKey] = useState<string | null>(null);
+  const [animCredits, setAnimCredits] = useState<number | undefined>(undefined);
+  const [animResultUrl, setAnimResultUrl] = useState<string | null>(null);
+  const [animResultKey, setAnimResultKey] = useState<string | null>(null);
+  const [animLoading, setAnimLoading] = useState(false);
   const sessionRef = useRef<number>(0);
+  const deeplinkedRef = useRef<boolean>(false);
 
   // Reset generated output/designer state when switching templates or closing the dialog
   function resetTemplateSession() {
@@ -541,6 +590,16 @@ export function TemplatesTabContent(){
       setCropUrl(null);
       setPendingKeys(null);
       setBusy(false);
+      // Ensure fresh start: clear any previously selected images
+      setSelectedImageKeys([]);
+      // Reset animation session state
+      setAnimConfirmOpen(false);
+      setAnimBusy(false);
+      setAnimStartKey(null);
+      setAnimCredits(undefined);
+      setAnimResultUrl(null);
+      setAnimResultKey(null);
+      setAnimLoading(false);
     } catch {}
   }
 
@@ -580,33 +639,40 @@ export function TemplatesTabContent(){
         const qs: string[] = [];
         if (sortBy === 'favorites') qs.push('sort=most_favorited');
         if (filterBy === 'favorites') qs.push('filter=favorites');
+        if (filterBy === 'video') qs.push('filter=video');
         const q = qs.length ? `?${qs.join('&')}` : '';
         const res = await fetch(`/api/templates${q}`, { cache: 'no-store' }).then(r=>r.json());
-        const list = Array.isArray(res?.templates) ? res.templates : [];
-        async function resolveThumb(keyRaw?: string | null): Promise<string | undefined>{
-          if (!keyRaw || typeof keyRaw !== 'string') return undefined;
-          const key = keyRaw.startsWith('admin/') ? keyRaw : `admin/${keyRaw}`;
-          const cacheKey = `ignite:thumb:${key}`;
+        const list = Array.isArray(res?.templates) ? res.templates as Array<Record<string, unknown>> : [];
+        // Bulk resolve thumbs with caching
+        const TTL = 10*60*1000; const now = Date.now();
+        const toResolve: string[] = [];
+        function adminKey(keyRaw?: string | null) { if (!keyRaw || typeof keyRaw !== 'string') return undefined; return keyRaw.startsWith('admin/') ? keyRaw : `admin/${keyRaw}`; }
+        for (const tRaw of list) {
+          const k = adminKey(String((tRaw as { thumbnailKey?: string })?.thumbnailKey || ''));
+          if (!k) continue;
           try {
-            const cached = typeof window !== 'undefined' ? sessionStorage.getItem(cacheKey) : null;
-            if (cached) {
-              const obj = JSON.parse(cached) as { url?: string; ts?: number };
-              const ttlMs = 10*60*1000; // 10m
-              if (obj?.url && obj?.ts && Date.now() - obj.ts < ttlMs) return obj.url;
-            }
+            const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:thumb:${k}`) : null;
+            if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; if (obj?.url && obj?.ts && now - obj.ts < TTL) continue; }
           } catch {}
-          try {
-            const v = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key, scope: 'admin' }) }).then(r=>r.json()).catch(()=>({}));
-            if (v?.url) {
-              try { if (typeof window !== 'undefined') sessionStorage.setItem(cacheKey, JSON.stringify({ url: v.url, ts: Date.now() })); } catch {}
-              return v.url;
-            }
-          } catch {}
-          return undefined;
+          toResolve.push(k);
         }
-        const out: Template[] = await Promise.all(list.map(async (tRaw: unknown)=>{
+        let urlsMap: Record<string,string> = {};
+        if (toResolve.length) {
+          try {
+            urlsMap = await getViewUrls(toResolve, 'admin');
+            if (typeof window !== 'undefined') {
+              for (const [k,u] of Object.entries(urlsMap)) { try { sessionStorage.setItem(`ignite:thumb:${k}`, JSON.stringify({ url: u, ts: now })); } catch {} }
+            }
+          } catch {}
+        }
+        const out: Template[] = list.map((tRaw)=>{
           const t = (tRaw as Record<string, unknown>) || {};
-          const thumbUrl = await resolveThumb(typeof t.thumbnailKey === 'string' ? t.thumbnailKey : undefined);
+          const k = adminKey(typeof t.thumbnailKey === 'string' ? t.thumbnailKey : undefined);
+          let thumbUrl: string | undefined = undefined;
+          if (k) {
+            try { const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:thumb:${k}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string }; if (obj?.url) thumbUrl = obj.url; } } catch {}
+            if (!thumbUrl && urlsMap[k]) thumbUrl = urlsMap[k];
+          }
           return {
             id: typeof t.id === 'string' ? t.id : undefined,
             name: typeof t.name === 'string' ? t.name : 'Template',
@@ -622,8 +688,25 @@ export function TemplatesTabContent(){
             isFavorited: Boolean((t as Record<string, unknown>).isFavorited),
             // deprecated field ignored
             autoOpenDesigner: Boolean((t as Record<string, unknown>).autoOpenDesigner),
+            createdAt: typeof (t as { created_at?: unknown })?.created_at === 'string' ? String((t as { created_at?: unknown }).created_at) : undefined,
+             maxUploadImages: typeof (t as { maxUploadImages?: unknown })?.maxUploadImages === 'number' ? Number((t as { maxUploadImages?: number }).maxUploadImages) : undefined,
+            video: ((): Template['video'] => {
+              const v = (t as { video?: unknown })?.video as Record<string, unknown> | undefined;
+              if (v && typeof v === 'object') {
+                return {
+                  enabled: !!(v as { enabled?: unknown })?.enabled,
+                  prompt: typeof v?.prompt === 'string' ? (v?.prompt as string) : undefined,
+                  duration: typeof v?.duration === 'string' ? (v?.duration as '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12') : undefined,
+                  resolution: typeof v?.resolution === 'string' ? (v?.resolution as '480p'|'720p'|'1080p') : undefined,
+                  aspect_ratio: typeof v?.aspect_ratio === 'string' ? (v?.aspect_ratio as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto') : undefined,
+                  camera_fixed: !!(v as { camera_fixed?: unknown })?.camera_fixed,
+                  fps: ((): number | undefined => { const n = Number((v as { fps?: unknown })?.fps); return Number.isFinite(n) && n>0 ? Math.round(n) : undefined; })(),
+                };
+              }
+              return null;
+            })(),
           };
-        }));
+        });
         if (cancelled) return;
         setItems(out);
       } finally { if (!cancelled) setLoading(false); }
@@ -640,10 +723,88 @@ export function TemplatesTabContent(){
         setVehiclePhotos(keys);
         const primary = keys.find(Boolean) || null;
         setSelectedVehicleKey(primary);
+        // Prefetch vehicle photo URLs in bulk and cache in sessionStorage
+        try {
+          const now = Date.now(); const TTL = 10*60*1000;
+          const toResolve = keys.filter(Boolean).filter((k)=>{
+            try { const c = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:veh:${k}`) : null; if (!c) return true; const obj = JSON.parse(c) as { url?: string; ts?: number }; return !(obj?.url && obj?.ts && now - obj.ts < TTL); } catch { return true; }
+          });
+        if (toResolve.length) {
+          const urls: Record<string, string> = await getViewUrls(toResolve);
+          if (typeof window !== 'undefined') { for (const [k,u] of Object.entries(urls)) { try { sessionStorage.setItem(`ignite:veh:${k}`, JSON.stringify({ url: u, ts: now })); } catch {} } }
+        }
+        } catch {}
       } catch {}
     })();
     return ()=>{cancelled=true};
   },[sortBy, filterBy]);
+
+  // Deep-link open by slug param
+  useEffect(()=>{
+    try {
+      if (deeplinkedRef.current) return;
+      if (!items.length) return;
+      const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+      const slug = sp.get('slug');
+      if (!slug) return;
+      const t = items.find((x)=> x.slug === slug);
+      if (t) {
+        setActive({ id: t.id, name: t.name, slug: t.slug });
+        setOpen(true);
+        deeplinkedRef.current = true;
+      }
+    } catch {}
+  }, [items]);
+  // Load library for workspace picker grid
+  useEffect(()=>{
+    let aborted=false;
+    (async()=>{
+      try {
+        setLibraryLoading(true);
+        const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache:'no-store' });
+        const obj = await listRes.json().catch(()=>({}));
+        const arr: Array<{ type?: string; name?: string; key?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+        const files = arr.filter((it)=> String(it?.type) === 'file');
+        const imageFiles = files.filter((it)=> { const s = String(it?.key || it?.name || '').toLowerCase(); return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s); });
+        const keys = imageFiles.map((it)=> it.key || `library/${String(it?.name || '')}`);
+        if (!keys.length) { if (!aborted) setLibraryItems([]); return; }
+        const urls: Record<string,string> = await getViewUrls(keys);
+        const out = keys.map((k)=> ({ key:k, name: k.split('/').pop() || 'file', url: urls[k] || '' }));
+        if (!aborted) setLibraryItems(out);
+      } finally { if (!aborted) setLibraryLoading(false); }
+    })();
+    return ()=>{ aborted=true };
+  },[]);
+
+  async function refreshLibrary() {
+    try {
+      setLibraryLoading(true);
+      const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache:'no-store' });
+      const obj = await listRes.json().catch(()=>({}));
+      const arr: Array<{ type?: string; name?: string; key?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+      const files = arr.filter((it)=> String(it?.type) === 'file');
+      const imageFiles = files.filter((it)=> { const s = String(it?.key || it?.name || '').toLowerCase(); return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s); });
+      const keys = imageFiles.map((it)=> it.key || `library/${String(it?.name || '')}`);
+      if (!keys.length) { setLibraryItems([]); return; }
+      const urls: Record<string,string> = await getViewUrls(keys);
+      const out = keys.map((k)=> ({ key:k, name: k.split('/').pop() || 'file', url: urls[k] || '' }));
+      setLibraryItems(out);
+    } finally { setLibraryLoading(false); }
+  }
+
+  function toggleSelect(k: string) {
+    const existsNow = selectedImageKeys.includes(k);
+    if (!existsNow && selectedImageKeys.length >= requiredImages) {
+      try { toast.error('Deselect an image first'); } catch {}
+      return;
+    }
+    setSelectedImageKeys((prev)=> {
+      const exists = prev.includes(k);
+      if (exists) return prev.filter((x)=> x!==k);
+      return [...prev, k];
+    });
+  }
+
 
   useEffect(() => {
     function onProfileUpdated() {
@@ -709,24 +870,18 @@ export function TemplatesTabContent(){
   }
 
   const grid = (
-    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-stretch">
       {items.map((it, idx)=> (
-        <div key={idx} className="relative">
-          <button className={`absolute top-[0.5rem] right-[0.5rem] z-10 rounded-full ${favBusy[String(it.id||it.slug)] ? 'bg-black/40' : 'bg-black/60 hover:bg-black/70'} text-white px-[0.6rem] py-[0.4rem] focus:outline-none focus:ring-2 focus:ring-primary`} aria-label={it.isFavorited ? 'Remove from favourites' : 'Add to favourites'} onClick={(e)=>{ e.stopPropagation(); toggleFavorite(it.id, it.slug); }} disabled={!!favBusy[String(it.id||it.slug)]}>
-            <Heart className={`w-[1rem] h-[1rem] ${it.isFavorited ? 'text-red-500 fill-red-500' : ''}`} />
-          </button>
-          <button className="text-left w-full rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 border border-[color:var(--border)] focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer" onClick={()=>{ setActive({ id: it.id, name: it.name, slug: it.slug }); setOpen(true); }}>
-            {it.thumbUrl ? (
-              <NextImage src={it.thumbUrl} alt={it.name} width={640} height={360} className="w-full h-auto" unoptimized />
-            ) : (
-              <div className="w-full grid place-items-center text-white/60" style={{ aspectRatio: '16 / 10' }}>No preview</div>
-            )}
-            <div className="p-2">
-              <div className="text-sm font-medium truncate">{it.name}</div>
-              {it.desc ? <div className="text-xs text-white/60 line-clamp-2">{it.desc}</div> : null}
-              <div className="mt-[0.25rem] text-[0.75rem] text-white/70">{Number(it.favoriteCount||0)} favourite{Number(it.favoriteCount||0)===1?'':'s'}</div>
-            </div>
-          </button>
+        <div key={idx} className="h-full">
+          <TemplateCard
+            data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })() }}
+            className="h-full"
+            showNewBadge={true}
+            showLike={true}
+            showFavoriteCount={true}
+            onLikeToggle={()=> toggleFavorite(it.id, it.slug)}
+            onClick={()=>{ setActive({ id: it.id, name: it.name, slug: it.slug }); setOpen(true); }}
+          />
         </div>
       ))}
     </div>
@@ -746,6 +901,8 @@ export function TemplatesTabContent(){
       }
       try { toast.success('Saved to /library'); } catch {}
       setDesignOpen(false);
+      // Clear selected images so next use starts fresh
+      setSelectedImageKeys([]);
     } catch {}
   }
 
@@ -768,9 +925,8 @@ export function TemplatesTabContent(){
           if (key) {
             newKeys.push(key);
             try {
-              const vres = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key }) });
-              const vdata = await vres.json();
-              if (typeof vdata?.url === 'string') newPreviews[key] = vdata.url as string;
+              const url = await getViewUrl(key);
+              if (typeof url === 'string' && url) newPreviews[key] = url;
             } catch {}
           }
         } catch {}
@@ -793,6 +949,7 @@ export function TemplatesTabContent(){
   useEffect(()=>{
     const srcs: Array<'vehicle'|'user'> = Array.isArray(activeTemplate?.allowedImageSources) ? (activeTemplate!.allowedImageSources as Array<'vehicle'|'user'>) : ['vehicle','user'];
     if (srcs.includes('vehicle')) setSource('vehicle'); else setSource('upload');
+    try { const n = Number((activeTemplate as { maxUploadImages?: number } | undefined)?.maxUploadImages || 1); setRequiredImages(Number.isFinite(n) && n>0 ? Math.max(1, Math.floor(n)) : 1); } catch { setRequiredImages(1); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTemplate?.id, activeTemplate?.slug]);
   const [varState, setVarState] = useState<Record<string, string>>({});
@@ -924,6 +1081,7 @@ export function TemplatesTabContent(){
     if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
     if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
     if (data?.key) setResultKey(String(data.key));
+    try { if (typeof (data as { key?: string })?.key === 'string') setDesignOpen(true); } catch {}
   }
 
   async function autoCropAndGenerateFromUrl(safeUrl: string, targetAspect: number) {
@@ -952,35 +1110,26 @@ export function TemplatesTabContent(){
       const bal = await getCredits();
       if (bal < 6) { toast.error('Not enough credits to generate. Top up in Billing.'); return; }
       // Preflight checks without showing the generating UI
-      const userImageKeys: string[] = [];
+      const requiredImages = Math.max(1, Number((activeTemplate as { maxUploadImages?: number })?.maxUploadImages || 1));
       let selectedFullKey: string | null = null;
-      if (source === 'vehicle') {
-        if (!selectedVehicleKey) { toast.error('Select a vehicle image'); return; }
-        // selectedVehicleKey is a full key starting with users/<id>/...
-        const m = selectedVehicleKey.match(/^users\/[^/]+\/(.+)$/);
-        const rel = m ? m[1] : selectedVehicleKey.replace(/^users\//,'');
-        userImageKeys.push(rel.replace(/^\/+/,''));
-        selectedFullKey = selectedVehicleKey;
-      } else if (source === 'workspace') {
-        if (!browseSelected) { toast.error('Select a workspace image'); return; }
-        const m = browseSelected.match(/^users\/[^/]+\/(.+)$/);
-        const rel = m ? m[1] : browseSelected.replace(/^users\//,'');
-        userImageKeys.push(rel.replace(/^\/+/,''));
-        selectedFullKey = browseSelected;
-      } else if (source === 'upload') {
-        if (!browseSelected) { toast.error('Upload an image'); return; }
-        const m = browseSelected.match(/^users\/[^/]+\/(.+)$/);
-        const rel = m ? m[1] : browseSelected.replace(/^users\//,'');
-        userImageKeys.push(rel.replace(/^\/+/,''));
-        selectedFullKey = browseSelected;
+      // Build selection set allowing mix across sources
+      let allSelected = Array.from(new Set(selectedImageKeys));
+      if (source === 'vehicle' && selectedVehicleKey) {
+        if (!allSelected.includes(selectedVehicleKey)) allSelected = [...allSelected, selectedVehicleKey];
       }
+      if (allSelected.length < requiredImages) { setRequiredShake(true); setTimeout(()=> setRequiredShake(false), 700); return; }
+      selectedFullKey = allSelected[0] || null;
+      const userImageKeys: string[] = allSelected.slice(0, requiredImages).map((k)=>{
+        const m = k.match(/^users\/[^/]+\/(.+)$/);
+        const rel = m ? m[1] : k.replace(/^users\//,'');
+        return rel.replace(/^\/+/, '');
+      });
 
       // Aspect ratio enforcement based on active template
       const t = activeTemplate;
       if (t?.fixedAspectRatio && typeof t?.aspectRatio === 'number' && selectedFullKey) {
         try {
-          const res = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key: selectedFullKey }) }).then(r=>r.json());
-          const url: string | null = res?.url || null;
+          const url: string | null = await getViewUrl(selectedFullKey);
           if (url) {
             const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img = new Image(); img.onload=()=> resolve({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
             if (dims) {
@@ -1063,28 +1212,38 @@ export function TemplatesTabContent(){
     }
   }
 
+  // Ensure Designer opens for any path that sets a result key
+  useEffect(()=>{
+    try { if (resultKey && !designOpen) setDesignOpen(true); } catch {}
+  }, [resultKey, designOpen]);
+
   if (loading) return <TemplatesSkeletonGrid />;
   if (!items.length) return <div>No templates yet</div>;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
-        <div />
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+      <div className="relative flex items-center justify-between mb-2 gap-2">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="text-xs text-white/70">
+            {items.length} template{items.length === 1 ? '' : 's'}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <div className="text-xs text-white/70">Filter</div>
-            <Select value={filterBy} onValueChange={(v: 'all' | 'favorites')=> setFilterBy(v || 'all')}>
-              <SelectTrigger className="h-8 min-w-[10rem] w-full sm:w-auto"><SelectValue placeholder="All" /></SelectTrigger>
+            <Select value={filterBy} onValueChange={(v: 'all' | 'favorites' | 'video')=> setFilterBy(v || 'all')}>
+              <SelectTrigger className="h-8 min-w-[10rem]"><SelectValue placeholder="All" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
                 <SelectItem value="favorites">My favourites</SelectItem>
+                <SelectItem value="video">Video only</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-2">
             <div className="text-xs text-white/70">Sort</div>
             <Select value={sortBy} onValueChange={(v: 'recent' | 'favorites')=> setSortBy(v || 'recent')}>
-              <SelectTrigger className="h-8 min-w-[10rem] w-full sm:w-auto"><SelectValue placeholder="Most recent" /></SelectTrigger>
+              <SelectTrigger className="h-8 min-w-[10rem]"><SelectValue placeholder="Most recent" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="recent">Most recent</SelectItem>
                 <SelectItem value="favorites">Most favourited</SelectItem>
@@ -1092,12 +1251,33 @@ export function TemplatesTabContent(){
             </Select>
           </div>
         </div>
+        <div className="ml-auto">
+          <Button asChild size="sm" variant="secondary" className="inline-flex items-center">
+            <Link href="/dashboard/workspace?path=library" onMouseEnter={()=> setChevHover(true)} onMouseLeave={()=> setChevHover(false)}>
+              Recent images
+              <motion.span className="ml-2 inline-flex" animate={chevHover ? { x: [0, 6, 0] } : { x: 0 }} transition={chevHover ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}>
+                <ChevronRight className="w-4 h-4" />
+              </motion.span>
+            </Link>
+          </Button>
+        </div>
       </div>
       {grid}
       <Dialog open={open} onOpenChange={(v)=>{ setOpen(v); if (!v) { resetTemplateSession(); setVarState({}); } }}>
         <DialogContent className="p-4 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
           <DialogHeader>
-            <DialogTitle>{designOpen ? 'Designer' : `Use template${active ? ` — ${active.name}` : ''}`}</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span>{designOpen ? 'Designer' : (active?.name || 'Template')}</span>
+              {designOpen && resultUrl ? (
+                <span className="mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">
+                  Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a>
+                </span>
+              ) : (
+                <span className="mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">
+                  For best results, use a car photo that matches this template&apos;s orientation
+                </span>
+              )}
+            </DialogTitle>
           </DialogHeader>
           {busy ? (
             <div className="p-6 sm:p-10 min-h-[12rem] grid place-items-center">
@@ -1110,9 +1290,6 @@ export function TemplatesTabContent(){
             </div>
           ) : (designOpen && resultUrl) ? (
             <div className="mt-2">
-              <div className="mb-2">
-                <div className="text-xs text-white/70 mb-1">Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a></div>
-              </div>
               {upscales.length ? (
                 <div className="space-y-2 mb-3">
                   {upscales.map((u, idx)=> (
@@ -1134,23 +1311,131 @@ export function TemplatesTabContent(){
                   ))}
                 </div>
               ) : null}
-              <TextBehindEditor
-                bgKey={String((activeKey || resultKey) || '')}
-                rembg={{ enabled: true }}
-                defaultHeadline={(findVehicleForSelected()?.make || '').toUpperCase()}
-                onClose={()=> setDesignOpen(false)}
-                onSave={saveDesignToGenerations}
-                saveLabel={'Save to workspace'}
-                aspectRatio={typeof activeTemplate?.aspectRatio === 'number' ? Number(activeTemplate.aspectRatio) : undefined}
-                onReplaceBgKey={(newKey, newUrl)=>{ try { if (newKey) { setActiveKey(newKey); if (newUrl) setActiveUrl(newUrl); } } catch {} }}
-              />
+              {animLoading ? (
+                <div className="p-6 sm:p-10 min-h-[12rem] grid place-items-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-[14rem] h-[8rem] sm:w-[17.5rem] sm:h-[10.5rem]">
+                      <Lottie animationData={carLoadAnimation as object} loop style={{ width: '100%', height: '100%' }} />
+                    </div>
+                    <div className="text-sm text-white/80 text-center px-2">Generating video…</div>
+                  </div>
+                </div>
+              ) : animResultUrl ? (
+                <div className="space-y-3">
+                  <div className="w-full grid place-items-center">
+                    <video src={animResultUrl} controls autoPlay muted playsInline className="rounded bg-black w-auto max-w-full sm:max-w-[48rem] max-h-[56vh] h-auto object-contain" />
+                    <div className="text-xs text-white/70 mt-2">Saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="underline">/library</a></div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button className="w-full sm:w-auto" variant="outline" onClick={()=>{ setAnimResultUrl(null); setAnimResultKey(null); }}>Return to designer</Button>
+                    <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+                      <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={async()=>{
+                        const ok = await confirmToast({ title: 'Delete video?', message: 'This will delete it from your workspace library.' });
+                        if (!ok) return;
+                        try {
+                          const folder = String(animResultKey || '').replace(/\/[^\\/]+$/, '/').replace(/\/[^/]+$/, '/').replace(/\/+/g,'/').replace(/\/$/, '/');
+                          const normalized = folder || String(animResultKey || '').replace(/\/[^/]+$/, '/');
+                          if (!normalized) return;
+                          await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key: normalized, isFolder: true }) });
+                          setAnimResultUrl(null); setAnimResultKey(null);
+                          toast.success('Deleted');
+                        } catch { toast.error('Delete failed'); }
+                      }}>Delete</Button>
+                      <Button className="flex-1 sm:flex-none min-w-[9rem]" onClick={async()=>{
+                        try {
+                          const r = await fetch(String(animResultUrl), { cache:'no-store' });
+                          const blob = await r.blob();
+                          const a = document.createElement('a');
+                          a.href = URL.createObjectURL(blob);
+                          a.download = `video-${Date.now()}.mp4`;
+                          document.body.appendChild(a);
+                          a.click();
+                          setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
+                        } catch {}
+                      }}>Download</Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Designer
+                    bgKey={String((activeKey || resultKey) || '')}
+                    rembg={{ enabled: true }}
+                    defaultHeadline={(findVehicleForSelected()?.make || '').toUpperCase()}
+                    onClose={()=> { setDesignOpen(false); setSelectedImageKeys([]); }}
+                    onTryAgain={()=>{ try { setDesignOpen(false); setResultUrl(null); } catch {} }}
+                    onSave={saveDesignToGenerations}
+                    saveLabel={'Save to workspace'}
+                    aspectRatio={typeof activeTemplate?.aspectRatio === 'number' ? Number(activeTemplate.aspectRatio) : undefined}
+                    onReplaceBgKey={(newKey, newUrl)=>{ try { if (newKey) { setActiveKey(newKey); if (newUrl) setActiveUrl(newUrl); } } catch {} }}
+                    showAnimate={!!(activeTemplate?.video && (activeTemplate.video as { enabled?: boolean } | null | undefined)?.enabled)}
+                    onAnimate={async (blob)=>{
+                      try {
+                        if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                        // Upload start frame
+                        const filename = `design-${Date.now()}.png`;
+                        const file = new File([blob], filename, { type: 'image/png' });
+                        const form = new FormData(); form.append('file', file, filename); form.append('path', 'library');
+                        const up = await fetch('/api/storage/upload', { method: 'POST', body: form });
+                        const dj = await up.json().catch(()=>({}));
+                        const key = typeof dj?.key === 'string' ? String(dj.key) : '';
+                        if (!key) { toast.error('Failed to prepare animation'); return; }
+                        // Precompute credits and open confirm modal
+                        try {
+                          const { estimateVideoCredits } = await import('@/lib/credits-client');
+                          const v = activeTemplate?.video as { duration?: string|number; resolution?: '480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto' } | null | undefined;
+                          const duration = Number(v?.duration || 5);
+                          const resolution = (v?.resolution || '1080p') as '480p'|'720p'|'1080p';
+                          const fps = Number(v?.fps || 24);
+                          const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+                          const credits = estimateVideoCredits(resolution, duration, fps, aspect);
+                          setAnimCredits(credits);
+                        } catch { setAnimCredits(undefined as unknown as number); }
+                        setAnimStartKey(key);
+                        setAnimConfirmOpen(true);
+                      } catch {}
+                    }}
+                  />
+                  {/* Animate confirm modal */}
+                  <Dialog open={animConfirmOpen} onOpenChange={(o)=>{ if (!o && !animBusy) { setAnimConfirmOpen(false); setAnimStartKey(null); setAnimCredits(undefined); } }}>
+                    <DialogContent className="max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Animate this design?</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-3">
+                        <div className="text-sm text-white/80">Generate a short video from your current canvas. The video will be auto-saved to /library.</div>
+                        {typeof animCredits === 'number' ? (
+                          <div className="text-xs text-white/70">Estimated credits: <span className="font-medium text-white/90">{animCredits}</span></div>
+                        ) : null}
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={()=>{ setAnimConfirmOpen(false); }}>Cancel</Button>
+                        <Button disabled={!animStartKey} onClick={async()=>{
+                          if (!animStartKey) return;
+                          // Close modal and show loading state in designer
+                          setAnimConfirmOpen(false);
+                          setAnimLoading(true);
+                          try {
+                            const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: active?.id, templateSlug: active?.slug, startKey: animStartKey }) });
+                            const out = await resp.json().catch(()=>({}));
+                            if (resp.status === 402) { toast.error('Not enough credits. Top up in Billing.'); setAnimLoading(false); return; }
+                            if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); setAnimLoading(false); return; }
+                            setAnimResultUrl(String(out.url));
+                            if (typeof out?.key === 'string') setAnimResultKey(String(out.key));
+                          } finally { setAnimLoading(false); }
+                        }}>Generate</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </>
+              )}
             </div>
           ) : resultUrl ? (
             <div className="space-y-3">
               <div className="w-full grid place-items-center">
                 <div className="text-xs text-white/70 mb-1">Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a></div>
                 {activeUrl || resultUrl ? (
-                  <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-full sm:max-w-[32rem] max-h-[56vh] h-auto object-contain" unoptimized />
+                  <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-full sm:max-w-[32rem] max-h-[56vh] h-auto object-contain" />
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1168,8 +1453,7 @@ export function TemplatesTabContent(){
                       // Try to offer better estimate by fetching current image dimensions
                       let payloadObj: { r2_key: string; original_width?: number; original_height?: number } = { r2_key: String(resultKey) };
                       try {
-                        const v = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key: resultKey }) }).then(r=>r.json()).catch(()=>({}));
-                        const url: string | null = v?.url || null;
+                        const url: string | null = await getViewUrl(String(resultKey));
                         if (url) {
                           const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img=new window.Image(); img.onload=()=> resolve({ w: img.naturalWidth||img.width, h: img.naturalHeight||img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
                           if (dims && dims.w>0 && dims.h>0) { payloadObj = { r2_key: String(resultKey), original_width: dims.w, original_height: dims.h }; }
@@ -1231,7 +1515,7 @@ export function TemplatesTabContent(){
                 {(() => {
                   const tokensInPrompt = new Set(String(activeTemplate?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m)=> m.replace(/^[\[]|[\]]$/g, '')) || []);
                   const builtin = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
-                  const needBuiltins = source !== 'vehicle' ? ["BRAND","MODEL","COLOR_FINISH","ACCENTS"].filter(k=> tokensInPrompt.has(k)) : [];
+                  const needBuiltins = ["BRAND","MODEL","COLOR_FINISH","ACCENTS"].filter(k=> tokensInPrompt.has(k));
                   const customVarDefs = Array.isArray(activeTemplate?.variables) ? (activeTemplate!.variables as Array<{ key?: string; type?: string; label?: string; options?: string[] }>).filter((v)=> tokensInPrompt.has(String(v?.key || '')) && !builtin.has(String(v?.key || ''))) : [];
                   if (!needBuiltins.length && !customVarDefs.length) return null;
                   return (
@@ -1297,25 +1581,20 @@ export function TemplatesTabContent(){
                 })()}
 
                 <div className="space-y-2">
-                  <div className="text-sm font-medium">Source</div>
-                  <Select value={source} onValueChange={(v: 'vehicle' | 'upload' | 'workspace')=>setSource(v)}>
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Select source" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']).includes('vehicle') ? (
-                        <SelectItem value="vehicle">Your vehicles</SelectItem>
+                  <div className="flex items-center justify-between">
+                    <div />
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
+                      <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="text-base">
+                        {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}
+                      </Button>
+                      {selectedImageKeys.length >= requiredImages ? (
+                        <span className="text-xs text-white/70 whitespace-nowrap">Costs 7 credits</span>
                       ) : null}
-                      {(Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']).includes('user') ? (
-                        <>
-                          <SelectItem value="upload">Upload image</SelectItem>
-                          <SelectItem value="workspace">Browse workspace</SelectItem>
-                        </>
-                      ) : null}
-                    </SelectContent>
-                  </Select>
+                    </div>
+                  </div>
 
-                  {source === 'vehicle' ? (
+                  {(Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']).includes('vehicle') ? (
                     <div className="space-y-2">
                       {profileVehicles.length ? (
                         <div className="flex items-center gap-2">
@@ -1345,9 +1624,17 @@ export function TemplatesTabContent(){
                       <div className="overflow-visible sm:overflow-x-auto">
                         <div className="flex flex-wrap gap-3 pb-2">
                           {vehiclePhotos.length ? vehiclePhotos.map((k)=> (
-                            <button key={k} onClick={()=>setSelectedVehicleKey(k)} className="relative focus:outline-none shrink sm:shrink-0 w-24 sm:w-28">
-                              <div className={`w-full rounded p-0.5 ${selectedVehicleKey===k ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
-                                <div className="rounded overflow-hidden"><VehicleImage keyStr={k} /></div>
+                              <button key={k} onClick={()=>{ setSelectedVehicleKey(k); toggleSelect(k); }} className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
+                              <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(k) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
+                                <div className="rounded overflow-hidden relative bg-black/20">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={(() => { try { const c = typeof window!== 'undefined' ? sessionStorage.getItem(`ignite:veh:${k}`) : null; if (c) { const obj = JSON.parse(c) as { url?: string }; if (obj?.url) return obj.url; } } catch {} return ''; })()} alt="vehicle" className="w-full h-auto object-contain cursor-pointer" />
+                              <span className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`} onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSelectedVehicleKey(k); toggleSelect(k); }}>
+                                    <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
+                                      {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
+                                    </motion.span>
+                                  </span>
+                                </div>
                               </div>
                             </button>
                           )) : (
@@ -1356,52 +1643,127 @@ export function TemplatesTabContent(){
                         </div>
                       </div>
                     </div>
-                  ) : source === 'upload' ? (
-                    <div className="space-y-2">
+                  ) : null}
+
+                  {(Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']).includes('user') ? (
+                    <>
+                      <Separator className="my-2" />
+                      <div className="text-xs text-white/70">Upload image</div>
+                      <div className="space-y-2">
                       <DropZone accept="image/*" onDrop={handleUploadFiles} disabled={uploading}>
                         <div className="flex flex-col items-center gap-2 py-10">
                           <UploadIcon className="w-[1.25rem] h-[1.25rem] text-white/70" />
-                          <div className="text-sm text-white/80">Drag and drop an image</div>
-                          <div className="text-xs text-white/60">or click to browse</div>
+                          <div className="text-sm text-white/80">Drag and drop image(s)</div>
+                          <div className="text-xs text-white/60">Select up to {requiredImages}</div>
                         </div>
                       </DropZone>
                       {uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}
                       {uploadedKeys.length ? (
                         <div className="space-y-2">
                           <div className="text-xs text-white/70">Uploaded this session</div>
-                          <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          <ul className="flex flex-wrap gap-3 pb-2">
                             {uploadedKeys.map((k) => (
-                              <li key={k} className={`relative rounded-md overflow-hidden border ${browseSelected === k ? 'ring-2 ring-primary' : 'border-[color:var(--border)]'}`}>
-                                <button type="button" className="block w-full h-full" onClick={() => setBrowseSelected(k)}>
-                                  <div className="aspect-square bg-black/20">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-full object-cover" />
-                                  </div>
-                                </button>
-                              </li>
+                              <ContextMenu key={k}>
+                                <ContextMenuTrigger asChild>
+                                  <li className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
+                                    <button type="button" className="block w-full h-full" onClick={() => toggleSelect(k)}>
+                                      <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(k) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
+                                        <div className="rounded overflow-hidden relative bg-black/20">
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-auto object-contain cursor-pointer" />
+                                          <span
+                                            className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`}
+                                            onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } toggleSelect(k); }}
+                                          >
+                                            <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
+                                              {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
+                                            </motion.span>
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </button>
+                                  </li>
+                                </ContextMenuTrigger>
+                                <ContextMenuContent className="w-48 z-[60]">
+                                  <ContextMenuItem onSelect={async()=>{
+                                    const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
+                                    if (!ok) return;
+                                    try {
+                                      await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: k, isFolder: false }) });
+                                      setUploadedKeys(prev=> prev.filter(x=> x!==k));
+                                      setUploadedPreviews(prev=> { const next = { ...prev }; try { delete (next as Record<string,string>)[k]; } catch {}; return next; });
+                                      setSelectedImageKeys(prev=> prev.filter(x=> x!==k));
+                                      toast.success('Deleted');
+                                    } catch {
+                                      toast.error('Delete failed');
+                                    }
+                                  }}>Delete</ContextMenuItem>
+                                </ContextMenuContent>
+                              </ContextMenu>
                             ))}
                           </ul>
                         </div>
                       ) : null}
-                      {browseSelected && !uploadedKeys.includes(browseSelected) ? (
-                        <div className="text-xs text-white/60">Selected: {browseSelected}</div>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="h-[300px] border border-[color:var(--border)] rounded p-2 overflow-hidden">
-                      <R2FileTree
-                        onNavigate={(p)=>setBrowsePath(p)}
-                        onFileSelect={(k)=>setBrowseSelected(k)}
-                        scope={'user'}
-                        selectedKeys={browseSelected ? [browseSelected] : []}
-                      />
-                    </div>
-                  )}
+                      </div>
+
+                      <Separator className="my-2" />
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-white/70">Your library</div>
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={refreshLibrary} disabled={libraryLoading} aria-label="Refresh library">
+                          <RotateCw className={`w-4 h-4 ${libraryLoading ? 'animate-spin' : ''}`} />
+                        </Button>
+                      </div>
+                      {libraryLoading ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          {Array.from({ length: 8 }).map((_, i)=> (<Skeleton key={`wkl-${i}`} className="w-full aspect-square" />))}
+                        </div>
+                      ) : (
+                        <ul className="flex flex-wrap gap-3 pb-2">
+                          {libraryItems.map((it)=> (
+                            <ContextMenu key={it.key}>
+                              <ContextMenuTrigger asChild>
+                                <li className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
+                                  <button type="button" className="block w-full h-full" onClick={()=> toggleSelect(it.key)}>
+                                    <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(it.key) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
+                                      <div className="rounded overflow-hidden relative bg-black/20">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={it.url} alt={it.name} className="w-full h-auto object-contain cursor-pointer" />
+                                        <span
+                                          className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(it.key)?'text-green-400':'text-white'} p-1`}
+                                          onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } toggleSelect(it.key); }}
+                                        >
+                                          <motion.span animate={selectedImageKeys.includes(it.key) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
+                                            {selectedImageKeys.includes(it.key) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
+                                          </motion.span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </button>
+                                </li>
+                              </ContextMenuTrigger>
+                              <ContextMenuContent className="w-48 z-[60]">
+                                <ContextMenuItem onSelect={async()=>{
+                                  const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
+                                  if (!ok) return;
+                                  try {
+                                    await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: it.key, isFolder: false }) });
+                                    setLibraryItems(prev=> prev.filter(x=> x.key !== it.key));
+                                    setSelectedImageKeys(prev=> prev.filter(x=> x !== it.key));
+                                    toast.success('Deleted');
+                                  } catch {
+                                    toast.error('Delete failed');
+                                  }
+                                }}>Delete</ContextMenuItem>
+                              </ContextMenuContent>
+                            </ContextMenu>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  ) : null}
                 </div>
               </div>
-              <DialogFooter>
-                <Button onClick={generate} disabled={busy} className="w-full justify-center">Generate</Button>
-              </DialogFooter>
+              <DialogFooter className="hidden" />
               <FixedAspectCropper
                 open={cropOpen}
                 imageUrl={cropUrl}
@@ -1470,25 +1832,4 @@ export function TemplatesTabContent(){
     </div>
   );
 }
-
-function VehicleImage({ keyStr }: { keyStr: string }){
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(()=>{
-    let cancelled=false;
-    (async()=>{
-      try {
-        const res = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key: keyStr }) }).then(r=>r.json());
-        if (!cancelled && res?.url) setUrl(res.url);
-      } catch {}
-    })();
-    return ()=>{cancelled=true};
-  },[keyStr]);
-  if (!url) return <Skeleton className="w-full aspect-square" />
-  return (
-    <NextImage src={url} alt="vehicle" width={300} height={300} className="block w-full aspect-square object-cover" unoptimized />
-  )
-}
-
-export { TabsViewFancy };
-
-
+ 

@@ -15,6 +15,7 @@ type FeatureItem = {
   wanted: number
   notWanted: number
   myVote: 'up' | 'down' | null
+  status?: 'accepted' | 'rejected' | null
 }
 
 export default function FeatureRequestsPanel({ showForm = true }: { showForm?: boolean }) {
@@ -26,6 +27,8 @@ export default function FeatureRequestsPanel({ showForm = true }: { showForm?: b
   const [desc, setDesc] = useState("");
   const [busy, setBusy] = useState(false);
   const [votingId, setVotingId] = useState<string | null>(null);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const titleRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -33,11 +36,15 @@ export default function FeatureRequestsPanel({ showForm = true }: { showForm?: b
     (async () => {
       try {
         // Fetch list + meta initially for the main panel
-        const r = await fetch('/api/feature-requests', { cache: 'no-store' }).then(r=>r.json());
+        const [r, me] = await Promise.all([
+          fetch('/api/feature-requests', { cache: 'no-store' }).then(r=>r.json()),
+          fetch('/api/me', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({}))
+        ]);
         if (cancelled) return;
         setItems(Array.isArray(r?.requests) ? r.requests : []);
         setCanCreate(!!r?.canCreate);
         setNextAllowedAt(r?.nextAllowedAt || null);
+        setIsAdmin(((me?.role || '').toString().toLowerCase()) === 'admin');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -121,6 +128,32 @@ export default function FeatureRequestsPanel({ showForm = true }: { showForm?: b
     }
   }
 
+  async function decide(id: string, action: 'accept' | 'reject') {
+    if (decidingId) return;
+    setDecidingId(id);
+    try {
+      const res = await fetch('/api/feature-requests', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action })
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || 'Failed to update');
+      const status: 'accepted' | 'rejected' | null = j?.request?.status || (action === 'accept' ? 'accepted' : 'rejected');
+      setItems(prev => prev.map(it => it.id === id ? { ...it, status } : it));
+      if (action === 'accept') {
+        const notified = Number(j?.notified || 0);
+        toast.success(`Accepted. Notified ${notified} upvoter${notified===1?'':'s'}.`);
+      } else {
+        toast.success('Rejected.');
+      }
+    } catch (e) {
+      toast.error((e as Error).message || 'Failed to update');
+    } finally {
+      setDecidingId(null);
+    }
+  }
+
   return (
     <div className="h-full min-h-0 flex flex-col">
       {/* Header removed (channel name already indicates context) */}
@@ -155,20 +188,39 @@ export default function FeatureRequestsPanel({ showForm = true }: { showForm?: b
               <li key={item.id} className="rounded border border-[color:var(--border)]/70 bg-[color:var(--card)]">
                 <div className="p-3 flex items-start gap-3">
                   <div className="flex flex-col items-center gap-1 w-16 shrink-0">
-                    <Button variant={item.myVote==='up'? 'default':'outline'} size="sm" className="w-full" onClick={()=>vote(item.id, 'up')} disabled={votingId===item.id}>
+                    <Button variant={item.myVote==='up'? 'default':'outline'} size="sm" className="w-full" onClick={()=>vote(item.id, 'up')} disabled={votingId===item.id || !!item.status}>
                       ▲ {item.wanted}
                     </Button>
-                    <Button variant={item.myVote==='down'? 'destructive':'outline'} size="sm" className="w-full" onClick={()=>vote(item.id, 'down')} disabled={votingId===item.id}>
+                    <Button variant={item.myVote==='down'? 'destructive':'outline'} size="sm" className="w-full" onClick={()=>vote(item.id, 'down')} disabled={votingId===item.id || !!item.status}>
                       ▼ {item.notWanted}
                     </Button>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium">{item.title}</div>
+                    <div className="text-sm font-medium flex items-center gap-2">
+                      <span className="truncate">{item.title}</span>
+                      {item.status ? (
+                        <span className={`text-[0.7rem] px-[0.5em] py-[0.25em] rounded ${item.status==='accepted' ? 'bg-emerald-500/20 text-emerald-200' : 'bg-red-500/20 text-red-200'}`}>{item.status}</span>
+                      ) : null}
+                    </div>
                     {item.description ? (
                       <div className="text-sm text-white/80 whitespace-pre-wrap mt-1">{item.description}</div>
                     ) : null}
                     <div className="text-xs text-white/50 mt-2">by {item.created_byName}{item.created_at ? ` · ${new Date(item.created_at).toLocaleString()}` : ''}</div>
                   </div>
+                  {isAdmin ? (
+                    <div className="shrink-0 flex items-center gap-2">
+                      {!item.status ? (
+                        <>
+                          <Button size="sm" onClick={()=>decide(item.id,'accept')} disabled={decidingId===item.id}>
+                            {decidingId===item.id ? 'Accepting…' : 'Accept'}
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={()=>decide(item.id,'reject')} disabled={decidingId===item.id}>
+                            {decidingId===item.id ? 'Rejecting…' : 'Reject'}
+                          </Button>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </li>
             ))}

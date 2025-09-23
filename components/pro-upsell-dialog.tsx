@@ -41,7 +41,16 @@ export default function ProUpsellDialog() {
                   $25/mo
                 </div>
                 <ul className="text-sm list-disc pl-5">
-                  <li>≈ 416 posts</li>
+                  <li>
+                    <span className="inline-flex items-center gap-2">
+                      <span>
+                        ≈ <span className="tabular-nums">357</span> posts
+                      </span>
+                      <span className="relative text-[0.625rem] px-[0.5em] py-[0.25em] rounded-full border shadow badge-new">
+                        <span className="shiny-text">2x VALUE</span>
+                      </span>
+                    </span>
+                  </li>
                   <li>Community access</li>
                   <li>100GB storage</li>
                   <li>On-demand upscales</li>

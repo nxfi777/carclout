@@ -27,7 +27,7 @@ function SignUpPageInner() {
       const search = new URLSearchParams();
       if (handle) search.set("name", handle);
       if (paramsPlan) search.set("plan", paramsPlan);
-      await signIn("resend", { email, callbackUrl: `/welcome${search.toString() ? `?${search.toString()}` : ""}`, redirect: true });
+      await signIn("resend", { email, callbackUrl: `/onboarding${search.toString() ? `?${search.toString()}` : ""}`, redirect: true });
     } finally {
       setLoading(false);
     }

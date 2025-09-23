@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import ElectricBorder from "@/components/electric-border";
-import { Compass, Home, Mail, Sparkles } from "lucide-react";
+import { Compass, Home, Mail } from "lucide-react";
 
 export default function NotFound() {
   return (
@@ -9,9 +9,6 @@ export default function NotFound() {
       <div className="relative max-w-2xl w-full">
         <ElectricBorder color="#5b6cff" thickness={2} className="rounded-2xl">
           <div className="rounded-2xl bg-[color:var(--popover)]/70 border border-[color:var(--border)] backdrop-blur p-6 md:p-8 text-center">
-            <div className="mx-auto mb-4 inline-flex size-12 items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--foreground)]/80">
-              <Sparkles className="size-5 text-[color:var(--primary)]" aria-hidden />
-            </div>
             <div className="mb-1 text-[clamp(2.2rem,8vw,3.6rem)] font-extrabold leading-none tracking-tight bg-[linear-gradient(135deg,var(--primary)_0%,#8aa1ff_60%,#c8d0ff_100%)] text-transparent bg-clip-text">
               404
             </div>

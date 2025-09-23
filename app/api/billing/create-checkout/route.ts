@@ -5,6 +5,19 @@ import { getSurreal } from "@/lib/surrealdb";
 import { CREDITS_PER_DOLLAR } from "@/lib/credits";
 import { RecordId } from "surrealdb";
 
+function resolveOrigin(req: Request): string {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXTAUTH_URL ||
+    process.env.AUTH_URL ||
+    process.env.APP_URL ||
+    "";
+  if (envUrl && /^https?:\/\//i.test(envUrl)) return envUrl;
+  const proto = req.headers.get("x-forwarded-proto") || (process.env.NODE_ENV === "production" ? "https" : "http");
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000";
+  return `${proto}://${host}`;
+}
+
 export async function POST(req: Request) {
   try {
     const sessionAuth = await auth();
@@ -38,7 +51,7 @@ export async function POST(req: Request) {
       // For amounts > $5, keep the same per-dollar rate as $5 case for simplicity.
       const ratePerDollar = currentPlan === "pro" ? CREDITS_PER_DOLLAR : Math.floor(250 / 5); // 100 or 50
       const credits = amountUsd * ratePerDollar;
-      const origin = new URL(req.url).origin;
+      const origin = resolveOrigin(req);
       const upgradeHint = currentPlan === "minimum" && ratePerDollar < CREDITS_PER_DOLLAR;
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
@@ -80,7 +93,7 @@ export async function POST(req: Request) {
       if (rid) userIdString = rid instanceof RecordId ? rid.toString() : String(rid);
     } catch {}
 
-    const origin = new URL(req.url).origin;
+    const origin = resolveOrigin(req);
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
@@ -90,7 +103,7 @@ export async function POST(req: Request) {
       metadata: { plan: key, userId: userIdString, userEmail: email },
       subscription_data: { metadata: { plan: key, userId: userIdString, userEmail: email } },
       success_url: `${origin}/dashboard/home?welcome=1`,
-      cancel_url: `${origin}/onboarding/plan?canceled=1`,
+      cancel_url: `${origin}/plan?canceled=1`,
       allow_promotion_codes: true,
     });
 

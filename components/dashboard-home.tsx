@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { getViewUrl } from "@/lib/view-url-client";
+// import NextImage from "next/image";
+import Link from "next/link";
+import { TemplateCard } from "@/components/templates/template-card";
 import fireAnimation from "@/public/fire.json";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -17,7 +21,7 @@ export default function DashboardHome() {
   const [streak, setStreak] = useState<number>(0);
   const [series, setSeries] = useState<StreakPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [announcements, setAnnouncements] = useState<Array<{ id?: string; title: string; content: string; level?: "info"|"update"|"warning" }>>([]);
+  const [suggestions, setSuggestions] = useState<Array<{ id?: string; name: string; description?: string; slug?: string; thumbnailKey?: string; thumbUrl?: string; createdAt?: string }>>([]);
   const [isMobile, setIsMobile] = useState(false);
   const streakScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -92,9 +96,33 @@ export default function DashboardHome() {
         if (mounted) setLoading(false);
       }
       try {
-        const res = await fetch('/api/announcements?limit=5', { cache: 'no-store' });
+        const res = await fetch('/api/templates?limit=200', { cache: 'no-store' });
         const data = await res.json().catch(()=>({}));
-        if (mounted) setAnnouncements(Array.isArray(data?.announcements) ? data.announcements : []);
+        const all = Array.isArray(data?.templates) ? data.templates as Array<{ id?: string; name?: string; description?: string; slug?: string; thumbnailKey?: string; created_at?: string }> : [];
+        const pool = [...all];
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j]!, pool[i]!];
+        }
+        const pick = pool.slice(0, 8);
+        const resolved = await Promise.all(pick.map(async (t)=>{
+          const name = String(t?.name || 'Template');
+          const slug = typeof t?.slug === 'string' ? t.slug : undefined;
+          const description = typeof (t as { description?: string })?.description === 'string' ? (t as { description?: string }).description : '';
+          const createdAt = typeof (t as { created_at?: unknown })?.created_at === 'string' ? String((t as { created_at?: unknown }).created_at) : undefined;
+          const keyRaw = typeof t?.thumbnailKey === 'string' ? t.thumbnailKey : undefined;
+          let thumbUrl: string | undefined;
+          if (keyRaw) {
+            try {
+              const key = keyRaw.startsWith('admin/') ? keyRaw : `admin/${keyRaw}`;
+              const url = await getViewUrl(key, 'admin');
+              if (typeof url === 'string') thumbUrl = url as string;
+            } catch {}
+          }
+          return { id: typeof t?.id === 'string' ? t.id : undefined, name, description, slug, thumbnailKey: keyRaw, thumbUrl, createdAt };
+        }));
+        const filtered = resolved.filter((t)=> !!t.thumbUrl).slice(0,4);
+        if (mounted) setSuggestions(filtered);
       } catch {}
     })();
     return () => {
@@ -186,16 +214,23 @@ export default function DashboardHome() {
       </section>
 
       <section className="rounded-2xl border border-[color:var(--border)] bg-[var(--card)] p-5 md:p-6">
-        <div className="text-lg font-semibold mb-3">Announcements</div>
-        <div className="space-y-2">
-          {announcements.length ? (
-            announcements.map((a, i) => (
-              <AnnouncementItem key={a.id || i} title={a.title} content={a.content} level={a.level || 'info'} />
-            ))
-          ) : (
-            <div className="text-sm text-white/60">No announcements yet.</div>
-          )}
-        </div>
+        <div className="text-lg font-semibold mb-3">Suggestions for you</div>
+        {suggestions.length ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {suggestions.map((t, i)=> (
+              <Link key={t.id || t.slug || i} href={t.slug ? `/dashboard/templates?slug=${encodeURIComponent(t.slug)}` : '/dashboard/templates'} className="block">
+                <TemplateCard
+                  data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, createdAt: t.createdAt }}
+                  showNewBadge={true}
+                  showLike={false}
+                  showFavoriteCount={false}
+                />
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-white/60">No suggestions yet.</div>
+        )}
       </section>
     </main>
   );
@@ -226,18 +261,6 @@ function LottieFireCell({ active }: { active: boolean }) {
   return (
     <div className={`w-12 h-12 md:w-14 md:h-14 rounded overflow-hidden ${active ? "" : "opacity-70 grayscale"}`}>
       <Lottie lottieRef={ref as unknown as never} animationData={fireAnimation} autoplay={active} loop={active} />
-    </div>
-  );
-}
-
-function AnnouncementItem({ title, content, level }: { title: string; content: string; level: 'info'|'update'|'warning' }) {
-  const intent = level === 'warning' ? 'warning' : (level === 'update' ? 'update' : 'info');
-  const border = intent === 'warning' ? 'border-amber-500/30' : (intent === 'update' ? 'border-blue-500/30' : 'border-white/10');
-  const bg = intent === 'warning' ? 'bg-amber-500/10' : (intent === 'update' ? 'bg-blue-500/10' : 'bg-white/5');
-  return (
-    <div className={`rounded border ${border} ${bg} p-3`}>
-      <div className="text-sm font-medium">{title}</div>
-      <div className="text-xs text-white/80 whitespace-pre-wrap mt-1">{content}</div>
     </div>
   );
 }

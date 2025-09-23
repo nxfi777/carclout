@@ -1,20 +1,25 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import NextImage from "next/image";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { R2FileTree } from "@/components/ui/file-tree";
+// import { R2FileTree } from "@/components/ui/file-tree";
 import FixedAspectCropper from "@/components/ui/fixed-aspect-cropper";
-import TextBehindEditor from "@/components/templates/text-behind-editor";
+import Designer from "@/components/designer/designer";
 import { Dialog as AppDialog, DialogContent as AppDialogContent, DialogHeader as AppDialogHeader, DialogTitle as AppDialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DropZone } from "@/components/ui/drop-zone";
-import { UploadIcon } from "lucide-react";
+import { UploadIcon, SquarePlus, SquareCheckBig, RotateCw } from "lucide-react";
 import type { Vehicle } from "@/components/vehicles-editor";
 import carLoadAnimation from "@/public/carload.json";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { confirmToast } from "@/components/ui/toast-helpers";
+import { Separator } from "@/components/ui/separator";
+import { getViewUrl, getViewUrls } from "@/lib/view-url-client";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
@@ -35,6 +40,15 @@ export type UseTemplateTemplate = {
   // deprecated
   autoOpenDesigner?: boolean;
   maxUploadImages?: number;
+  video?: {
+    enabled?: boolean;
+    prompt?: string;
+    duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
+    resolution?: '480p'|'720p'|'1080p';
+    aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+    camera_fixed?: boolean;
+    fps?: number;
+  } | null;
 };
 
 export function UseTemplateContent({ template }: { template: UseTemplateTemplate }) {
@@ -47,7 +61,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   const [vehiclePhotos, setVehiclePhotos] = useState<string[]>([]);
   const [profileVehicles, setProfileVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicleKey, setSelectedVehicleKey] = useState<string | null>(null);
-  const [_browsePath, setBrowsePath] = useState<string>("");
+  const [_browsePath] = useState<string>("");
   const [browseSelected, setBrowseSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -64,6 +78,16 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   const [cropUrl, setCropUrl] = useState<string | null>(null);
   const [pendingKeys, setPendingKeys] = useState<string[] | null>(null);
   const [varState, setVarState] = useState<Record<string, string>>({});
+  const requiredImages = ((): number => {
+    try {
+      const n = Number((template as { maxUploadImages?: number })?.maxUploadImages || 1);
+      return Number.isFinite(n) && n > 0 ? Math.max(1, Math.floor(n)) : 1;
+    } catch { return 1; }
+  })();
+  const [selectedImageKeys, setSelectedImageKeys] = useState<string[]>([]);
+  const [workspaceItems, setWorkspaceItems] = useState<Array<{ key: string; url: string; name: string }>>([]);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [requiredShake, setRequiredShake] = useState(false);
 
   // Reset generated output/designer state when switching templates
   function resetTemplateSession() {
@@ -80,6 +104,8 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       setPendingKeys(null);
       setVarState({});
       setBusy(false);
+      // Ensure fresh start for image selections
+      setSelectedImageKeys([]);
     } catch {}
   }
 
@@ -100,6 +126,62 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       cancelled = true;
     };
   }, []);
+
+  // Load library thumbnails for workspace browsing (simple grid of /library)
+  useEffect(() => {
+    let aborted = false;
+    (async () => {
+      try {
+        setWorkspaceLoading(true);
+        const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
+        const obj = await listRes.json().catch(() => ({}));
+        const arr: Array<{ type?: string; name?: string; key?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+        const files = arr.filter((it) => String(it?.type) === 'file');
+        const imageFiles = files.filter((it) => {
+          const s = String(it?.key || it?.name || '').toLowerCase();
+          return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s);
+        });
+        const keys = imageFiles.map((it) => it.key || `library/${String(it?.name || '')}`);
+        if (!keys.length) { if (!aborted) setWorkspaceItems([]); return; }
+        const urls = await getViewUrls(keys);
+        const out = keys.map((k) => ({ key: k, name: k.split('/').pop() || 'file', url: urls[k] || '' }));
+        if (!aborted) setWorkspaceItems(out);
+      } finally {
+        if (!aborted) setWorkspaceLoading(false);
+      }
+    })();
+    return () => { aborted = true; };
+  }, []);
+
+  async function refreshWorkspaceList() {
+    try {
+      setWorkspaceLoading(true);
+      const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
+      const obj = await listRes.json().catch(() => ({}));
+      const arr: Array<{ type?: string; name?: string; key?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+      const files = arr.filter((it) => String(it?.type) === 'file');
+      const imageFiles = files.filter((it) => {
+        const s = String(it?.key || it?.name || '').toLowerCase();
+        return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s);
+      });
+      const keys = imageFiles.map((it) => it.key || `library/${String(it?.name || '')}`);
+      if (!keys.length) { setWorkspaceItems([]); return; }
+      const urls = await getViewUrls(keys);
+      const out = keys.map((k) => ({ key: k, name: k.split('/').pop() || 'file', url: urls[k] || '' }));
+      setWorkspaceItems(out);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }
+
+  function toggleSelectKey(k: string) {
+    setSelectedImageKeys((prev) => {
+      const exists = prev.includes(k);
+      if (exists) return prev.filter((x) => x !== k);
+      if (prev.length >= requiredImages) return prev;
+      return [...prev, k];
+    });
+  }
 
   function canonicalPlan(p?: string | null): "base" | "premium" | "ultra" | null {
     const s = (p || "").toLowerCase();
@@ -140,6 +222,8 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
           const primary = keys.find(Boolean) || null;
           setSelectedVehicleKey(primary);
         }
+        // Prefetch vehicle photo URLs in bulk (helper handles caching)
+        try { await getViewUrls(keys); } catch {}
       } catch {}
     })();
     return () => {
@@ -242,41 +326,31 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
 
   async function handleUploadFiles(files: File[]) {
     const arr = Array.isArray(files) ? files : (files as unknown as File[]);
-    let images = arr.filter((f) => (f?.type || "").startsWith("image/"));
-    const limit = ((): number | null => {
-      try {
-        const n = typeof (template as { maxUploadImages?: unknown })?.maxUploadImages === 'number' ? Number((template as { maxUploadImages?: number }).maxUploadImages) : NaN;
-        if (Number.isFinite(n) && n > 0) return Math.max(1, Math.floor(n));
-      } catch {}
-      return null;
-    })();
-    if (limit && images.length > limit) {
-      images = images.slice(0, limit);
-      try { toast.info(`Only the first ${limit} image${limit===1?'':'s'} will be uploaded for this template.`); } catch {}
-    }
+    const images = arr.filter((f) => (f?.type || "").startsWith("image/"));
     if (!images.length) return;
     setUploading(true);
     try {
       const newKeys: string[] = [];
       const newPreviews: Record<string, string> = {};
-      for (const file of images) {
-        try {
-          const form = new FormData();
-          form.append("file", file);
-          form.append("path", "library");
-          const res = await fetch("/api/storage/upload", { method: "POST", body: form });
-          const data = await res.json();
-          const key: string | undefined = data?.key;
-          if (key) {
-            newKeys.push(key);
+          for (const file of images) {
             try {
-              const vres = await fetch("/api/storage/view", { method: "POST", body: JSON.stringify({ key }) });
-              const vdata = await vres.json();
-              if (typeof vdata?.url === "string") newPreviews[key] = vdata.url as string;
+              const form = new FormData();
+              form.append("file", file);
+              form.append("path", "library");
+              const res = await fetch("/api/storage/upload", { method: "POST", body: form });
+              const data = await res.json();
+              const key: string | undefined = data?.key;
+              if (key) {
+                newKeys.push(key);
+              }
             } catch {}
           }
-        } catch {}
-      }
+          if (newKeys.length) {
+            try {
+              const map = await getViewUrls(newKeys);
+              for (const k of newKeys) { const u = map[k]; if (u) newPreviews[k] = u; }
+            } catch {}
+          }
       if (newKeys.length) {
         setUploadedKeys((prev) => Array.from(new Set([...
           prev,
@@ -284,6 +358,13 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
         ])));
         setUploadedPreviews((prev) => ({ ...prev, ...newPreviews }));
         if (!browseSelected) setBrowseSelected(newKeys[0] || null);
+        // Auto-add up to remaining slots
+        setSelectedImageKeys((prev)=>{
+          const remaining = Math.max(0, requiredImages - prev.length);
+          const toAdd = newKeys.slice(0, remaining);
+          const merged = Array.from(new Set([...prev, ...toAdd]));
+          return merged;
+        });
       }
     } finally {
       setUploading(false);
@@ -348,6 +429,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
     if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
     if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
     if (data?.key) setResultKey(String(data.key));
+    try { if (typeof (data as { key?: string })?.key === 'string') setDesignOpen(true); } catch {}
   }
 
   async function autoCropAndGenerateFromUrl(safeUrl: string, targetAspect: number) {
@@ -392,6 +474,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
     await finalizeWithCroppedBlob(blob);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function generate() {
     if (!template) return;
     const sess = sessionRef.current;
@@ -402,42 +485,19 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
         toast.error("Not enough credits to generate. Top up in Billing.");
         return;
       }
-      const userImageKeys: string[] = [];
-      let selectedFullKey: string | null = null;
-      if (source === "vehicle") {
-        if (!selectedVehicleKey) {
-          toast.error("Select a vehicle image");
-          return;
-        }
-        const m = selectedVehicleKey.match(/^users\/[^/]+\/(.+)$/);
-        const rel = m ? m[1] : selectedVehicleKey.replace(/^users\//, "");
-        userImageKeys.push(rel.replace(/^\/+/, ""));
-        selectedFullKey = selectedVehicleKey;
-      } else if (source === "workspace") {
-        if (!browseSelected) {
-          toast.error("Select a workspace image");
-          return;
-        }
-        const m = browseSelected.match(/^users\/[^/]+\/(.+)$/);
-        const rel = m ? m[1] : browseSelected.replace(/^users\//, "");
-        userImageKeys.push(rel.replace(/^\/+/, ""));
-        selectedFullKey = browseSelected;
-      } else if (source === "upload") {
-        if (!browseSelected) {
-          toast.error("Upload an image");
-          return;
-        }
-        const m = browseSelected.match(/^users\/[^/]+\/(.+)$/);
-        const rel = m ? m[1] : browseSelected.replace(/^users\//, "");
-        userImageKeys.push(rel.replace(/^\/+/, ""));
-        selectedFullKey = browseSelected;
-      }
+      const selected = Array.from(new Set(selectedImageKeys));
+      if (selected.length < requiredImages) { setRequiredShake(true); setTimeout(()=> setRequiredShake(false), 700); return; }
+      const selectedFullKey = selected[0] || null;
+      const userImageKeys: string[] = selected.map((k)=>{
+        const m = k.match(/^users\/[^/]+\/(.+)$/);
+        const rel = m ? m[1] : k.replace(/^users\//, "");
+        return rel.replace(/^\/+/, "");
+      });
 
       // Aspect ratio enforcement based on active template
       if (template?.fixedAspectRatio && typeof template?.aspectRatio === "number" && selectedFullKey) {
         try {
-          const res = await fetch("/api/storage/view", { method: "POST", body: JSON.stringify({ key: selectedFullKey }) }).then((r) => r.json());
-          const url: string | null = res?.url || null;
+          const url: string | null = await getViewUrl(selectedFullKey);
           if (url) {
             const dims = await new Promise<{ w: number; h: number } | null>((resolve) => {
               try {
@@ -535,6 +595,11 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
     }
   }
 
+  // Ensure Designer opens for any path that sets a result key
+  useEffect(()=>{
+    try { if (resultKey && !designOpen) setDesignOpen(true); } catch {}
+  }, [resultKey, designOpen]);
+
   return (
     <div>
       {busy ? (
@@ -553,7 +618,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
               Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a>
             </div>
             {activeUrl || resultUrl ? (
-              <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-full sm:max-w-[32rem] max-h-[56vh] h-auto object-contain" unoptimized />
+              <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-full sm:max-w-[32rem] max-h-[56vh] h-auto object-contain" />
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -570,8 +635,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                 try {
                   let payloadObj: { r2_key: string; original_width?: number; original_height?: number } = { r2_key: String(resultKey) };
                   try {
-                    const v = await fetch("/api/storage/view", { method: "POST", body: JSON.stringify({ key: resultKey }) }).then((r) => r.json()).catch(() => ({}));
-                    const url: string | null = v?.url || null;
+                    const url: string | null = await getViewUrl(String(resultKey));
                     if (url) {
                       const dims = await new Promise<{ w: number; h: number } | null>((resolve) => {
                         try {
@@ -662,9 +726,12 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
           ) : null}
           <AppDialog open={designOpen} onOpenChange={setDesignOpen}>
             <AppDialogContent className="sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
-              <AppDialogHeader>
-                <AppDialogTitle>Designer</AppDialogTitle>
-              </AppDialogHeader>
+            <AppDialogHeader>
+              <AppDialogTitle className="flex items-center justify-between">
+                <span>Designer</span>
+                <span className="mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">For best results, use a car photo that matches this template&apos;s orientation</span>
+              </AppDialogTitle>
+            </AppDialogHeader>
               <div className="mt-2">
                 <div className="mb-2">
                   <div className="text-xs text-white/70 mb-1">
@@ -697,11 +764,12 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                     ))}
                   </div>
                 ) : null}
-                <TextBehindEditor
+                <Designer
                   bgKey={String((activeKey || resultKey) || "")}
                   rembg={{ enabled: true }}
                   defaultHeadline={(findVehicleForSelected()?.make || "").toUpperCase()}
-                  onClose={() => setDesignOpen(false)}
+                  onClose={() => { setDesignOpen(false); setSelectedImageKeys([]); }}
+                  onTryAgain={() => { try { setDesignOpen(false); setResultUrl(null); } catch {} }}
                   onSave={async (blob) => {
                     try {
                       const filename = `design-${Date.now()}.png`;
@@ -721,6 +789,8 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                       }
                       try { toast.success("Saved to /library"); } catch {}
                       setDesignOpen(false);
+                      // Clear selections so a subsequent template use is fresh
+                      setSelectedImageKeys([]);
                     } catch {}
                   }}
                   saveLabel={"Save to workspace"}
@@ -731,6 +801,37 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                         setActiveKey(newKey);
                         if (newUrl) setActiveUrl(newUrl);
                       }
+                    } catch {}
+                  }}
+                  showAnimate={!!(template?.video && (template.video as { enabled?: boolean })?.enabled)}
+                  onAnimate={async (blob)=>{
+                    try {
+                      const filename = `design-${Date.now()}.png`;
+                      const file = new File([blob], filename, { type: 'image/png' });
+                      const form = new FormData();
+                      form.append('file', file, filename);
+                      form.append('path', 'library');
+                      const res = await fetch('/api/storage/upload', { method: 'POST', body: form });
+                      const data = await res.json().catch(()=>({}));
+                      const key = typeof data?.key === 'string' ? String(data.key) : '';
+                      if (!key) { toast.error('Failed to prepare animation'); return; }
+                      try {
+                        const { estimateVideoCredits } = await import('@/lib/credits-client');
+                        const v = template?.video as { duration?: string|number; resolution?: '480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto' } | null | undefined;
+                        const duration = Number(v?.duration || 5);
+                        const resolution = (v?.resolution || '1080p') as '480p'|'720p'|'1080p';
+                        const fps = Number(v?.fps || 24);
+                        const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+                        const credits = estimateVideoCredits(resolution, duration, fps, aspect);
+                        const ok = confirm(`Animate this design into a ${duration}s video? This will use ~${credits} credits.`);
+                        if (!ok) return;
+                      } catch {}
+                      const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: template?.id, templateSlug: template?.slug, startKey: key }) });
+                      const out = await resp.json().catch(()=>({}));
+                      if (resp.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
+                      if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); return; }
+                      try { toast.success('Video is ready'); } catch {}
+                      window.open(String(out.url), '_blank');
                     } catch {}
                   }}
                 />
@@ -814,123 +915,197 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
             })()}
 
             <div className="space-y-2">
-              <div className="text-sm font-medium">Source</div>
-              <Select value={source} onValueChange={(v: "vehicle" | "upload" | "workspace") => setSource(v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select source" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Array.isArray(template?.allowedImageSources) ? (template as { allowedImageSources?: Array<"vehicle" | "user"> }).allowedImageSources! : ["vehicle", "user"]).includes("vehicle") ? (
-                    <SelectItem value="vehicle">Your vehicles</SelectItem>
-                  ) : null}
-                  {(Array.isArray(template?.allowedImageSources) ? (template as { allowedImageSources?: Array<"vehicle" | "user"> }).allowedImageSources! : ["vehicle", "user"]).includes("user") ? (
-                    <>
-                      <SelectItem value="upload">Upload image</SelectItem>
-                      <SelectItem value="workspace">Browse workspace</SelectItem>
-                    </>
-                  ) : null}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">Images</div>
+                <motion.div animate={requiredShake ? { x: [0,-6,6,-4,4,0] } : { x: 0 }} transition={{ duration: 0.6 }} className={`text-xs ${requiredShake ? 'text-red-400' : 'text-white/60'}`}>
+                  Images required: {requiredImages}
+                </motion.div>
+              </div>
 
-              {source === "vehicle" ? (
-                <div className="space-y-2">
-                  {profileVehicles.length ? (
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs text-white/70">Vehicle</div>
-                      <Select
-                        value={(() => {
-                          const v = findVehicleForSelected();
-                          if (!v) return "";
-                          const i = profileVehicles.indexOf(v);
-                          return String(i);
-                        })()}
-                        onValueChange={(v) => {
-                          const idx = parseInt(v);
-                          const vobj = profileVehicles[idx];
-                          if (!vobj) return;
-                          const slug = uniqueSlugForIndex(profileVehicles, idx);
-                          const first = vehiclePhotos.find((k) => (k || "").includes(`/vehicles/${slug}/`)) || null;
-                          setSelectedVehicleKey(first);
-                        }}
-                      >
-                        <SelectTrigger className="h-9 w-56">
-                          <SelectValue placeholder="Select vehicle" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {profileVehicles.map((v, i) => (
-                            <SelectItem key={`${v.make}-${v.model}-${i}`} value={String(i)}>
-                              {v.make} {v.model} ({v.type})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-xs text-white/70">
-                      No vehicles found.
-                      <Button size="sm" variant="secondary" onClick={() => { try { window.dispatchEvent(new CustomEvent("open-profile")); setTimeout(() => { try { window.dispatchEvent(new CustomEvent("highlight-vehicles")); } catch {} }, 300); } catch {} }}>Add vehicle</Button>
-                    </div>
-                  )}
-                  <div className="overflow-visible sm:overflow-x-auto">
-                    <div className="flex flex-wrap gap-3 pb-2">
-                      {vehiclePhotos.length ? (
-                        vehiclePhotos.map((k) => (
-                          <button key={k} onClick={() => setSelectedVehicleKey(k)} className="relative focus:outline-none shrink sm:shrink-0 w-24 sm:w-28">
-                            <div className={`w-full rounded p-0.5 ${selectedVehicleKey === k ? "bg-primary" : "bg-[color:var(--border)]"}`}>
-                              <div className="rounded overflow-hidden"><VehicleImage keyStr={k} /></div>
+              <div className="space-y-2">
+                {profileVehicles.length ? (
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs text-white/70">Vehicle</div>
+                    <Select
+                      value={(() => {
+                        const v = findVehicleForSelected();
+                        if (!v) return "";
+                        const i = profileVehicles.indexOf(v);
+                        return String(i);
+                      })()}
+                      onValueChange={(v) => {
+                        const idx = parseInt(v);
+                        const vobj = profileVehicles[idx];
+                        if (!vobj) return;
+                        const slug = uniqueSlugForIndex(profileVehicles, idx);
+                        const first = vehiclePhotos.find((k) => (k || "").includes(`/vehicles/${slug}/`)) || null;
+                        setSelectedVehicleKey(first);
+                      }}
+                    >
+                      <SelectTrigger className="h-9 w-56">
+                        <SelectValue placeholder="Select vehicle" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {profileVehicles.map((v, i) => (
+                          <SelectItem key={`${v.make}-${v.model}-${i}`} value={String(i)}>
+                            {v.make} {v.model} ({v.type})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-white/70">
+                    No vehicles found.
+                    <Button size="sm" variant="secondary" onClick={() => { try { window.dispatchEvent(new CustomEvent("open-profile")); setTimeout(() => { try { window.dispatchEvent(new CustomEvent("highlight-vehicles")); } catch {} }, 300); } catch {} }}>Add vehicle</Button>
+                  </div>
+                )}
+                <div className="overflow-visible sm:overflow-x-auto">
+                  <div className="flex flex-wrap gap-3 pb-2">
+                    {vehiclePhotos.length ? (
+                      vehiclePhotos.map((k) => (
+                        <button key={k} onClick={() => { setSelectedVehicleKey(k); toggleSelectKey(k); }} className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
+                          <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(k) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
+                            <div className="rounded overflow-hidden relative aspect-square bg-black/20">
+                              <VehicleImage keyStr={k} />
+                              <span className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 hover:bg-black/70 transition-colors cursor-pointer ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`}>
+                                <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
+                                  {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
+                                </motion.span>
+                              </span>
                             </div>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="text-sm text-white/60">No vehicle photos found. Upload in profile.</div>
-                      )}
-                    </div>
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="text-sm text-white/60">No vehicle photos found. Upload in profile.</div>
+                    )}
                   </div>
                 </div>
-              ) : source === "upload" ? (
-                <div className="space-y-2">
-                  <DropZone accept="image/*" onDrop={handleUploadFiles} disabled={uploading} maxFiles={(typeof (template as { maxUploadImages?: number })?.maxUploadImages === 'number' ? (template as { maxUploadImages?: number }).maxUploadImages : undefined)}>
-                    <div className="flex flex-col items-center gap-2 py-10">
-                      <UploadIcon className="w-[1.25rem] h-[1.25rem] text-white/70" />
-                      <div className="text-sm text-white/80">Drag and drop an image</div>
-                      <div className="text-xs text-white/60">or click to browse</div>
-                    </div>
-                  </DropZone>
-                  {uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}
-                  {uploadedKeys.length ? (
-                    <div className="space-y-2">
-                      <div className="text-xs text-white/70">Uploaded this session</div>
-                      <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {uploadedKeys.map((k) => (
-                          <li key={k} className={`relative rounded-md overflow-hidden border ${browseSelected === k ? 'ring-2 ring-primary' : 'border-[color:var(--border)]'}`}>
-                            <button type="button" className="block w-full h-full" onClick={() => setBrowseSelected(k)}>
-                              <div className="aspect-square bg-black/20">
+              </div>
+
+              <Separator className="my-2" />
+              <div className="text-xs text-white/70">Upload image</div>
+              <div className="space-y-2">
+                <DropZone accept="image/*" onDrop={handleUploadFiles} disabled={uploading} maxFiles={requiredImages}>
+                  <div className="flex flex-col items-center gap-2 py-10">
+                    <UploadIcon className="w-[1.25rem] h-[1.25rem] text-white/70" />
+                    <div className="text-sm text-white/80">Drag and drop image(s)</div>
+                    <div className="text-xs text-white/60">Select up to {requiredImages}</div>
+                  </div>
+                </DropZone>
+                {uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}
+                {uploadedKeys.length ? (
+                  <div className="space-y-2">
+                    <div className="text-xs text-white/70">Uploaded this session</div>
+                    <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {uploadedKeys.map((k) => (
+                        <ContextMenu key={k}>
+                          <ContextMenuTrigger asChild>
+                            <li className={`relative rounded-md overflow-hidden border ${selectedImageKeys.includes(k) ? 'ring-2 ring-primary' : 'border-[color:var(--border)]'}`}>
+                              <button type="button" className="block w-full h-full cursor-pointer" onClick={() => toggleSelectKey(k)}>
+                                <div className="bg-black/20">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={uploadedPreviews[k] || undefined} alt="Uploaded" className="w-full h-auto object-contain cursor-pointer" />
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={selectedImageKeys.includes(k)?'Deselect':'Select'}
+                                onClick={(e)=>{ e.stopPropagation(); toggleSelectKey(k); }}
+                                disabled={!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages}
+                                className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} transition-colors ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`}
+                              >
+                                <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
+                                  {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
+                                </motion.span>
+                              </button>
+                              <div className="absolute left-1 top-1 text-[0.7rem] px-1.5 py-0.5 rounded bg-black/60">{selectedImageKeys.includes(k) ? 'Selected' : 'Select'}</div>
+                            </li>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="w-48 z-[60]">
+                            <ContextMenuItem onSelect={async()=>{
+                              const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
+                              if (!ok) return;
+                              try {
+                                await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: k, isFolder: false }) });
+                                setUploadedKeys((prev)=> prev.filter((x)=> x!==k));
+                                setUploadedPreviews((prev)=> { const next = { ...prev } as Record<string, string>; try { delete next[k]; } catch {} return next; });
+                                setSelectedImageKeys((prev)=> prev.filter((x)=> x!==k));
+                                if (browseSelected === k) setBrowseSelected(null);
+                                toast.success('Deleted');
+                              } catch {
+                                toast.error('Delete failed');
+                              }
+                            }}>Delete</ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+
+              <Separator className="my-2" />
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-white/70">Your library</div>
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={refreshWorkspaceList} disabled={workspaceLoading} aria-label="Refresh library">
+                  <RotateCw className={`w-4 h-4 ${workspaceLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {workspaceLoading ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {Array.from({ length: 8 }).map((_, i)=> (<Skeleton key={`wk-${i}`} className="w-full aspect-square" />))}
+                  </div>
+                ) : (
+                  <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {workspaceItems.map((it)=> (
+                      <ContextMenu key={it.key}>
+                        <ContextMenuTrigger asChild>
+                          <li className={`relative rounded-md overflow-hidden border ${selectedImageKeys.includes(it.key) ? 'ring-2 ring-primary' : 'border-[color:var(--border)]'}`}>
+                            <button type="button" className="block w-full h-full cursor-pointer" onClick={()=> toggleSelectKey(it.key)}>
+                              <div className="bg-black/20">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-full object-cover" />
+                                <img src={it.url} alt={it.name} className="w-full h-auto object-contain cursor-pointer" loading="lazy" />
                               </div>
                             </button>
-                            <button type="button" className="absolute top-1 right-1 text-xs px-2 py-1 rounded bg-black/60 hover:bg-black/80" onClick={(e)=>{ e.stopPropagation(); setUploadedKeys((prev)=> prev.filter((x)=> x!==k)); setUploadedPreviews((prev)=> { const next = { ...prev } as Record<string, string>; try { delete next[k]; } catch {} return next; }); if (browseSelected === k) setBrowseSelected(null); }}>Remove</button>
+                            <button
+                              type="button"
+                              aria-label={selectedImageKeys.includes(it.key)?'Deselect':'Select'}
+                              onClick={(e)=>{ e.stopPropagation(); toggleSelectKey(it.key); }}
+                              disabled={!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages}
+                              className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} transition-colors ${selectedImageKeys.includes(it.key)?'text-green-400':'text-white'} p-1`}
+                            >
+                              <motion.span animate={selectedImageKeys.includes(it.key) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
+                                {selectedImageKeys.includes(it.key) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
+                              </motion.span>
+                            </button>
                           </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {browseSelected && !uploadedKeys.includes(browseSelected) ? (
-                    <div className="text-xs text-white/60">Selected: {browseSelected}</div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="h-[300px] border border-[color:var(--border)] rounded p-2 overflow-hidden">
-                  <R2FileTree onNavigate={(p) => setBrowsePath(p)} onFileSelect={(k) => setBrowseSelected(k)} scope={"user"} selectedKeys={browseSelected ? [browseSelected] : []} />
-                </div>
-              )}
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-48 z-[60]">
+                          <ContextMenuItem onSelect={async()=>{
+                            const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
+                            if (!ok) return;
+                            try {
+                              await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: it.key, isFolder: false }) });
+                              setWorkspaceItems(prev=> prev.filter(x=> x.key !== it.key));
+                              setSelectedImageKeys(prev=> prev.filter(x=> x !== it.key));
+                              toast.success('Deleted');
+                            } catch {
+                              toast.error('Delete failed');
+                            }
+                          }}>Delete</ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
             </div>
           </div>
-          <div className="mt-4">
-            <Button onClick={generate} disabled={busy} className="w-full justify-center">
-              Generate
-            </Button>
-          </div>
+          <div className="mt-3" />
           <FixedAspectCropper
             open={cropOpen}
             imageUrl={cropUrl}
@@ -1022,8 +1197,8 @@ function VehicleImage({ keyStr }: { keyStr: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/storage/view", { method: "POST", body: JSON.stringify({ key: keyStr }) }).then((r) => r.json());
-        if (!cancelled && res?.url) setUrl(res.url);
+        const u = await getViewUrl(keyStr);
+        if (!cancelled && u) setUrl(u);
       } catch {}
     })();
     return () => {
@@ -1031,7 +1206,7 @@ function VehicleImage({ keyStr }: { keyStr: string }) {
     };
   }, [keyStr]);
   if (!url) return <Skeleton className="w-full aspect-square" />;
-  return <NextImage src={url} alt="vehicle" width={300} height={300} className="block w-full aspect-square object-cover" unoptimized />;
+  return <NextImage src={url} alt="vehicle" width={300} height={300} className="block w-full aspect-square object-cover" sizes="(max-width: 640px) 6rem, 7rem" />;
 }
 
 export default UseTemplateContent;

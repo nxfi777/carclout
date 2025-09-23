@@ -9,10 +9,23 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({} as { keys?: unknown; scope?: unknown }));
     const keys = Array.isArray(body?.keys) ? (body.keys as unknown[]) : [];
     const scope = body?.scope === "admin" ? "admin" : "user";
-    const isAdminScope = scope === "admin";
-    if (isAdminScope && user.role !== "admin") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const requestedAdmin = scope === "admin";
+
+    // Allow non-admins to fetch a safe, read-only subset of admin assets (template thumbnails, hooks previews)
+    if (requestedAdmin && user.role !== "admin") {
+      const whitelistPrefixes = ["admin/templates/", "admin/hooks/"];
+      const allWhitelisted = keys.every((k) => {
+        if (typeof k !== "string" || !k) return false;
+        const rel = k.replace(/^\/+/, "");
+        const full = rel.startsWith("admin/") ? rel : `admin/${rel}`;
+        return whitelistPrefixes.some((p) => full.startsWith(p));
+      });
+      if (!allWhitelisted) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     }
+
+    const isAdminScope = requestedAdmin;
 
     const root = isAdminScope ? `admin` : `users/${sanitizeUserId(user.email)}`;
     const results: Record<string, string> = {};

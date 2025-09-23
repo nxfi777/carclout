@@ -1,6 +1,6 @@
 "use client";
 import { Suspense, useEffect, useState, useMemo, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { DashboardWorkspacePanel } from "@/components/dashboard-workspace-panel";
 import MusicSuggestions from "@/components/music/music-suggestions";
 import { Input } from "@/components/ui/input";
@@ -8,26 +8,22 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { DropZone } from "@/components/ui/drop-zone";
+// import { DropZone } from "@/components/ui/drop-zone";
 import { Switch } from "@/components/ui/switch";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { TrendingUp } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  XAxis,
-  YAxis,
-  ResponsiveContainer
-} from "recharts";
-import UseTemplateContent, { type UseTemplateTemplate } from "@/components/templates/use-template-content";
+import { TemplateCard } from "@/components/templates/template-card";
+import { Bar, BarChart, CartesianGrid, Line, XAxis, YAxis, ResponsiveContainer } from "recharts";
+ 
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
+import { AdminTemplateImages } from "@/components/admin/admin-template-images";
+import { AdminTemplateVideo, type AdminVideoConfig } from "@/components/admin/admin-template-video";
+import Lottie from "lottie-react";
+import fireAnimation from "@/public/fire.json";
 
 //
 
@@ -47,6 +43,7 @@ type TemplateDisplay = {
   description?: string;
   slug?: string;
   thumbnailKey?: string;
+  thumbUrl?: string;
   variables?: TemplateVariableDef[];
   prompt?: string;
   falModelSlug?: string;
@@ -58,6 +55,7 @@ type TemplateDisplay = {
   favoriteCount?: number;
   // deprecated
   autoOpenDesigner?: boolean;
+  adminImageKeys?: string[];
   rembg?: {
     enabled?: boolean;
     model?: 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait';
@@ -65,6 +63,18 @@ type TemplateDisplay = {
     output_format?: 'png' | 'webp';
     refine_foreground?: boolean;
     output_mask?: boolean;
+  } | null;
+  video?: {
+    enabled?: boolean;
+    provider?: 'seedance' | 'kling2_5';
+    prompt?: string;
+    duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
+    resolution?: '480p'|'720p'|'1080p';
+    aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+    camera_fixed?: boolean;
+    seed?: number | null;
+    fps?: number;
+    previewKey?: string | null;
   } | null;
 };
 
@@ -91,14 +101,18 @@ type CreateTemplatePayload = {
     options?: string[];
     defaultValue?: string;
   }>;
-  rembg: {
-    enabled: boolean;
-    model: 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait';
-    operating_resolution: '1024x1024' | '2048x2048';
-    output_format: 'png' | 'webp';
-    refine_foreground: boolean;
-    output_mask: boolean;
-  };
+  video?: {
+    enabled?: boolean;
+    provider?: 'seedance' | 'kling2_5';
+    prompt?: string;
+    duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
+    resolution?: '480p'|'720p'|'1080p';
+    aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+    camera_fixed?: boolean;
+    seed?: number | null;
+    fps?: number;
+    previewKey?: string | null;
+  } | null;
 };
 
 //
@@ -108,12 +122,20 @@ const _BUILT_IN_TOKENS = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","A
 function AdminPageInner() {
   const [tab, setTab] = useState<"analytics" | "workspace" | "templates" | "music" | "moderation" | "announcements">("analytics");
   const [me, setMe] = useState<{ role?: string } | null>(null);
+  const [checking, setChecking] = useState(true);
   const searchParams = useSearchParams();
+  const router = useRouter();
   useEffect(() => {
     (async () => {
       try { const m = await fetch('/api/me', { cache: 'no-store' }).then(r=>r.json()); setMe({ role: m?.role }); } catch {}
+      finally { setChecking(false); }
     })();
   }, []);
+  useEffect(() => {
+    if (!checking && me?.role !== 'admin') {
+      try { router.replace('/dashboard'); } catch {}
+    }
+  }, [checking, me, router]);
   useEffect(() => {
     const t = String(searchParams?.get('tab') || '').toLowerCase();
     if (t === 'analytics' || t === 'workspace' || t === 'templates' || t === 'music' || t === 'moderation' || t === 'announcements') {
@@ -122,7 +144,11 @@ function AdminPageInner() {
       setTab('analytics');
     }
   }, [searchParams]);
-  if (me?.role !== 'admin') return <div className="p-6">Forbidden</div>;
+  if (checking || me?.role !== 'admin') return (
+    <div className="flex items-center justify-center min-h-[calc(100dvh-6rem)]">
+      <Lottie animationData={fireAnimation} loop className="w-24 h-24 -mt-[8vh]" />
+    </div>
+  );
   return (
     <main className="p-6 space-y-4 bg-[var(--background)]">
       {/* Dock replaces inline tab buttons */}
@@ -148,14 +174,23 @@ function AdminAnalyticsTab() {
   const [range, setRange] = useState<'7d'|'30d'|'90d'>('30d');
   const [metrics, setMetrics] = useState<{
     totalRevenueUsd: number;
+    settledRevenueUsd?: number;
     creditsSpent: number;
     spendingUsers: number;
     payingUsers: number;
     avgUserCostUsd: number;
     avgUserSpendUsd: number;
     subscribers: number;
+    proUsers?: number;
+    minimumUsers?: number;
+    estimatedVendorCostUsd?: number;
+    estimatedStripeFeesUsd?: number;
+    estimatedProfitUsd?: number;
+    settledProfitUsd?: number;
+    topupRevenueUsd?: number;
   } | null>(null);
-  const [series, setSeries] = useState<Array<{ date: string; revenueUsd: number; creditsSpent: number }>>([]);
+  const [topUsers, setTopUsers] = useState<Array<{ email: string; displayName?: string | null; name?: string | null; plan?: string | null; xp: number; level?: number | null }>>([]);
+  const [series, setSeries] = useState<Array<{ date: string; revenueUsd: number; creditsSpent: number; costUsd?: number; stripeFeesUsd?: number; profitUsd?: number }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -167,6 +202,7 @@ function AdminAnalyticsTab() {
         if (!cancelled && res.ok) {
           setMetrics(data?.metrics || null);
           setSeries(Array.isArray(data?.series) ? data.series : []);
+          setTopUsers(Array.isArray(data?.topUsers) ? data.topUsers : []);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -176,8 +212,9 @@ function AdminAnalyticsTab() {
   }, [range]);
 
   const chartConfig = {
-    revenue: { label: 'Revenue (USD)', color: 'oklch(0.769 0.188 70.08)' },
-    spend: { label: 'Credits Spent', color: 'oklch(0.627 0.265 303.9)' },
+    revenue: { label: 'Settled revenue (USD)', color: 'oklch(0.769 0.188 70.08)' },
+    spend: { label: 'Credits spent', color: 'oklch(0.627 0.265 303.9)' },
+    profit: { label: 'Estimated profit (USD)', color: 'oklch(0.723 0.198 148.46)' },
   } as const;
 
   return (
@@ -196,29 +233,131 @@ function AdminAnalyticsTab() {
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Current revenue</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Total revenue</CardTitle></CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-6 w-24" /> : <div className="text-2xl font-semibold">${(metrics?.totalRevenueUsd || 0).toFixed(2)}</div>}
-            <div className="text-xs text-white/60">from credit top-ups</div>
+            <div className="text-xs text-white/60">subscriptions + top-ups</div>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Average user cost</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Top-up revenue</CardTitle></CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-6 w-24" /> : <div className="text-2xl font-semibold">${(metrics?.topupRevenueUsd || 0).toFixed(2)}</div>}
+            <div className="text-xs text-white/60">collected in selected range</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Settled revenue</CardTitle></CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-6 w-24" /> : <div className="text-2xl font-semibold">${(metrics?.settledRevenueUsd || 0).toFixed(2)}</div>}
+            <div className="text-xs text-white/60">from credits spent</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Credits spent</CardTitle></CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-6 w-24" />
+            ) : (
+              <div className="text-2xl font-semibold">{(metrics?.creditsSpent || 0).toLocaleString()}</div>
+            )}
+            <div className="text-xs text-white/60">in selected range</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Estimated profit</CardTitle></CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-6 w-24" /> : <div className="text-2xl font-semibold">${(metrics?.estimatedProfitUsd || 0).toFixed(2)}</div>}
+            <div className="text-xs text-white/60">≈ percentage of total revenue</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Settled profit</CardTitle></CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-6 w-24" /> : <div className="text-2xl font-semibold">${(metrics?.settledProfitUsd || 0).toFixed(2)}</div>}
+            <div className="text-xs text-white/60">≈ percentage of settled revenue</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Average user settled revenue</CardTitle></CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-6 w-24" /> : <div className="text-2xl font-semibold">${(metrics?.avgUserCostUsd || 0).toFixed(2)}</div>}
             <div className="text-xs text-white/60">per active spending user</div>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Subscribers</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Average user settled profit</CardTitle></CardHeader>
           <CardContent>
-            {loading ? <Skeleton className="h-6 w-16" /> : <div className="text-2xl font-semibold">{metrics?.subscribers || 0}</div>}
-            <div className="text-xs text-white/60">users with a plan</div>
+            {loading ? (
+              <Skeleton className="h-6 w-24" />
+            ) : (
+              <div className="text-2xl font-semibold">
+                ${(((metrics?.settledProfitUsd || 0) / Math.max(1, metrics?.spendingUsers || 0)) || 0).toFixed(2)}
+              </div>
+            )}
+            <div className="text-xs text-white/60">per active spending user</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Pro users</CardTitle></CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-6 w-16" /> : <div className="text-2xl font-semibold">{metrics?.proUsers ?? 0}</div>}
+            <div className="text-xs text-white/60">active subscriptions</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Minimum users</CardTitle></CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-6 w-16" /> : <div className="text-2xl font-semibold">{metrics?.minimumUsers ?? 0}</div>}
+            <div className="text-xs text-white/60">active subscriptions</div>
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Top 10 users by XP</CardTitle></CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="grid grid-cols-6 gap-2 items-center">
+                  <Skeleton className="h-4 w-10" />
+                  <Skeleton className="h-4 w-40 col-span-2" />
+                  <Skeleton className="h-4 w-56" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-12 justify-self-end" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="border rounded">
+              <div className="grid grid-cols-6 gap-2 px-3 py-2 text-xs text-white/60 border-b">
+                <div>#</div>
+                <div className="col-span-2">Name</div>
+                <div>Email</div>
+                <div>Plan</div>
+                <div className="text-right">XP</div>
+              </div>
+              <ul className="max-h-80 overflow-y-auto divide-y">
+                {topUsers.map((u, idx) => (
+                  <li key={u.email} className="grid grid-cols-6 gap-2 px-3 py-2 text-sm items-center">
+                    <div className="text-white/70">{idx + 1}</div>
+                    <div className="col-span-2 truncate">{u.displayName || u.name || '—'}</div>
+                    <div className="truncate font-mono">{u.email}</div>
+                    <div className="capitalize">{(u.plan || '').toString()}</div>
+                    <div className="text-right tabular-nums">{u.xp?.toLocaleString?.() || 0}</div>
+                  </li>
+                ))}
+                {!topUsers.length ? (
+                  <li className="px-3 py-2 text-sm text-white/60">No users found</li>
+                ) : null}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">Bestow credits</CardTitle></CardHeader>
@@ -231,7 +370,7 @@ function AdminAnalyticsTab() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Revenue and usage</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Settled revenue, usage, and profit</CardTitle></CardHeader>
         <CardContent>
           {loading ? (
             <div className="grid grid-cols-[repeat(14,minmax(2rem,1fr))] gap-3">
@@ -252,6 +391,7 @@ function AdminAnalyticsTab() {
                   <ChartTooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} content={<ChartTooltipContent />} />
                   <Bar dataKey="revenueUsd" name="revenue" fill="var(--color-revenue)" radius={4} />
                   <Line type="monotone" dataKey="creditsSpent" name="spend" strokeWidth={2} stroke="var(--color-spend)" dot={false} />
+                  <Line type="monotone" dataKey="profitUsd" name="profit" strokeWidth={2} stroke="var(--color-profit)" dot={false} />
                   <ChartLegend content={<ChartLegendContent />} />
                 </BarChart>
               </ResponsiveContainer>
@@ -523,19 +663,13 @@ function NewTemplateButton(){
   const builtIn = useMemo(() => new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]), []);
   const [tokenConfigs, setTokenConfigs] = useState<Record<string, { kind: 'input' | 'select' | 'color'; options: string[]; defaultValue?: string }>>({});
   const [selectedThumbAdminIndex, setSelectedThumbAdminIndex] = useState<number | null>(null);
-  const [fixedAspect, setFixedAspect] = useState<boolean>(false);
+  const [fixedAspect, setFixedAspect] = useState<boolean>(true);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [allowVehicle, setAllowVehicle] = useState<boolean>(true);
   const [allowUser, setAllowUser] = useState<boolean>(true);
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>('');
   const [busy, setBusy] = useState(false);
-  // Foreground masking (BiRefNet) options
-  const [rembgEnabled, setRembgEnabled] = useState<boolean>(false);
-  const [rembgModel, setRembgModel] = useState<'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait'>('General Use (Heavy)');
-  const [rembgRes, setRembgRes] = useState<'1024x1024' | '2048x2048'>('2048x2048');
-  const [rembgFormat, setRembgFormat] = useState<'png' | 'webp'>('png');
-  const [rembgRefine, setRembgRefine] = useState<boolean>(true);
-  const [rembgMask] = useState<boolean>(false);
+  const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>({ enabled: false, prompt: '', duration: '5', resolution: '1080p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, previewKey: null });
   async function uploadAdmin(file: File, subfolder: string): Promise<string | null> {
     const form = new FormData();
     form.append('file', file);
@@ -616,7 +750,7 @@ function NewTemplateButton(){
   async function save() {
     if (!name || !prompt) { toast.error('Name and prompt are required'); return; }
     if (!allowVehicle && !allowUser) { toast.error('Enable at least one image source (car or user).'); return; }
-    if (maxUploadImages !== '' && (!Number.isFinite(Number(maxUploadImages)) || Number(maxUploadImages) <= 0)) { toast.error('Max images must be a positive number'); return; }
+    if (maxUploadImages !== '' && (!Number.isFinite(Number(maxUploadImages)) || Number(maxUploadImages) <= 0)) { toast.error('Required images must be a positive number'); return; }
     // Validate dropdown tokens have >= 2 options
     for (const [key, cfg] of Object.entries(tokenConfigs)) {
       if (cfg.kind === 'select') {
@@ -664,10 +798,9 @@ function NewTemplateButton(){
         const key = await uploadAdmin(thumbnailFile, 'thumbnails');
         if (key) thumbnailKey = key.replace(/^admin\//,'');
       }
-      const unknownVarDefs: Array<{ key: string; label: string; required: boolean; type: 'select'|'color'|'text'; options?: string[]; defaultValue?: string; }> = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: (cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text')) as 'select'|'color'|'text', options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' && (cfg as { defaultValue?: unknown }).defaultValue ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
+      const unknownVarDefs: Array<{ key: string; label: string; required: boolean; type: 'select'|'color'|'text'; options?: string[]; defaultValue?: string; }> = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: (cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text')) as 'select'|'color'|'text', options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: (cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string') ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
       const allowedImageSources = ([allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean) as Array<'vehicle'|'user'>);
-      const rembg = { enabled: !!rembgEnabled, model: rembgModel, operating_resolution: rembgRes, output_format: rembgFormat, refine_foreground: !!rembgRefine, output_mask: !!rembgMask } as const;
-      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, rembg, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined; })() } as unknown as CreateTemplatePayload;
+      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined; })(), video: (videoCfg || undefined) } as unknown as CreateTemplatePayload;
       if (/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug)) payload.imageSize = { width: imageWidth, height: imageHeight };
       const res = await fetch('/api/templates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!res.ok) { const data = await res.json().catch(()=>({})); toast.error(data?.error || 'Failed to create template'); return; }
@@ -696,53 +829,7 @@ function NewTemplateButton(){
                 </Select>
               </div>
             </div>
-            <div className="rounded border border-[color:var(--border)] p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">Foreground masking</div>
-                <Switch checked={rembgEnabled} onCheckedChange={(v)=> { const vv = !!v; setRembgEnabled(vv); }} />
-              </div>
-              {rembgEnabled ? (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div>
-                    <div className="text-xs text-white/70 mb-1">Model</div>
-                    <Select value={rembgModel} onValueChange={(v)=> setRembgModel(v as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait')}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="Select model" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="General Use (Light)">General Use (Light)</SelectItem>
-                        <SelectItem value="General Use (Light 2K)">General Use (Light 2K)</SelectItem>
-                        <SelectItem value="General Use (Heavy)">General Use (Heavy)</SelectItem>
-                        <SelectItem value="Matting">Matting</SelectItem>
-                        <SelectItem value="Portrait">Portrait</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <div className="text-xs text-white/70 mb-1">Resolution</div>
-                    <Select value={rembgRes} onValueChange={(v)=> setRembgRes(v as '1024x1024'|'2048x2048')}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="Resolution" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1024x1024">1024x1024</SelectItem>
-                        <SelectItem value="2048x2048">2048x2048</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <div className="text-xs text-white/70 mb-1">Output</div>
-                    <Select value={rembgFormat} onValueChange={(v)=> setRembgFormat(v as 'png'|'webp')}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="Format" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="png">png</SelectItem>
-                        <SelectItem value="webp">webp</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-xs text-white/70">Refine foreground</div>
-                    <Switch checked={rembgRefine} onCheckedChange={(v)=> setRembgRefine(!!v)} />
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            {/* Foreground masking is always enabled by default; options removed */}
             <Textarea value={description} onChange={(e)=>setDescription(e.target.value)} placeholder="Description (optional)" rows={2} />
             <Textarea value={prompt} onChange={(e)=>setPrompt(e.target.value)} placeholder="Prompt (use tokens like [BRAND], [MODEL], [COLOR_FINISH], [ACCENTS], [COLOR_FINISH_ACCENTS], [DOMINANT_COLOR_TONE])" rows={6} />
             <div className="flex items-center justify-between gap-2">
@@ -840,49 +927,33 @@ function NewTemplateButton(){
                 </ul>
               </div>
             ) : null}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div>
-                <div className="text-sm mb-1">Thumbnail (optional)</div>
-                <DropZone accept="image/*" onDrop={(files)=> { setSelectedThumbAdminIndex(null); setThumbnailFile(files[0] || null); }}>
-                  <div className="h-28 grid place-items-center text-xs text-white/70">
-                    {thumbPreview ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={thumbPreview} alt="thumbnail" className="h-24 object-contain" />
-                    ) : selectedThumbAdminIndex !== null && adminPreviews[selectedThumbAdminIndex] ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={adminPreviews[selectedThumbAdminIndex]!} alt="thumbnail" className="h-24 object-contain" />
-                    ) : (
-                      <span>Drop an image or click to select</span>
-                    )}
-                  </div>
-                </DropZone>
-              </div>
-              <div>
-                <div className="text-sm mb-1">Admin images (optional)</div>
-                <DropZone accept="image/*" onDrop={(files)=> setAdminImageFiles((prev)=> [...prev, ...files])}>
-                  <div className="p-2 text-xs text-white/70">Drop images or click to select</div>
-                </DropZone>
-                {adminPreviews.length ? (
-                  <ul className="mt-2 grid grid-cols-6 gap-2">
-                    {adminPreviews.map((u, i)=> (
-                      <li key={`${u}-${i}`} className="relative group">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={u} alt="admin" className="w-full aspect-square object-cover rounded" />
-                        <Button variant="ghost" size="sm" className="absolute top-1 right-1 h-5 px-1.5 bg-black/60 text-white opacity-0 group-hover:opacity-100" onClick={()=> setAdminImageFiles((prev)=> prev.filter((_, idx)=> idx!==i))}>×</Button>
-                        <div className="absolute bottom-1 left-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button variant="secondary" size="sm" className="h-6 px-2 text-xs" onClick={()=> setSelectedThumbAdminIndex(i)}>Make thumbnail</Button>
-                        </div>
-                        {selectedThumbAdminIndex === i ? (
-                          <div className="absolute top-1 left-1 rounded bg-black/70 text-white text-[10px] px-1.5 py-0.5">Thumbnail</div>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <div className="text-xs text-white/60">User image(s) will be appended last automatically.</div>
-              </div>
-            </div>
+            <AdminTemplateImages
+              mode="create"
+              adminPreviews={adminPreviews}
+              selectedThumbAdminIndex={selectedThumbAdminIndex}
+              thumbPreview={thumbPreview}
+              onDropAdminFiles={(files)=> setAdminImageFiles((prev)=> [...prev, ...files])}
+              onRemoveAdminIndex={(index)=> setAdminImageFiles((prev)=> prev.filter((_, idx)=> idx!==index))}
+              onSetThumbFromAdminIndex={(index)=> setSelectedThumbAdminIndex(index)}
+              onDropThumbFile={(file)=> { setSelectedThumbAdminIndex(null); setThumbnailFile(file); }}
+              onClearThumb={()=> { setThumbnailFile(null); setSelectedThumbAdminIndex(null); }}
+              onDownloadThumb={()=>{
+                try {
+                  const url = thumbPreview || (selectedThumbAdminIndex !== null ? adminPreviews[selectedThumbAdminIndex]! : '');
+                  if (url) {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'thumbnail.jpg';
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 1000);
+                  }
+                } catch {}
+              }}
+            />
           </div>
+          {/* Video generation config (shared component) */}
+          <AdminTemplateVideo value={videoCfg as AdminVideoConfig} onChange={(next)=> setVideoCfg(next as AdminVideoConfig)} />
           
           <DialogFooter>
             <Button size="sm" onClick={save} disabled={busy}>{busy? 'Saving…' : 'Save'}</Button>
@@ -898,7 +969,7 @@ function TemplatesTab() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [sortBy, setSortBy] = useState<'recent'|'favorites'>('recent');
-  const [filterBy, setFilterBy] = useState<'all'|'favorites'>('all');
+  const [filterBy, setFilterBy] = useState<'all'|'favorites'|'video'>('all');
   useEffect(()=>{
     let cancelled=false;
     (async()=>{
@@ -907,6 +978,7 @@ function TemplatesTab() {
         const qs: string[] = [];
         if (sortBy === 'favorites') qs.push('sort=most_favorited');
         if (filterBy === 'favorites') qs.push('filter=favorites');
+        if (filterBy === 'video') qs.push('filter=video');
         const q = qs.length ? `?${qs.join('&')}` : '';
         const res = await fetch(`/api/templates${q}`, { cache:'no-store' }).then(r=>r.json());
         const list = Array.isArray(res?.templates) ? res.templates : [];
@@ -922,8 +994,8 @@ function TemplatesTab() {
             }
           } catch {}
           try {
-            const v = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key, scope: 'admin' }) }).then(r=>r.json()).catch(()=>({}));
-            if (v?.url) { try { if (typeof window !== 'undefined') sessionStorage.setItem(cacheKey, JSON.stringify({ url: v.url, ts: Date.now() })); } catch {} return v.url; }
+            const url = await (await import('@/lib/view-url-client')).getViewUrl(key, 'admin');
+            if (url) { try { if (typeof window !== 'undefined') sessionStorage.setItem(cacheKey, JSON.stringify({ url, ts: Date.now() })); } catch {} return url; }
           } catch {}
           return undefined;
         }
@@ -932,7 +1004,8 @@ function TemplatesTab() {
           name: t?.name,
           description: t?.description,
           slug: t?.slug,
-          thumbnailKey: await resolveThumb(t?.thumbnailKey),
+          thumbnailKey: (t as unknown as { thumbnailKey?: string })?.thumbnailKey,
+          thumbUrl: await resolveThumb((t as unknown as { thumbnailKey?: string })?.thumbnailKey),
           variables: Array.isArray(t?.variables)?t.variables:[],
           prompt: String(t?.prompt||''),
           falModelSlug: String(t?.falModelSlug || 'fal-ai/bytedance/seedream/v4/edit'),
@@ -943,6 +1016,8 @@ function TemplatesTab() {
           maxUploadImages: typeof (t as { maxUploadImages?: unknown })?.maxUploadImages === 'number' ? Number((t as { maxUploadImages?: number }).maxUploadImages) : undefined,
           imageSize: (t as { imageSize?: { width: number; height: number } | null })?.imageSize || null,
           favoriteCount: Number((t as { favoriteCount?: number })?.favoriteCount || 0),
+          adminImageKeys: Array.isArray((t as unknown as { adminImageKeys?: string[] })?.adminImageKeys) ? ((t as unknown as { adminImageKeys?: string[] }).adminImageKeys as string[]) : [],
+          video: (t as unknown as { video?: unknown })?.video as unknown,
         })));
         if (!cancelled) setTemplates(out);
       } finally { if (!cancelled) setLoading(false); }
@@ -955,7 +1030,6 @@ function TemplatesTab() {
     return ()=> window.removeEventListener('admin:templates:created', onCreated as EventListener);
   },[]);
   const [open, setOpen] = useState(false);
-  const [dialogTab, setDialogTab] = useState<'test'|'edit'>('test');
   const [active, setActive] = useState<TemplateDisplay | null>(null);
   return (
     <div className="space-y-3">
@@ -963,11 +1037,12 @@ function TemplatesTab() {
         <div className="text-sm text-white/70">Manage templates</div>
         <div className="flex items-center gap-2">
           <div className="text-xs text-white/70">Filter</div>
-          <Select value={filterBy} onValueChange={(v)=> setFilterBy((v as 'all'|'favorites') || 'all')}>
+          <Select value={filterBy} onValueChange={(v)=> setFilterBy((v as 'all'|'favorites'|'video') || 'all')}>
             <SelectTrigger className="h-8 min-w-[10rem]"><SelectValue placeholder="All" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
               <SelectItem value="favorites">My favourites</SelectItem>
+              <SelectItem value="video">Video only</SelectItem>
             </SelectContent>
           </Select>
           <div className="text-xs text-white/70">Sort</div>
@@ -982,7 +1057,7 @@ function TemplatesTab() {
         </div>
       </div>
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-stretch">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="rounded-lg overflow-hidden bg-white/5 border border-[color:var(--border)]">
               <Skeleton className="w-full aspect-[3/4]" />
@@ -994,30 +1069,44 @@ function TemplatesTab() {
               </div>
             </div>
           ))}
+          <div className="hidden lg:block rounded-lg overflow-hidden bg-white/5 border border-[color:var(--border)]">
+            <Skeleton className="w-full aspect-[3/4]" />
+            <div className="p-2">
+              <Skeleton className="h-4 w-2/5" />
+              <div className="mt-2 flex items-center gap-2">
+                <Skeleton className="h-3 w-3/5" />
+              </div>
+            </div>
+          </div>
+          <div className="hidden lg:block rounded-lg overflow-hidden bg-white/5 border border-[color:var(--border)]">
+            <Skeleton className="w-full aspect-[3/4]" />
+            <div className="p-2">
+              <Skeleton className="h-4 w-2/5" />
+              <div className="mt-2 flex items-center gap-2">
+                <Skeleton className="h-3 w-3/5" />
+              </div>
+            </div>
+          </div>
         </div>
       ) : templates.length === 0 ? (
         <div className="text-sm text-white/60">No templates yet. Create one to get started.</div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-stretch">
           {templates.map((t: TemplateDisplay)=> (
             <ContextMenu key={t.id || t.slug}>
               <ContextMenuTrigger asChild>
-                <button className="text-left rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 border border-[color:var(--border)] focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer" onClick={()=>{ setActive(t); setDialogTab('test'); setOpen(true); }}>
-                  {t.thumbnailKey ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={t.thumbnailKey} alt={t.name} className="w-full h-auto" />
-                  ) : (
-                    <div className="w-full grid place-items-center text-white/60" style={{ aspectRatio: '16 / 10' }}>No preview</div>
-                  )}
-                  <div className="p-2">
-                    <div className="text-sm font-medium truncate">{t.name}</div>
-                    {t.description ? <div className="text-xs text-white/60 line-clamp-2">{t.description}</div> : null}
-                    <div className="mt-1 text-[0.75rem] text-white/70">{Number((t as { favoriteCount?: number })?.favoriteCount||0)} favourite{Number((t as { favoriteCount?: number })?.favoriteCount||0)===1?'':'s'}</div>
-                  </div>
-                </button>
+                <div>
+                  <TemplateCard
+                    data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount }}
+                    showNewBadge={true}
+                    showLike={false}
+                    showFavoriteCount={true}
+                    onClick={()=>{ setActive(t); setOpen(true); }}
+                  />
+                </div>
               </ContextMenuTrigger>
               <ContextMenuContent className="w-48">
-                <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); setActive(t); setDialogTab('edit'); setOpen(true); }}>Edit</ContextMenuItem>
+                <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); setActive(t); setOpen(true); }}>Edit</ContextMenuItem>
                 <ContextMenuItem onSelect={async()=>{
                   const ok = await confirmToast({ title: `Delete template "${t.name}"?`, message: 'This action cannot be undone.' });
                   if (!ok) return;
@@ -1036,37 +1125,11 @@ function TemplatesTab() {
           <DialogHeader>
             <DialogTitle>{active?.name || 'Template'}</DialogTitle>
           </DialogHeader>
-          <Tabs value={dialogTab} onValueChange={(v)=> setDialogTab(v as 'test'|'edit')}>
-            <TabsList>
-              <TabsTrigger value="test">Test</TabsTrigger>
-              <TabsTrigger value="edit">Edit</TabsTrigger>
-            </TabsList>
-            <TabsContent value="test">
-              {active ? (
-                <UseTemplateContent
-                  template={{
-                    id: active.id,
-                    name: active.name,
-                    desc: active.description,
-                    slug: active.slug,
-                    variables: active.variables,
-                    prompt: active.prompt,
-                    fixedAspectRatio: active.fixedAspectRatio,
-                    aspectRatio: active.aspectRatio,
-                    allowedImageSources: active.allowedImageSources as Array<'vehicle'|'user'> | undefined,
-                    maxUploadImages: typeof active.maxUploadImages === 'number' ? Number(active.maxUploadImages) : undefined,
-                  } as UseTemplateTemplate}
-                />
-              ) : null}
-            </TabsContent>
-            <TabsContent value="edit">
-              {active ? (
-                <AdminEditTemplate template={active} onSaved={()=>{ setOpen(false); setRefreshKey((v)=> v+1); }} />
-              ) : (
-                <div className="text-sm text-white/70">No template selected</div>
-              )}
-            </TabsContent>
-          </Tabs>
+          {active ? (
+            <AdminEditTemplate template={active} onSaved={()=>{ setOpen(false); setRefreshKey((v)=> v+1); }} />
+          ) : (
+            <div className="text-sm text-white/70">No template selected</div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
@@ -1215,7 +1278,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
   async function onUploadChange(e: React.ChangeEvent<HTMLInputElement>) { const file = e.target.files?.[0]; if (!file) return; setUploading(true); try { const form = new FormData(); form.append('file', file); form.append('path','library'); const res = await fetch('/api/storage/upload',{ method:'POST', body: form }); const data = await res.json(); if (data?.key) setBrowseSelected(data.key); } finally { setUploading(false); } }
   async function handleUploadFiles(files: File[]) { const file = Array.isArray(files) ? files[0] : (files as unknown as File[])[0]; if (!file) return; setUploading(true); try { const form = new FormData(); form.append('file', file); form.append('path','library'); const res = await fetch('/api/storage/upload',{ method:'POST', body: form }); const data = await res.json(); if (data?.key) setBrowseSelected(data.key); } finally { setUploading(false); } }
 
-  async function getUrlForKey(key: string): Promise<string | null> { try { const res = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key }) }).then(r=>r.json()); return res?.url || null; } catch { return null; } }
+  async function getUrlForKey(key: string): Promise<string | null> { try { const { getViewUrl } = await import('@/lib/view-url-client'); return await getViewUrl(key); } catch { return null; } }
 
   async function readImageDims(url: string): Promise<{ w: number; h: number } | null> {
     return new Promise((resolve) => {
@@ -1329,8 +1392,9 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
         if (source==='vehicle') bgKey = selectedVehicleKey; else bgKey = browseSelected;
       }
       if (!bgKey) { toast.error('Select or generate an image first.'); return; }
-      const view = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key: bgKey }) }).then(r=>r.json()).catch(()=>({}));
-      const bg = view?.url || null; if (!bg) { toast.error('Could not fetch image'); return; }
+      const { getViewUrl } = await import('@/lib/view-url-client');
+      const bg = await getViewUrl(bgKey);
+      if (!bg) { toast.error('Could not fetch image'); return; }
       setBusy(true); setMasking(true);
       const rem = await fetch('/api/tools/rembg', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1362,7 +1426,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
         </div>
       ) : designing && (activeKey || resultKey) ? (
         <div className="space-y-3">
-          <TextBehindEditor
+          <Designer
             bgKey={(activeKey || resultKey) as string}
             rembg={{ enabled: true, model: (template?.rembg?.model as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait') || 'General Use (Heavy)', operating_resolution: (template?.rembg?.operating_resolution as '1024x1024'|'2048x2048') || '2048x2048', output_format: (template?.rembg?.output_format as 'png'|'webp') || 'png', refine_foreground: typeof template?.rembg?.refine_foreground === 'boolean' ? !!template.rembg.refine_foreground : true, output_mask: !!template?.rembg?.output_mask }}
             defaultHeadline={(findVehicleForSelected()?.make || '').toUpperCase()}
@@ -1393,7 +1457,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
           <div className="flex items-center justify-between gap-2">
             <Button onClick={()=>{ setResultUrl(null); }}>Try again</Button>
             <div className="flex items-center gap-2">
-              {(template?.rembg?.enabled || template?.rembg === undefined) ? (
+              {true ? (
                 <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={openDesigner}>Add text</Button>
               ) : null}
               <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" disabled={upscaleBusy || !resultKey} onClick={async()=>{
@@ -1402,8 +1466,8 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
                 try {
                   let payload: { r2_key: string; original_width?: number; original_height?: number } = { r2_key: String(resultKey) };
                   try {
-                    const v = await fetch('/api/storage/view', { method:'POST', body: JSON.stringify({ key: resultKey }) }).then(r=>r.json()).catch(()=>({}));
-                    const url: string | null = v?.url || null;
+                    const { getViewUrl } = await import('@/lib/view-url-client');
+                    const url: string | null = await getViewUrl(String(resultKey));
                     if (url) {
                       const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img=new Image(); img.onload=()=> resolve({ w: img.naturalWidth||img.width, h: img.naturalHeight||img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
                       if (dims && dims.w>0 && dims.h>0) { payload = { r2_key: String(resultKey), original_width: dims.w, original_height: dims.h }; }
@@ -1471,7 +1535,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
             {(Array.isArray(template?.allowedImageSources) ? template.allowedImageSources : ['vehicle','user']).includes('user') ? (
               <>
             <SelectItem value="upload">Upload image</SelectItem>
-            <SelectItem value="workspace">Browse workspace</SelectItem>
+            <SelectItem value="workspace">Browse library</SelectItem>
               </>
             ) : null}
           </SelectContent>
@@ -1547,12 +1611,133 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     try { const a = Array.isArray(template?.allowedImageSources) ? template.allowedImageSources : ['vehicle','user']; return a.includes('user'); } catch { return true; }
   });
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>(()=>{ try { const n = Number(template?.maxUploadImages || 0); return Number.isFinite(n) && n>0 ? n : ''; } catch { return ''; } });
-  const [rembgEnabled, setRembgEnabled] = useState<boolean>(!!template?.rembg?.enabled);
-  const [rembgModel, setRembgModel] = useState<'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait'>(template?.rembg?.model || 'General Use (Heavy)');
-  const [rembgRes, setRembgRes] = useState<'1024x1024' | '2048x2048'>(template?.rembg?.operating_resolution || '2048x2048');
-  const [rembgFormat, setRembgFormat] = useState<'png' | 'webp'>(template?.rembg?.output_format || 'png');
-  const [rembgRefine, setRembgRefine] = useState<boolean>(template?.rembg?.refine_foreground !== false);
-  const [rembgMask] = useState<boolean>(!!template?.rembg?.output_mask);
+  
+  const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>(template?.video as unknown as AdminVideoConfig || null);
+  // Images editing state
+  const [thumbFile, setThumbFile] = useState<File | null>(null);
+  const [thumbPreview, setThumbPreview] = useState<string | null>(null);
+  const [thumbViewUrl, setThumbViewUrl] = useState<string | null>(null);
+  const [clearThumb, setClearThumb] = useState<boolean>(false);
+  const [adminExistingKeys, setAdminExistingKeys] = useState<string[]>(Array.isArray(template?.adminImageKeys) ? (template!.adminImageKeys as string[]) : []);
+  const [adminExistingViews, setAdminExistingViews] = useState<Record<string,string>>({});
+  const [adminNewFiles, setAdminNewFiles] = useState<File[]>([]);
+  const [adminNewPreviews, setAdminNewPreviews] = useState<string[]>([]);
+  const [selectedThumbAdminIndex, setSelectedThumbAdminIndex] = useState<number | null>(null); // from new uploads
+  const [selectedThumbExistingKey, setSelectedThumbExistingKey] = useState<string | null>(null);
+
+  const resetImageStateFromTemplate = useCallback(()=>{
+    try {
+      setThumbFile(null);
+      setThumbPreview(null);
+      setClearThumb(false);
+      setAdminNewFiles([]);
+      setAdminNewPreviews([]);
+      setSelectedThumbAdminIndex(null);
+      setSelectedThumbExistingKey(null);
+      setAdminExistingKeys(Array.isArray(template?.adminImageKeys) ? (template!.adminImageKeys as string[]) : []);
+    } catch {}
+  }, [template]);
+
+  useEffect(()=>{ resetImageStateFromTemplate(); }, [template?.id, template?.slug, resetImageStateFromTemplate]);
+
+  useEffect(()=>{
+    // Build preview for thumb file when file changes; cleanup revokes created URL
+    if (!thumbFile) { setThumbPreview(null); return; }
+    let url: string | null = null;
+    try {
+      url = URL.createObjectURL(thumbFile);
+      setThumbPreview(url);
+    } catch {
+      setThumbPreview(null);
+    }
+    return () => {
+      try { if (url) URL.revokeObjectURL(url); } catch {}
+    };
+  }, [thumbFile]);
+
+  useEffect(()=>{
+    // Resolve current thumbnail view URL
+    (async()=>{
+      try {
+        const keyRel = (template?.thumbnailKey || '').trim();
+        if (!keyRel) { setThumbViewUrl(null); return; }
+        const keyFull = keyRel.startsWith('admin/') ? keyRel : `admin/${keyRel}`;
+        const { getViewUrl } = await import('@/lib/view-url-client');
+        const url = await getViewUrl(keyFull, 'admin');
+        setThumbViewUrl(typeof url === 'string' ? String(url) : null);
+      } catch { setThumbViewUrl(null); }
+    })();
+  }, [template?.thumbnailKey]);
+
+  useEffect(()=>{
+    // Generate previews when new admin files change; cleanup revokes previous URLs
+    const next: string[] = [];
+    if (adminNewFiles.length) {
+      for (const f of adminNewFiles) {
+        try { next.push(URL.createObjectURL(f)); } catch {}
+      }
+    }
+    setAdminNewPreviews(next);
+    return () => {
+      try { next.forEach((u)=> { try { URL.revokeObjectURL(u); } catch {} }); } catch {}
+    };
+  }, [adminNewFiles]);
+
+  async function resolveAdminView(relKey: string): Promise<string | null> {
+    try {
+      const keyFull = relKey.startsWith('admin/') ? relKey : `admin/${relKey}`;
+      const { getViewUrl } = await import('@/lib/view-url-client');
+      const url = await getViewUrl(keyFull, 'admin');
+      return typeof url === 'string' ? String(url) : null;
+    } catch { return null; }
+  }
+
+  function ensureImageFilename(name: string | null | undefined): string {
+    const base = String(name || 'image').trim() || 'image';
+    return /\.[a-zA-Z0-9]{2,4}$/.test(base) ? base : `${base}.jpg`;
+  }
+
+  async function downloadUrl(url: string, filename?: string) {
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = ensureImageFilename(filename || 'image');
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{ try { document.body.removeChild(a);} catch {} }, 1000);
+    } catch {}
+  }
+
+  async function downloadAdminKey(relKey: string) {
+    try {
+      const keyFull = relKey.startsWith('admin/') ? relKey : `admin/${relKey}`;
+      const scopeParam = `&scope=admin`;
+      const name = relKey.split('/').pop() || 'image';
+      const url = `/api/storage/file?key=${encodeURIComponent(keyFull)}${scopeParam}&download=1`;
+      await downloadUrl(url, name);
+    } catch {}
+  }
+
+  useEffect(()=>{
+    let cancelled = false;
+    (async()=>{
+      const entries = await Promise.all(adminExistingKeys.map(async (k)=> [k, await resolveAdminView(k)] as const));
+      if (!cancelled) {
+        const map: Record<string,string> = {};
+        for (const [k, v] of entries) map[k] = v || '';
+        setAdminExistingViews(map);
+      }
+    })();
+    return ()=>{ cancelled = true; };
+  }, [adminExistingKeys]);
+
+  async function uploadAdmin(file: File, subfolder: string): Promise<string | null> {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('path', `templates/${subfolder}`);
+    form.append('scope', 'admin');
+    try { const res = await fetch('/api/storage/upload', { method:'POST', body: form }); const data = await res.json(); return data?.key || null; } catch { return null; }
+  }
 
   useEffect(()=>{
     setName(String(template?.name || ''));
@@ -1560,7 +1745,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     setDescription(String(template?.description || ''));
     setPrompt(String(template?.prompt || ''));
     setFixedAspect(!!template?.fixedAspectRatio);
-    setAspectRatio(typeof template?.aspectRatio === 'number' ? Number(template?.aspectRatio) : undefined);
+    setAspectRatio(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : undefined);
     try { const w = Number((template?.imageSize?.width) || 1280); setImageWidth(Math.max(1024, Math.min(4096, Math.round(w)))); } catch {}
     try { const h = Number((template?.imageSize?.height) || 1280); setImageHeight(Math.max(1024, Math.min(4096, Math.round(h)))); } catch {}
     try {
@@ -1569,11 +1754,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       setAllowUser(srcs.includes('user'));
     } catch {}
     try { const n = Number(template?.maxUploadImages || 0); setMaxUploadImages(Number.isFinite(n) && n>0 ? n : ''); } catch {}
-    setRembgEnabled(!!template?.rembg?.enabled);
-    setRembgModel((template?.rembg?.model as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait') || 'General Use (Heavy)');
-    setRembgRes((template?.rembg?.operating_resolution as '1024x1024'|'2048x2048') || '2048x2048');
-    setRembgFormat((template?.rembg?.output_format as 'png'|'webp') || 'png');
-    setRembgRefine(template?.rembg?.refine_foreground !== false);
+    try { setVideoCfg(template?.video as unknown as AdminVideoConfig || null); } catch {}
   }, [template]);
 
   // Detect unknown tokens from prompt and seed/edit token configs
@@ -1618,13 +1799,68 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     if (maxUploadImages !== '' && (!Number.isFinite(Number(maxUploadImages)) || Number(maxUploadImages) <= 0)) { toast.error('Max images must be a positive number'); return; }
     setBusy(true);
     try{
+      // Compute hashes for dedupe between thumbnail and new admin images
+      let thumbHex: string | null = null;
+      let adminHexes: string[] = [];
+      try {
+        if (thumbFile) {
+          const buf = new Uint8Array(await thumbFile.arrayBuffer());
+          const digest = await crypto.subtle.digest('SHA-256', buf);
+          thumbHex = Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+        }
+        if (adminNewFiles.length) {
+          const arrs = await Promise.all(adminNewFiles.map((f)=> f.arrayBuffer()));
+          adminHexes = await Promise.all(arrs.map(async (ab)=>{
+            const dg = await crypto.subtle.digest('SHA-256', new Uint8Array(ab));
+            return Array.from(new Uint8Array(dg)).map(b=>b.toString(16).padStart(2,'0')).join('');
+          }));
+        }
+      } catch {}
+
+      // Upload new admin images
+      const uploadedAdminKeys: string[] = [];
+      for (const f of adminNewFiles) {
+        const key = await uploadAdmin(f, 'images');
+        if (key) uploadedAdminKeys.push(key.replace(/^admin\//, ''));
+      }
+      // Build final adminImageKeys list
+      const nextAdminKeys: string[] = [...adminExistingKeys.filter(Boolean), ...uploadedAdminKeys];
+
+      // Determine thumbnail key
+      let nextThumbKey: string | null | undefined = undefined; // undefined => leave as-is
+      if (clearThumb) {
+        nextThumbKey = null;
+      } else if (selectedThumbExistingKey) {
+        nextThumbKey = selectedThumbExistingKey;
+      } else if (selectedThumbAdminIndex !== null && uploadedAdminKeys[selectedThumbAdminIndex]) {
+        nextThumbKey = uploadedAdminKeys[selectedThumbAdminIndex] as string;
+      } else if (thumbHex && adminHexes.length) {
+        const matchIdx = adminHexes.findIndex((h)=> h === thumbHex);
+        if (matchIdx >= 0 && uploadedAdminKeys[matchIdx]) {
+          nextThumbKey = uploadedAdminKeys[matchIdx] as string;
+        }
+      }
+      // If still not determined and a new thumbnail file is provided, upload it
+      if (typeof nextThumbKey === 'undefined' && thumbFile) {
+        const up = await uploadAdmin(thumbFile, 'thumbnails');
+        if (up) nextThumbKey = up.replace(/^admin\//,''); else nextThumbKey = undefined;
+      }
+
       const unknownVarDefs = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text'), options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' && (cfg as { defaultValue?: unknown }).defaultValue ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
       const allowedImageSources = [allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean);
-      const rembg = { enabled: !!rembgEnabled, model: rembgModel, operating_resolution: rembgRes, output_format: rembgFormat, refine_foreground: !!rembgRefine, output_mask: !!rembgMask };
+      const body: Record<string, unknown> = { id, name: name.trim(), description: description || '', prompt: prompt.trim(), falModelSlug: falModelSlug || undefined, variables: unknownVarDefs, imageSize: { width: imageWidth, height: imageHeight }, fixedAspectRatio: !!fixedAspect, aspectRatio: fixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined, allowedImageSources, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n>0 ? Math.min(25, Math.round(n)) : undefined; })(), video: (videoCfg as unknown) };
+      // Include admin images update
+      body.adminImageKeys = nextAdminKeys;
+      // Include thumbnail update only if changed/explicitly set
+      if (clearThumb) body.thumbnailKey = null;
+      else if (typeof nextThumbKey === 'string') body.thumbnailKey = nextThumbKey;
+      else if (typeof nextThumbKey === 'undefined' && !thumbFile && !selectedThumbExistingKey && selectedThumbAdminIndex === null) {
+        // leave unchanged
+      }
       const res = await fetch('/api/templates', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, name: name.trim(), description: description || '', prompt: prompt.trim(), falModelSlug: falModelSlug || undefined, variables: unknownVarDefs, imageSize: { width: imageWidth, height: imageHeight }, fixedAspectRatio: !!fixedAspect, aspectRatio: fixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined, allowedImageSources, rembg, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n>0 ? Math.min(25, Math.round(n)) : undefined; })() })
+        body: JSON.stringify(body)
       });
       const data = await res.json().catch(()=>({}));
       if (!res.ok) { toast.error(data?.error || 'Failed to update template'); return; }
@@ -1646,53 +1882,26 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
           </Select>
         </div>
       </div>
-      <div className="rounded border border-[color:var(--border)] p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-medium">Foreground masking</div>
-          <Switch checked={rembgEnabled} onCheckedChange={(v)=> { const vv = !!v; setRembgEnabled(vv); }} />
-        </div>
-        {rembgEnabled ? (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div>
-              <div className="text-xs text-white/70 mb-1">Model</div>
-              <Select value={rembgModel} onValueChange={(v)=> setRembgModel(v as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait')}>
-                <SelectTrigger className="h-9"><SelectValue placeholder="Select model" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="General Use (Light)">General Use (Light)</SelectItem>
-                  <SelectItem value="General Use (Light 2K)">General Use (Light 2K)</SelectItem>
-                  <SelectItem value="General Use (Heavy)">General Use (Heavy)</SelectItem>
-                  <SelectItem value="Matting">Matting</SelectItem>
-                  <SelectItem value="Portrait">Portrait</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <div className="text-xs text-white/70 mb-1">Resolution</div>
-              <Select value={rembgRes} onValueChange={(v)=> setRembgRes(v as '1024x1024'|'2048x2048')}>
-                <SelectTrigger className="h-9"><SelectValue placeholder="Resolution" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1024x1024">1024x1024</SelectItem>
-                  <SelectItem value="2048x2048">2048x2048</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <div className="text-xs text-white/70 mb-1">Output</div>
-              <Select value={rembgFormat} onValueChange={(v)=> setRembgFormat(v as 'png'|'webp')}>
-                <SelectTrigger className="h-9"><SelectValue placeholder="Format" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="png">png</SelectItem>
-                  <SelectItem value="webp">webp</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="text-xs text-white/70">Refine foreground</div>
-              <Switch checked={rembgRefine} onCheckedChange={(v)=> setRembgRefine(!!v)} />
-            </div>
-          </div>
-        ) : null}
-      </div>
+      <AdminTemplateImages
+        mode="edit"
+        adminExistingKeys={adminExistingKeys}
+        adminExistingViews={adminExistingViews}
+        onRemoveExistingKey={(key)=> setAdminExistingKeys((prev)=> prev.filter((x)=> x!==key))}
+        onDownloadExistingKey={(key)=> downloadAdminKey(key)}
+        adminNewPreviews={adminNewPreviews}
+        onRemoveNewAdminIndex={(index)=> setAdminNewFiles((prev)=> prev.filter((_, idx)=> idx!==index))}
+        onDropAdminFiles={(files)=> setAdminNewFiles((prev)=> [...prev, ...files])}
+        selectedThumbExistingKey={selectedThumbExistingKey}
+        selectedThumbAdminIndex={selectedThumbAdminIndex}
+        thumbPreview={thumbPreview}
+        thumbViewUrl={thumbViewUrl}
+        onSetThumbExisting={(key)=>{ setSelectedThumbExistingKey(key); setSelectedThumbAdminIndex(null); setThumbFile(null); setClearThumb(false); }}
+        onSetThumbAdminIndex={(index)=>{ setSelectedThumbAdminIndex(index); setSelectedThumbExistingKey(null); setThumbFile(null); setClearThumb(false); }}
+        onDropThumbFile={(file)=>{ setSelectedThumbExistingKey(null); setSelectedThumbAdminIndex(null); setClearThumb(false); setThumbFile(file); }}
+        onClearThumb={()=>{ setThumbFile(null); setSelectedThumbExistingKey(null); setSelectedThumbAdminIndex(null); setThumbViewUrl(null); setClearThumb(true); }}
+        onDownloadThumbExistingOrView={()=>{ if (selectedThumbExistingKey) downloadAdminKey(selectedThumbExistingKey); else if (template?.thumbnailKey) downloadAdminKey(String(template.thumbnailKey)); else if (thumbViewUrl) { const name = ensureImageFilename((template?.thumbnailKey || '').split('/').pop() || 'thumbnail'); downloadUrl(thumbViewUrl, name); } }}
+      />
+      {/* Foreground masking is always enabled by default; options removed */}
       <Textarea value={description} onChange={(e)=> setDescription(e.target.value)} placeholder="Description (optional)" rows={2} />
       <Textarea value={prompt} onChange={(e)=> setPrompt(e.target.value)} placeholder="Prompt" rows={6} />
       <div className="flex items-center justify-between gap-2">
@@ -1728,24 +1937,21 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
           <div className="flex items-center gap-2"><span className="text-xs text-white/70">User</span><Switch checked={allowUser} onCheckedChange={(v)=> setAllowUser(!!v)} /></div>
         </div>
       </div>
+
+      {/* Video generation config (shared component) */}
+      <AdminTemplateVideo value={videoCfg as AdminVideoConfig} onChange={(next)=>{
+        try { setVideoCfg(next as AdminVideoConfig); } catch {}
+      }} />
       <div className="flex items-center justify-between gap-2">
         <div className="space-y-1">
-          <div className="text-sm font-medium">Max images per upload</div>
-          <div className="text-xs text-white/60">Limit how many images users can upload at once when using this template.</div>
+          <div className="text-sm font-medium">Required images</div>
+          <div className="text-xs text-white/60">How many images a user must provide to use this template. They can mix sources (upload, vehicles, workspace).</div>
         </div>
         <div className="flex items-center gap-2">
           <Input type="number" className="w-24 h-9" value={maxUploadImages} onChange={(e)=>{ const v = e.target.value; if (v==='') setMaxUploadImages(''); else setMaxUploadImages(Math.max(1, Math.min(25, Math.round(Number(v)||0)))); }} placeholder="e.g. 1" />
         </div>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <div className="space-y-1">
-          <div className="text-sm font-medium">Max images per upload</div>
-          <div className="text-xs text-white/60">Limit how many images users can upload at once when using this template.</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Input type="number" className="w-24 h-9" value={maxUploadImages} onChange={(e)=>{ const v = e.target.value; if (v === '') setMaxUploadImages(''); else setMaxUploadImages(Math.max(1, Math.min(25, Math.round(Number(v)||0)))); }} placeholder="e.g. 1" />
-        </div>
-      </div>
+      
       {Object.keys(tokenConfigs).length ? (
         <div className="space-y-2">
           <div className="text-sm font-medium">Detected tokens</div>

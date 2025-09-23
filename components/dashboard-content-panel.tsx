@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { ArrowUpRight } from "lucide-react";
+import { getViewUrl } from "@/lib/view-url-client";
 // import CircularGallery from "@/components/ui/circular-gallery";
 // ffmpeg wasm is loaded lazily only when uploading in admin hooks scope
 
@@ -50,10 +51,10 @@ export function DashboardContentPanel() {
         for (const b of bundles) {
           const thumbKey = b.thumbKey || `admin/${b.key}/thumb.jpg`;
           const videoKey = b.videoKey || `admin/${b.key}/video.mp4`;
-          const viewThumb = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key: thumbKey.startsWith('admin/')? thumbKey : `admin/${thumbKey}`, scope: 'admin' }) }).then(r=>r.json()).catch(()=>({}));
-          const viewVideo = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key: videoKey.startsWith('admin/')? videoKey : `admin/${videoKey}`, scope: 'admin' }) }).then(r=>r.json()).catch(()=>({}));
-          if (!viewThumb?.url || !viewVideo?.url) continue;
-          previews.push({ image: viewThumb.url, text: b.name, videoUrl: viewVideo.url });
+          const thumbUrl = await getViewUrl(thumbKey.startsWith('admin/')? thumbKey : `admin/${thumbKey}`, 'admin');
+          const videoUrl = await getViewUrl(videoKey.startsWith('admin/')? videoKey : `admin/${videoKey}`, 'admin');
+          if (!thumbUrl || !videoUrl) continue;
+          previews.push({ image: thumbUrl, text: b.name, videoUrl });
           if (aborted) return;
         }
         if (!aborted) setHookItems(previews);

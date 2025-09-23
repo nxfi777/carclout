@@ -13,8 +13,8 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
   const router = useRouter();
 
   // Derived feature blurbs without exposing raw credits
-  const minPosts = 8; // ≈ floor(50 / 6)
-  const proPosts = 416; // ≈ floor(2500 / 6)
+  const minPosts = 7; // marketing estimate
+  const proPosts = 357; // marketing estimate
 
   const plans = useMemo(() => ([
     {
@@ -91,9 +91,23 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
                 <span>${p.price}/mo</span>
               </div>
               <ul className="text-sm list-disc pl-5">
-                {p.features.map((f) => (
-                  <li key={f}>{f}</li>
-                ))}
+                {p.features.map((f, i) => {
+                  if (isPro && i === 0) {
+                    return (
+                      <li key="pro-posts">
+                        <span className="inline-flex items-center gap-2">
+                          <span>
+                            ≈ <span className="tabular-nums">{proPosts}</span> posts
+                          </span>
+                          <span className="relative text-[0.625rem] px-[0.5em] py-[0.25em] rounded-full border shadow badge-new">
+                            <span className="shiny-text">2x VALUE</span>
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  }
+                  return <li key={f}>{f}</li>;
+                })}
               </ul>
               <div className="flex-1" />
               <Button

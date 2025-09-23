@@ -1,7 +1,9 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getViewUrl, getViewUrls } from "@/lib/view-url-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Vehicle } from "@/components/vehicles-editor";
 import { Loader2Icon, UploadIcon, XIcon, ArrowLeftIcon, ArrowRightIcon, StarIcon } from "lucide-react";
@@ -14,11 +16,14 @@ interface CarPhotosUploaderProps {
   initialVehicleIndex?: number;
   max?: number; // max per vehicle
   className?: string;
+  chatSelected?: string[];
+  onChatSelectedChange?: (next: string[]) => void;
+  chatMax?: number;
 }
 
 // Removed unused type alias per lint
 
-export default function CarPhotosUploader({ value, onChange, vehicles = [], onVehiclesChange, initialVehicleIndex = 0, max = 30, className }: CarPhotosUploaderProps) {
+export default function CarPhotosUploader({ value, onChange, vehicles = [], onVehiclesChange, initialVehicleIndex = 0, max = 30, className, chatSelected, onChatSelectedChange, chatMax = 6 }: CarPhotosUploaderProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -46,6 +51,7 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
   }
   const selectedVehicle = vehicles[selectedVehicleIndex];
   const selectedSlug = vehicles.length ? uniqueSlugForIndex(vehicles, selectedVehicleIndex) : baseSlug(selectedVehicle);
+  const chatSelectedSet = useMemo(() => new Set(chatSelected || []), [chatSelected]);
 
   const flattenVehiclePhotos = useCallback((list: Vehicle[] | undefined): string[] => {
     if (!Array.isArray(list)) return value || [];
@@ -97,11 +103,7 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
     }
   }
 
-  function makePrimary(key: string) {
-    const current = keysForSelected || [];
-    const rest = current.filter((k) => k !== key);
-    applyReorderForSelected([key, ...rest]);
-  }
+  // Primary control removed; use arrows to reorder if needed
 
   function moveKey(key: string, dir: -1 | 1) {
     const current = keysForSelected || [];
@@ -127,15 +129,10 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
     let cancelled = false;
     (async () => {
       if (!keysNeedingPreview.length) return;
-      for (const key of keysNeedingPreview) {
-        try {
-          const res = await fetch("/api/storage/view", { method: "POST", body: JSON.stringify({ key }) });
-          const data = await res.json();
-          if (!cancelled && typeof data?.url === "string") {
-            setPreviews((prev) => ({ ...prev, [key]: data.url }));
-          }
-        } catch {}
-      }
+      try {
+        const urls = await getViewUrls(keysNeedingPreview);
+        if (!cancelled) setPreviews((prev) => ({ ...prev, ...urls }));
+      } catch {}
     })();
     return () => { cancelled = true; };
   }, [keysNeedingPreview]);
@@ -143,6 +140,17 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
   const browse = useCallback(() => {
     inputRef.current?.click();
   }, []);
+
+  function toggleChatSelection(key: string) {
+    if (!onChatSelectedChange) return;
+    const current = Array.isArray(chatSelected) ? chatSelected : [];
+    const isSel = current.includes(key);
+    if (isSel) {
+      onChatSelectedChange(current.filter((k) => k !== key));
+    } else if (current.length < chatMax) {
+      onChatSelectedChange([...current, key]);
+    }
+  }
 
   const uploadFiles = useCallback(async (files: File[]) => {
     setUploadErrors(null);
@@ -177,11 +185,8 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
             nextKeys.push(key);
             // Fetch a view URL for preview immediately
             try {
-              const vres = await fetch("/api/storage/view", { method: "POST", body: JSON.stringify({ key }) });
-              const vdata = await vres.json();
-              if (typeof vdata?.url === "string") {
-                setPreviews((prev) => ({ ...prev, [key]: vdata.url }));
-              }
+              const url = await getViewUrl(key);
+              if (typeof url === "string" && url) setPreviews((prev) => ({ ...prev, [key]: url }));
             } catch {}
           }
         } catch (err) {
@@ -293,16 +298,32 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
             </div>
           </div>
           {uploadErrors ? <div className="text-xs text-red-400">{uploadErrors}</div> : null}
+          {onChatSelectedChange ? (
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <div>Chat profile selection: {(chatSelected?.length || 0)}/{chatMax}</div>
+              {(chatSelected?.length || 0) > 0 ? (
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-white"
+                  onClick={() => onChatSelectedChange([])}
+                  aria-label="Clear selected chat photos"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {(keysForSelected?.length || 0) > 0 ? (
-            <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            <ul className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {(keysForSelected || []).map((key, idx) => {
                 const url = previews[key];
+                const isChat = chatSelectedSet.has(key);
                 return (
                   <li key={key} className="relative group">
-                    <div className="aspect-square rounded-md overflow-hidden bg-black/20">
+                    <div className="h-48 rounded-md overflow-hidden bg-black/20">
                       {url ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={url} alt="Car photo" className="w-full h-full object-cover" />
+                        <img src={url} alt="Car photo" className="w-full h-full object-contain" />
                       ) : (
                         <div className="w-full h-full grid place-items-center text-muted-foreground">
                           <Loader2Icon className="size-5 animate-spin" />
@@ -313,9 +334,21 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
                       <div className="absolute top-1 left-1 rounded bg-black/70 text-white text-[10px] px-1.5 py-0.5">Primary</div>
                     ) : null}
                     <div className="absolute bottom-1 left-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button type="button" aria-label="Make primary" className="rounded-full p-1 bg-black/60 text-white" onClick={()=>makePrimary(key)}>
-                        <StarIcon className="size-4" />
-                      </button>
+                      {onChatSelectedChange ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={isChat ? "Remove from chat profile" : "Show on chat profile"}
+                              className={`rounded-full p-1 ${isChat ? 'bg-primary text-primary-foreground' : 'bg-black/60 text-white'}`}
+                              onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); toggleChatSelection(key); }}
+                            >
+                              <StarIcon className="size-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent sideOffset={6}>{isChat ? 'Remove from chat profile' : 'Show on chat profile'}</TooltipContent>
+                        </Tooltip>
+                      ) : null}
                       <button type="button" aria-label="Move left" className="rounded-full p-1 bg-black/60 text-white" onClick={()=>moveKey(key, -1)}>
                         <ArrowLeftIcon className="size-4" />
                       </button>

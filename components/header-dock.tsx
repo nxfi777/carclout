@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Dock, { type DockItemData } from '@/components/ui/Dock';
-import { Home, MessagesSquare, Wrench, Radio, Play, LayoutTemplate, Music2, Folder, Megaphone, BookOpenText, ChartBarIncreasing, Lock } from 'lucide-react';
+import { Home, MessagesSquare, Wrench, Radio, Play, LayoutTemplate, Music2, Folder, Megaphone, ChartBarIncreasing, Lock } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 export default function HeaderDock() {
@@ -39,7 +39,6 @@ export default function HeaderDock() {
       const arr: DockItemData[] = [
         { icon: <Home size={16} />, label: 'Home', href: '/dashboard/home', onClick: () => router.push('/dashboard/home') },
         { icon: <Play size={16} />, label: 'Hooks', href: '/dashboard/hooks', onClick: () => router.push('/dashboard/hooks') },
-        { icon: <BookOpenText size={16} />, label: 'Learn', href: '/dashboard/learn', onClick: () => router.push('/dashboard/learn') },
         { icon: <LayoutTemplate size={16} />, label: 'Templates', href: '/dashboard/templates', onClick: () => router.push('/dashboard/templates') },
         { icon: <Music2 size={16} />, label: 'Suggestions', href: '/dashboard/suggestions', onClick: () => router.push('/dashboard/suggestions') },
         { icon: <MessagesSquare size={16} />, label: 'Chat', href: '/dashboard/chat', onClick: () => router.push('/dashboard/chat') },
@@ -80,7 +79,6 @@ export default function HeaderDock() {
         { icon: <LayoutTemplate size={16} />, label: 'Templates', href: qp('templates'), onClick: () => router.push(qp('templates')) },
         { icon: <Music2 size={16} />, label: 'Music', href: qp('music'), onClick: () => router.push(qp('music')) },
         { icon: <Wrench size={16} />, label: 'Moderation', href: qp('moderation'), onClick: () => router.push(qp('moderation')) },
-        { icon: <BookOpenText size={16} />, label: 'Learn', href: '/admin/learn', onClick: () => router.push('/admin/learn') },
         { icon: <Folder size={16} />, label: 'Workspace', href: qp('workspace'), onClick: () => router.push(qp('workspace')) },
       ];
     }

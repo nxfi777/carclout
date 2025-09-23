@@ -72,15 +72,15 @@ export async function POST(req: Request) {
     const dataUrlRaw = String(body?.data_url || "").trim();
     async function upload(bytes: Uint8Array, mimeType: string): Promise<string | null> {
       try {
-        const storage = (fal as unknown as { storage?: { upload?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string>; put?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string> } }).storage;
-        const u = await storage?.upload?.(bytes, { mimeType });
-        const url = (u as { url?: string } | string | undefined && typeof u !== 'undefined' && typeof (u as string) === 'string') ? (u as string) : (u && typeof u === 'object' ? (u as { url?: string }).url || null : null);
+      const storage = (fal as unknown as { storage?: { upload?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string>; put?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string> } }).storage;
+      const u = await storage?.upload?.(bytes, { mimeType });
+      const url = typeof u === 'string' ? u : (u && typeof u === 'object' ? (u as { url?: string }).url || null : null);
         if (url) return url as string;
       } catch {}
       try {
-        const storage = (fal as unknown as { storage?: { upload?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string>; put?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string> } }).storage;
-        const p = await storage?.put?.(bytes, { mimeType });
-        const url = (p as { url?: string } | string | undefined && typeof p !== 'undefined' && typeof (p as string) === 'string') ? (p as string) : (p && typeof p === 'object' ? (p as { url?: string }).url || null : null);
+      const storage = (fal as unknown as { storage?: { upload?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string>; put?: (b: Uint8Array, o: { mimeType: string }) => Promise<{ url?: string } | string> } }).storage;
+      const p = await storage?.put?.(bytes, { mimeType });
+      const url = typeof p === 'string' ? p : (p && typeof p === 'object' ? (p as { url?: string }).url || null : null);
         if (url) return url as string;
       } catch {}
       return null;
@@ -191,13 +191,13 @@ export async function POST(req: Request) {
             }
           }
         } catch {}
-        // Replace outgoing URLs with our signed view URLs for consistency
+        // Replace outgoing URLs with our same-origin proxy URLs to avoid CORS in canvas
         try {
-          const { url: fgSigned } = await createViewUrl(fgKey, 60 * 10);
+          const fgSigned = `/api/storage/file?key=${encodeURIComponent(fgKey)}`;
           out.image = { url: fgSigned };
         } catch {}
         try {
-          const { url: maskSigned } = await createViewUrl(`${maskPrefix}${digest}.mask.png`, 60 * 10);
+          const maskSigned = `/api/storage/file?key=${encodeURIComponent(`${maskPrefix}${digest}.mask.png`)}`;
           out.mask_image = { url: maskSigned };
         } catch {}
       }

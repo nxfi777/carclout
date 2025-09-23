@@ -11,6 +11,9 @@ type FeatureRequestRow = {
   created_by?: RecordId<"user"> | string
   created_byEmail?: string
   created_at?: string
+  status?: "accepted" | "rejected" | string | null
+  decided_byEmail?: string | null
+  decided_at?: string | null
 }
 
 let ensured = false;
@@ -83,7 +86,7 @@ export async function GET(request: Request) {
   }
 
   // Fetch latest feature requests
-  const res = await db.query("SELECT id, title, description, created_by, created_byEmail, created_at FROM feature_request ORDER BY created_at DESC LIMIT 200;");
+  const res = await db.query("SELECT id, title, description, created_by, created_byEmail, created_at, status, decided_byEmail, decided_at FROM feature_request ORDER BY created_at DESC LIMIT 200;");
   const rows: FeatureRequestRow[] = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as FeatureRequestRow[]) : [];
 
   // Build id list for vote aggregation
@@ -187,6 +190,7 @@ export async function GET(request: Request) {
       wanted: cnt.up,
       notWanted: cnt.down,
       myVote: (myVotes.get(idStr) || null),
+      status: (typeof r?.status === 'string' ? r.status : null) || null,
     };
   });
 
@@ -249,6 +253,118 @@ export async function POST(request: Request) {
   const idStr = typeof (row?.id as { toString?: () => string } | undefined)?.toString === 'function' ? (row!.id as { toString: () => string }).toString() : String(row?.id || '');
 
   return NextResponse.json({ request: { id: idStr, title, description, created_at: row?.created_at || null, created_byName: session.user.name || 'Member', wanted: 0, notWanted: 0, myVote: null } });
+}
+
+
+export async function PATCH(request: Request) {
+  const session = await auth();
+  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const role = (session.user as { role?: string } | undefined)?.role || 'user';
+  if (role !== 'admin') return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = await request.json().catch(() => ({} as { id?: unknown; action?: unknown }));
+  const idRaw = String((body as { id?: unknown }).id || '').trim();
+  const actionRaw = String((body as { action?: unknown }).action || '').toLowerCase();
+  if (!idRaw) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  if (actionRaw !== 'accept' && actionRaw !== 'reject') return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+
+  // Normalize feature request id
+  let rid: RecordId<'feature_request'> | string = idRaw;
+  try {
+    if (idRaw.includes(':')) {
+      const parts = idRaw.split(':');
+      const table = (parts[0] || '').trim();
+      const idPart = parts.slice(1).join(':');
+      if (table === 'feature_request') rid = new RecordId('feature_request', idPart);
+    } else {
+      rid = new RecordId('feature_request', idRaw);
+    }
+  } catch {}
+
+  const db = await getSurreal();
+  const nowIso = new Date().toISOString();
+
+  // Load current row
+  const curRes = await db.query("SELECT id, title, status FROM feature_request WHERE id = $rid LIMIT 1;", { rid });
+  const curRow = Array.isArray(curRes) && Array.isArray(curRes[0]) ? (curRes[0][0] as { id?: unknown; title?: string; status?: string } | undefined) : undefined;
+  if (!curRow) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const prevStatus = (curRow?.status || '').toString().toLowerCase();
+  const newStatus: 'accepted' | 'rejected' = actionRaw === 'accept' ? 'accepted' : 'rejected';
+
+  // Update status
+  await db.query(
+    `UPDATE $rid SET status = $status, decided_byEmail = $by, decided_at = d"${nowIso}";`,
+    { rid, status: newStatus, by: session.user.email }
+  );
+
+  // If accepted, notify all upvoters by email
+  let notified = 0;
+  if (newStatus === 'accepted' && prevStatus !== 'accepted') {
+    try {
+      // Fetch upvoter emails
+      const vres = await db.query("SELECT userEmail FROM feature_vote WHERE request = $rid AND (stance = 'up' OR stance = 'wanted');", { rid });
+      const vrows: Array<{ userEmail?: string | null }> = Array.isArray(vres) && Array.isArray(vres[0]) ? (vres[0] as Array<{ userEmail?: string | null }>) : [];
+      const emails = Array.from(new Set(
+        vrows
+          .map((r) => (r?.userEmail || '').toString().trim().toLowerCase())
+          .filter((e) => /.+@.+\..+/.test(e))
+      ));
+
+      // Minimal email sender using Resend
+      async function sendEmail({ to, subject, html, text }: { to: string; subject: string; html: string; text: string }) {
+        const apiKey = process.env.AUTH_RESEND_KEY || process.env.RESEND_API_KEY || "";
+        const from = process.env.EMAIL_FROM || "ignite@nytforge.com";
+        if (!apiKey) throw new Error("Missing Resend API key");
+        const res = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ from, to, subject, html, text }),
+        });
+        if (!res.ok) throw new Error("Resend error: " + (await res.text()));
+      }
+
+      const title = (curRow?.title || '').toString();
+      const subject = title ? `Feature accepted: ${title}` : 'A feature you voted for was accepted';
+      const textBase = title
+        ? `Good news! The feature you voted for ("${title}") was accepted and will be added soon.\n\nThanks for your feedback!`
+        : `Good news! A feature you voted for was accepted and will be added soon.\n\nThanks for your feedback!`;
+      const htmlBase = `<div style=\"font-family:Arial,Helvetica,sans-serif;\"><h2 style=\"margin:0 0 .6rem\">${title ? "Feature accepted: " + title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "Feature accepted"}</h2><p style=\"margin:.4rem 0\">We\'re excited to share that this feature was accepted and will be added soon.</p><p style=\"margin:1rem 0 0;color:#555\">Thank you for voting and helping us prioritize!</p></div>`;
+
+      for (const to of emails) {
+        try {
+          await sendEmail({ to, subject, html: htmlBase, text: textBase });
+          notified++;
+        } catch {}
+      }
+    } catch {}
+  }
+
+  // Recompute counts for response
+  const countsRes = await db.query("SELECT stance, count() AS c FROM feature_vote WHERE request = $rid GROUP BY stance;", { rid });
+  const countRows: Array<{ stance?: string; c?: number }> = Array.isArray(countsRes) && Array.isArray(countsRes[0]) ? (countsRes[0] as Array<{ stance?: string; c?: number }>) : [];
+  let up = 0, down = 0;
+  for (const r of countRows) {
+    const s = (r?.stance || '').toLowerCase();
+    if (s === 'up' || s === 'wanted') up += Number(r?.c || 0);
+    if (s === 'down' || s === 'not_wanted') down += Number(r?.c || 0);
+  }
+
+  const idStr = ((): string => {
+    try { return (curRow!.id as { toString?: () => string }).toString?.() || String(curRow!.id); } catch { return idRaw; }
+  })();
+  const result = {
+    id: idStr,
+    title: (curRow?.title || '').toString(),
+    description: null as string | null,
+    created_at: null as string | null,
+    created_byName: 'Member',
+    wanted: up,
+    notWanted: down,
+    myVote: null as 'up' | 'down' | null,
+    status: newStatus,
+  };
+
+  return NextResponse.json({ request: result, notified });
 }
 
 

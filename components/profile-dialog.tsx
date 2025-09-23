@@ -1,5 +1,4 @@
 "use client";
-"use client";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import Cropper, { type Area } from "react-easy-crop";
@@ -11,7 +10,7 @@ import { useSession } from "next-auth/react";
 import VehiclesEditor, { type Vehicle } from "@/components/vehicles-editor";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2Icon, XIcon } from "lucide-react";
+import { Loader2Icon } from "lucide-react";
 import CarPhotosUploader from "@/components/car-photos-uploader";
 // import { Checkbox } from "@/components/ui/checkbox";
 
@@ -28,7 +27,6 @@ export default function ProfileDialog() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [carPhotos, setCarPhotos] = useState<string[]>([]);
   const [chatProfilePhotos, setChatProfilePhotos] = useState<string[]>([]);
-  const [photoPreviews, setPhotoPreviews] = useState<Record<string, string>>({});
   const [bio, setBio] = useState<string>("");
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | undefined>(undefined);
   const [isSaving, setIsSaving] = useState(false);
@@ -453,6 +451,9 @@ export default function ProfileDialog() {
                   const setFlat = new Set(flat);
                   setChatProfilePhotos((prev)=> (prev||[]).filter(k=> setFlat.has(k)));
                 }}
+                chatSelected={chatProfilePhotos}
+                onChatSelectedChange={setChatProfilePhotos}
+                chatMax={6}
               />
             ) : (
               <div className="text-xs text-muted-foreground">Add a vehicle above to enable photo uploads.</div>
@@ -469,33 +470,7 @@ export default function ProfileDialog() {
             />
             <div className="text-xs text-muted-foreground">{bio.length}/500</div>
           </div>
-          {/* Chat profile visibility selection */}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Chat profile photos</div>
-            {vehicles.length === 0 ? (
-              <div className="text-xs text-muted-foreground">Add a vehicle and upload photos above to pick your chat profile photos.</div>
-            ) : (
-              <>
-                <div className="text-xs text-muted-foreground">Choose up to 6 photos to show on your chat profile.</div>
-                <ChatPhotosChooser
-                  allKeys={carPhotos}
-                  selected={chatProfilePhotos}
-                  onChange={setChatProfilePhotos}
-                  previews={photoPreviews}
-                  onNeedPreview={async (keys: string[]) => {
-                    for (const key of keys) {
-                      if (photoPreviews[key]) continue;
-                      try {
-                        const res = await fetch('/api/storage/view', { method: 'POST', body: JSON.stringify({ key }) });
-                        const data = await res.json();
-                        if (typeof data?.url === 'string') setPhotoPreviews(prev => ({ ...prev, [key]: data.url }));
-                      } catch {}
-                    }
-                  }}
-                />
-              </>
-            )}
-          </div>
+          {/* Chat profile selection now integrated into Vehicle Photos above */}
           <Button onClick={save} disabled={isSaving} className="w-full">
             {isSaving ? (
               <>
@@ -538,75 +513,4 @@ export default function ProfileDialog() {
   );
 }
 
-function ChatPhotosChooser({ allKeys, selected, onChange, previews, onNeedPreview }: { allKeys: string[]; selected: string[]; onChange: (next: string[]) => void; previews: Record<string,string>; onNeedPreview: (keys: string[]) => Promise<void> }) {
-  const MAX = 6;
-  useEffect(() => {
-    const need = (allKeys || []).filter(k => !previews[k]).slice(0, 30);
-    if (need.length) { onNeedPreview(need); }
-  }, [allKeys, previews, onNeedPreview]);
-  function toggle(key: string) {
-    const isSel = selected.includes(key);
-    if (isSel) onChange(selected.filter(k => k !== key));
-    else if (selected.length < MAX) onChange([...selected, key]);
-  }
-  // Clean up selections that no longer exist
-  useEffect(() => {
-    const set = new Set(allKeys);
-    const cleaned = (selected || []).filter(k => set.has(k)).slice(0, MAX);
-    if (cleaned.length !== selected.length || cleaned.some((k, i) => k !== selected[i])) onChange(cleaned);
-  }, [allKeys, selected, onChange]);
-  if (!Array.isArray(allKeys) || allKeys.length === 0) {
-    return <div className="text-xs text-muted-foreground">Add vehicle photos above to select visibility.</div>;
-  }
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-muted-foreground">Selected {selected.length}/6</div>
-        {selected.length > 0 ? (
-          <button
-            type="button"
-            className="text-xs text-muted-foreground hover:text-white underline-offset-2 hover:underline"
-            onClick={() => onChange([])}
-            aria-label="Clear selected chat photos"
-          >
-            Clear
-          </button>
-        ) : null}
-      </div>
-      <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {(allKeys || []).map((key) => {
-          const url = previews[key];
-          const isSel = selected.includes(key);
-          return (
-            <li key={key} className={`relative rounded-md overflow-hidden border ${isSel ? 'ring-2 ring-primary' : 'border-[color:var(--border)]'}`}>
-              <button type="button" className="block w-full h-full" onClick={() => toggle(key)}>
-                <div className="aspect-square bg-black/20">
-                  {url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={url} alt="Car photo" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full grid place-items-center text-muted-foreground"><Loader2Icon className="size-5 animate-spin" /></div>
-                  )}
-                </div>
-                <div className="absolute top-1 left-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded">{isSel ? 'Selected' : 'Tap to select'}</div>
-              </button>
-              {isSel ? (
-                <button
-                  type="button"
-                  aria-label="Remove from chat profile"
-                  className="absolute top-1 right-1 rounded-full p-1 bg-black/70 text-white"
-                  onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onChange(selected.filter(k=>k!==key)); }}
-                >
-                  <XIcon className="size-4" />
-                </button>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-      {selected.length > MAX ? (
-        <div className="text-xs text-red-400">You can select up to {MAX} photos.</div>
-      ) : null}
-    </div>
-  );
-}
+ 

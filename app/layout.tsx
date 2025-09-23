@@ -6,7 +6,6 @@ import HeaderGate from "@/components/header-gate";
 import SiteFooter from "@/components/site-footer";
 import FooterGate from "@/components/footer-gate";
 import { Toaster } from "@/components/ui/sonner";
-import WelcomeOnboarding from "@/components/welcome-onboarding";
 import SessionProviderWrapper from "@/components/session-provider";
 
 const roboto = Roboto({
@@ -98,7 +97,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <FooterGate>
             <SiteFooter />
           </FooterGate>
-          <WelcomeOnboarding />
           <Toaster />
         </SessionProviderWrapper>
       </body>

@@ -29,6 +29,19 @@ type TemplateDoc = {
     refine_foreground?: boolean;
     output_mask?: boolean;
   } | null;
+  // Video generation config (Seedance image-to-video)
+  video?: {
+    enabled?: boolean;
+    provider?: 'seedance' | 'kling2_5';
+    prompt?: string;
+    duration?: '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12';
+    resolution?: '480p' | '720p' | '1080p';
+    aspect_ratio?: '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16' | 'auto';
+    camera_fixed?: boolean;
+    seed?: number | null;
+    fps?: number; // for cost estimation only
+    previewKey?: string | null; // admin-scope R2 key for hover preview
+  } | null;
   created_at?: string;
   created_by?: string;
 };
@@ -100,6 +113,19 @@ export async function GET(req: Request) {
     } else {
       filtered = [];
     }
+  }
+
+  // Optional filtering by templates that support video
+  const wantVideo = filterParam === 'video' || filterParam === 'videos' || filterParam === 'video_only';
+  if (wantVideo) {
+    filtered = filtered.filter((t) => {
+      try {
+        const v = (t as { video?: { enabled?: unknown } | null })?.video;
+        return !!(v && typeof v === 'object' && !!(v as { enabled?: unknown }).enabled);
+      } catch {
+        return false;
+      }
+    });
   }
 
   let list = filtered.map((t) => ({
@@ -180,7 +206,7 @@ export async function POST(req: Request) {
       try {
         const incoming = (body as { rembg?: TemplateDoc['rembg'] })?.rembg as TemplateDoc['rembg'];
         const def = {
-          enabled: false,
+          enabled: true,
           model: 'General Use (Heavy)' as const,
           operating_resolution: '2048x2048' as const,
           output_format: 'png' as const,
@@ -189,7 +215,7 @@ export async function POST(req: Request) {
         };
         if (incoming && typeof incoming === 'object') {
           return {
-            enabled: !!incoming.enabled,
+            enabled: true,
             model: (incoming.model as TemplateDoc['rembg'] extends infer R ? R extends { model?: infer M } ? M : never : never) || def.model,
             operating_resolution: (incoming.operating_resolution as TemplateDoc['rembg'] extends infer R ? R extends { operating_resolution?: infer M } ? M : never : never) || def.operating_resolution,
             output_format: (incoming.output_format as TemplateDoc['rembg'] extends infer R ? R extends { output_format?: infer M } ? M : never : never) || def.output_format,
@@ -199,13 +225,44 @@ export async function POST(req: Request) {
         }
         return def;
       } catch { return {
-        enabled: false,
+        enabled: true,
         model: 'General Use (Heavy)',
         operating_resolution: '2048x2048',
         output_format: 'png',
         refine_foreground: true,
         output_mask: false,
       }; }
+    })(),
+    video: ((): TemplateDoc['video'] => {
+      try {
+        const v = (body as { video?: TemplateDoc['video'] })?.video as Record<string, unknown> | undefined;
+        if (v && typeof v === 'object') {
+          const durRaw = String((v as { duration?: unknown })?.duration || '5');
+          const durations = ['3','4','5','6','7','8','9','10','11','12'] as const;
+          const dur = (durations as readonly string[]).includes(durRaw) ? (durRaw as (typeof durations)[number]) : '5';
+          const resRaw = String((v as { resolution?: unknown })?.resolution || '1080p');
+          const resolutions = ['480p','720p','1080p'] as const;
+          const res = (resolutions as readonly string[]).includes(resRaw) ? (resRaw as (typeof resolutions)[number]) : '1080p';
+          const arRaw = String((v as { aspect_ratio?: unknown })?.aspect_ratio || 'auto');
+          const aspectRatios = ['21:9','16:9','4:3','1:1','3:4','9:16','auto'] as const;
+          const ar = (aspectRatios as readonly string[]).includes(arRaw) ? (arRaw as (typeof aspectRatios)[number]) : 'auto';
+          const provRaw = String((v as { provider?: unknown })?.provider || 'seedance');
+          const provider: 'seedance' | 'kling2_5' = provRaw === 'kling2_5' ? 'kling2_5' : 'seedance';
+          return {
+            enabled: !!(v as { enabled?: unknown })?.enabled,
+            provider,
+            prompt: typeof (v as { prompt?: unknown })?.prompt === 'string' ? String((v as { prompt?: unknown }).prompt) : '',
+            duration: dur,
+            resolution: res,
+            aspect_ratio: ar,
+            camera_fixed: !!(v as { camera_fixed?: unknown })?.camera_fixed,
+            seed: ((): number | null => { const n = Number((v as { seed?: unknown })?.seed); return Number.isFinite(n) ? Math.round(n) : null; })(),
+            fps: ((): number | undefined => { const n = Number((v as { fps?: unknown })?.fps); return Number.isFinite(n) && n>0 ? Math.round(n) : undefined; })(),
+            previewKey: typeof (v as { previewKey?: unknown })?.previewKey === 'string' ? String((v as { previewKey?: unknown }).previewKey) : null,
+          } as TemplateDoc['video'];
+        }
+      } catch {}
+      return { enabled: false, provider: 'seedance', prompt: '', duration: '5', resolution: '1080p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, previewKey: null } as TemplateDoc['video'];
     })(),
     created_at: createdIso,
     created_by: user.email,
@@ -228,6 +285,7 @@ export async function POST(req: Request) {
     variables = $variables,
     categories = $categories,
     rembg = $rembg,
+    video = $video,
     created_by = $created_by,
     created_at = d"${createdIso}";`;
   const res = await db.query(query, payload as Record<string, unknown>);
@@ -287,13 +345,30 @@ export async function PATCH(req: Request) {
     'variables',
     'categories',
     'rembg',
+    'video',
   ];
   const sets: string[] = [];
   const params: Record<string, unknown> = {};
   for (const f of fields) {
     if (Object.prototype.hasOwnProperty.call(body, f)) {
-      sets.push(`${f} = $${f}`);
-      params[f] = (body as Record<string, unknown>)[f as keyof typeof body] as unknown;
+      if (f === 'rembg') {
+        // Force enabled true if rembg provided, and merge defaults
+        const incoming = (body as { rembg?: TemplateDoc['rembg'] }).rembg;
+        const def = { enabled: true, model: 'General Use (Heavy)' as const, operating_resolution: '2048x2048' as const, output_format: 'png' as const, refine_foreground: true, output_mask: false };
+        const next = incoming && typeof incoming === 'object' ? {
+          enabled: true,
+          model: (incoming.model as TemplateDoc['rembg'] extends infer R ? R extends { model?: infer M } ? M : never : never) || def.model,
+          operating_resolution: (incoming.operating_resolution as TemplateDoc['rembg'] extends infer R ? R extends { operating_resolution?: infer M } ? M : never : never) || def.operating_resolution,
+          output_format: (incoming.output_format as TemplateDoc['rembg'] extends infer R ? R extends { output_format?: infer M } ? M : never : never) || def.output_format,
+          refine_foreground: typeof incoming.refine_foreground === 'boolean' ? incoming.refine_foreground : def.refine_foreground,
+          output_mask: typeof incoming.output_mask === 'boolean' ? incoming.output_mask : def.output_mask,
+        } : def;
+        sets.push(`${f} = $${f}`);
+        params[f] = next as unknown as Record<string, unknown>;
+      } else {
+        sets.push(`${f} = $${f}`);
+        params[f] = (body as Record<string, unknown>)[f as keyof typeof body] as unknown;
+      }
     }
   }
 
