@@ -41,7 +41,6 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
         "All tools unlocked",
         "Priority updates",
         "Exclusive discounts",
-        "Livestreams access",
       ],
       comingSoon: false,
       badge: "BEST VALUE",

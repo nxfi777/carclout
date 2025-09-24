@@ -13,6 +13,9 @@ type Item = {
   label: string;
 };
 
+// Temporarily hide specific tools from the UI without removing them
+const hiddenTools: Item["id"][] = ["shape", "image"];
+
 const items: Item[] = [
   { id: "select", icon: <MousePointer2 className="size-5" />, label: "Select" },
   { id: "text", icon: <Type className="size-5" />, label: "Text" },
@@ -24,7 +27,7 @@ export default function Toolbox({ className }: { className?: string }) {
   const { state, dispatch } = useLayerEditor();
   return (
     <div className={cn("flex flex-col gap-1 p-1 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm w-12 sm:w-14", className)}>
-      {items.map((it) => {
+      {items.filter((it) => !hiddenTools.includes(it.id)).map((it) => {
         const active = state.tool === it.id;
         return (
           <Tooltip key={it.id}>

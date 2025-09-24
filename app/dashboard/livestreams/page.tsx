@@ -1,5 +1,32 @@
 'use client';
 
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+
+export default function DashboardLivestreamsPage() {
+  return (
+    <div className="p-6 flex-1 flex min-h-0 overflow-hidden">
+      <div className="w-full h-full min-h-0 flex items-center justify-center">
+        <Card className="max-w-[36rem] text-center">
+          <CardHeader>
+            <CardTitle>Livestreams</CardTitle>
+            <CardDescription>Coming soon</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              We&apos;re putting the finishing touches on livestreams. Check back again soon.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/*
+Original implementation preserved for later:
+
+'use client';
+
 import { useEffect, useState } from 'react';
 import LivestreamPanel from '@/components/livestream-panel';
 
@@ -42,5 +69,6 @@ export default function DashboardLivestreamsPage() {
     </div>
   );
 }
+*/
 
 

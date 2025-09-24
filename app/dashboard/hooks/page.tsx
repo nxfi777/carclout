@@ -1,5 +1,5 @@
 "use client";
-import { HooksTabContent } from '@/components/ui/tabs-view-fancy';
+import { HooksTabContent } from '@/components/ui/content-tabs';
 
 export default function HooksPage() {
   return (

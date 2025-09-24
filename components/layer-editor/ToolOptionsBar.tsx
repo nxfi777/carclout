@@ -37,6 +37,7 @@ export default function ToolOptionsBar({ className }: { className?: string }) {
       <TiltOptions />
       {(['select','text','shape','image'] as string[]).includes(state.tool) ? <AlignControls /> : null}
       <EffectsDropdown />
+      {state.tool === 'text' ? <TextToolHint /> : null}
     </div>
   );
 }
@@ -821,6 +822,18 @@ function EffectsDropdown() {
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function TextToolHint() {
+  return (
+    <div
+      className="ml-auto pl-3 text-xs sm:text-sm text-white/70 flex items-center whitespace-nowrap"
+      role="note"
+      aria-live="polite"
+    >
+      Double-click the canvas to add text.
+    </div>
   );
 }
 

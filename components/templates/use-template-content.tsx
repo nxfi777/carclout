@@ -658,8 +658,12 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                     toast.error("Not enough credits. Top up in Billing.");
                     return;
                   }
-                  if (res.status === 400 && (data?.error === "UPSCALE_LIMIT_6MP")) {
-                    toast.error("Upscale exceeds the 6MP limit. Try a smaller image.");
+                  if (res.status === 400 && (data?.error === "UPSCALE_AT_MAX")) {
+                    toast.error("Already at maximum resolution.");
+                    return;
+                  }
+                  if (res.status === 400 && (data?.error === "UPSCALE_DIM_OVERFLOW")) {
+                    toast.error("Upscale would exceed the 4K limit.");
                     return;
                   }
                   if (res.status === 400 && (data?.error === "ALREADY_UPSCALED")) {
@@ -677,7 +681,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                 } finally {
                   setUpscaleBusy(false);
                 }
-              }}>{upscales.length ? "Upscale again" : `Upscale (up to 6MP)${canonicalPlan(me?.plan) !== "ultra" ? " 🔒" : ""}`}</Button>
+              }}>{upscales.length ? "Upscale again" : `Upscale${canonicalPlan(me?.plan) !== "ultra" ? " 🔒" : ""}`}</Button>
               <Button className="flex-1 sm:flex-none min-w-[9rem]" onClick={async () => {
                 try {
                   const r = await fetch((activeUrl || resultUrl)!, { cache: "no-store" });
@@ -804,8 +808,10 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                     } catch {}
                   }}
                   showAnimate={!!(template?.video && (template.video as { enabled?: boolean })?.enabled)}
-                  onAnimate={async (blob)=>{
+                  onAnimate={async (getBlob)=>{
                     try {
+                      const blob = await getBlob();
+                      if (!blob) return;
                       const filename = `design-${Date.now()}.png`;
                       const file = new File([blob], filename, { type: 'image/png' });
                       const form = new FormData();
@@ -817,12 +823,13 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                       if (!key) { toast.error('Failed to prepare animation'); return; }
                       try {
                         const { estimateVideoCredits } = await import('@/lib/credits-client');
-                        const v = template?.video as { duration?: string|number; resolution?: '480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto' } | null | undefined;
+                        const v = template?.video as { duration?: string|number; resolution?: '480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5' } | null | undefined;
                         const duration = Number(v?.duration || 5);
                         const resolution = (v?.resolution || '1080p') as '480p'|'720p'|'1080p';
-                        const fps = Number(v?.fps || 24);
+                        const provider = (v?.provider === 'kling2_5') ? 'kling2_5' : 'seedance';
+                        const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
                         const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
-                        const credits = estimateVideoCredits(resolution, duration, fps, aspect);
+                        const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
                         const ok = confirm(`Animate this design into a ${duration}s video? This will use ~${credits} credits.`);
                         if (!ok) return;
                       } catch {}

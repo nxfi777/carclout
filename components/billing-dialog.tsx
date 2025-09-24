@@ -1,16 +1,44 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { estimateVideoCredits } from "@/lib/credits-client";
 
 export default function BillingDialog() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [topup, setTopup] = useState<string>("");
   const [credits, setCredits] = useState<number | null>(null);
+  const [plan, setPlan] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
+
+  // Pricing helpers for equivalence explainer
+  const GENERATION_CREDITS_PER_IMAGE = 7; // UI estimate (designer cost)
+  const UPSCALE_CREDITS_PER_UPSCALE = 1; // keep in sync with server
+  const MIN_PER_DOLLAR = 50; // Minimum plan: 250 credits for $5
+  const PRO_PER_DOLLAR = 100; // Pro plan: 500 credits for $5
+  const USD_5 = 5;
+  const kling5sCredits = useMemo(() => {
+    try {
+      return Math.max(1, estimateVideoCredits('1080p', 5, 24, 'auto', 'kling2_5'));
+    } catch {
+      // Fallback: 0.35 vendor * 1.5 markup * 100 credits per $ = 52.5 → 53
+      return 53;
+    }
+  }, []);
+  const eq = useMemo(() => {
+    const minCredits = USD_5 * MIN_PER_DOLLAR; // 250
+    const proCredits = USD_5 * PRO_PER_DOLLAR; // 500
+    const minImages = Math.floor(minCredits / GENERATION_CREDITS_PER_IMAGE);
+    const proImages = Math.floor(proCredits / GENERATION_CREDITS_PER_IMAGE);
+    const minVideos = Math.floor(minCredits / kling5sCredits);
+    const proVideos = Math.floor(proCredits / kling5sCredits);
+    const minUpscales = Math.floor(minCredits / UPSCALE_CREDITS_PER_UPSCALE);
+    const proUpscales = Math.floor(proCredits / UPSCALE_CREDITS_PER_UPSCALE);
+    return { minCredits, proCredits, minImages, proImages, minVideos, proVideos, minUpscales, proUpscales };
+  }, [kling5sCredits]);
 
   useEffect(() => {
     function onOpenBilling() {
@@ -76,6 +104,11 @@ export default function BillingDialog() {
         const c = typeof r?.credits === "number" ? Number(r.credits) : null;
         if (c != null) setCredits(c);
       } catch {}
+      // Load plan to conditionally show Go Pro button
+      try {
+        const me = await fetch('/api/me', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
+        if (mounted) setPlan((me && typeof me?.plan === 'string') ? me.plan : null);
+      } catch {}
       try {
         es = new EventSource("/api/credits/live");
         esRef.current = es;
@@ -125,7 +158,74 @@ export default function BillingDialog() {
               <input className="rounded bg-white/5 px-3 py-2 text-sm w-28" placeholder="$ Amount" value={topup} onChange={(e)=> setTopup(e.target.value)} />
               <Button disabled={loading} onClick={startTopup}>Buy credits</Button>
             </div>
-            <div className="text-xs text-white/60 mt-1">Minimum $5 per purchase. Better value on Pro.</div>
+            <div className="text-xs text-white/60 mt-2">Minimum $5 per purchase.</div>
+
+            {/* $5 equivalence explainer */}
+            <div className="mt-3 rounded bg-white/5 border border-[color:var(--border)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium mb-1">What does $5 get you?</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-white/80">
+                    <div className="rounded border border-white/10 p-2">
+                      <div className="font-medium mb-1">Minimum</div>
+                      <div className="space-y-1">
+                        <div>
+                          <span className="text-white/60">Credits:</span>
+                          <span className="ml-2 font-semibold tabular-nums">{eq.minCredits}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/60">Images:</span>
+                          <span className="ml-2 font-semibold tabular-nums">≈ {eq.minImages}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/60">Videos:</span>
+                          <span className="ml-2 font-semibold tabular-nums">≈ {eq.minVideos}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/60">Upscales:</span>
+                          <span className="ml-2 font-semibold tabular-nums">≈ {eq.minUpscales}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded border border-white/10 p-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="font-medium">Pro</div>
+                        <span className="text-[0.7rem] px-[0.6em] py-[0.2em] rounded-full border border-amber-500/40 text-amber-300/90">2x VALUE</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div>
+                          <span className="text-white/60">Credits:</span>
+                          <span className="ml-2 font-semibold tabular-nums">{eq.proCredits}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/60">Images:</span>
+                          <span className="ml-2 font-semibold tabular-nums">≈ {eq.proImages}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/60">Videos:</span>
+                          <span className="ml-2 font-semibold tabular-nums">≈ {eq.proVideos}</span>
+                        </div>
+                        <div>
+                          <span className="text-white/60">Upscales:</span>
+                          <span className="ml-2 font-semibold tabular-nums">≈ {eq.proUpscales}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="sm:ml-3 shrink-0">
+                  {plan !== 'pro' ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} }}
+                      className="whitespace-nowrap"
+                    >
+                      Go Pro
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </DialogContent>

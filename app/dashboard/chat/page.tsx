@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { DashboardWorkspacePanel } from "@/components/dashboard-workspace-panel";
 import LivestreamPanel from "@/components/livestream-panel";
 import SubscriptionGate from "@/components/subscription-gate";
-import TabsViewFancy from "@/components/ui/tabs-view-fancy";
+import ContentTabs from "@/components/ui/content-tabs";
 import Lottie from "lottie-react";
 import fireAnimation from "@/public/fire.json";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -687,7 +687,7 @@ function DashboardChatPageInner() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100dvh-6rem)]">
-        <Lottie animationData={fireAnimation} loop className="w-24 h-24 -mt-[8vh]" />
+        <Lottie animationData={fireAnimation} loop className="w-24 h-24" />
       </div>
     );
   }
@@ -914,8 +914,8 @@ function DashboardChatPageInner() {
                   </div>
                 ) : null}
                 {chatLoading ? (
-                  <div className="flex items-center justify-center py-20">
-                    <Lottie animationData={fireAnimation} loop className="w-20 h-20 mt-8" />
+                  <div className="h-full flex items-center justify-center">
+                    <Lottie animationData={fireAnimation} loop className="w-20 h-20" />
                   </div>
                 ) : (
                   active === 'request-a-feature' ? (
@@ -1071,7 +1071,7 @@ function DashboardChatPageInner() {
           {forgeView === 'forge' && (
             <div className="p-3 flex-1 flex min-h-0 overflow-hidden">
               <div className="w-full h-full min-h-0">
-                {forgeTab === 'workspace' ? <DashboardWorkspacePanel /> : <TabsViewFancy />}
+                {forgeTab === 'workspace' ? <DashboardWorkspacePanel /> : <ContentTabs />}
               </div>
             </div>
           )}

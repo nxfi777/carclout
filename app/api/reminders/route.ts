@@ -123,4 +123,39 @@ export async function POST(req: Request) {
   } : null });
 }
 
+export async function DELETE(req: Request) {
+  const session = await auth().catch(() => null);
+  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { searchParams } = new URL(req.url);
+  const idParam = searchParams.get("id");
+  if (!idParam) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+  const db = await getSurreal();
+
+  // Resolve current user's RecordId
+  const ures = await db.query("SELECT id FROM user WHERE email = $email LIMIT 1;", { email: session.user.email });
+  const urow = Array.isArray(ures) && Array.isArray(ures[0]) ? (ures[0][0] as { id?: unknown } | undefined) : undefined;
+  const idStr = toIdString(urow?.id);
+  const uid = urow?.id instanceof RecordId ? (urow.id as RecordId) : (idStr ? new RecordId("user", idStr) : undefined);
+  if (!uid) return NextResponse.json({ error: "User not found" }, { status: 404 });
+
+  // Parse reminder RecordId from string form like "reminder:xyz"
+  let rid: RecordId<string> | string = idParam;
+  try {
+    const parts = String(idParam).split(":");
+    const tb = parts[0];
+    const raw = parts.slice(1).join(":");
+    rid = new RecordId(tb as string, raw);
+  } catch {}
+
+  // Validate ownership before deletion
+  const check = await db.query("SELECT id FROM reminder WHERE id = $rid AND user = $uid LIMIT 1;", { rid, uid });
+  const found = Array.isArray(check) && Array.isArray(check[0]) ? (check[0] as Array<{ id?: unknown }>)[0] : undefined;
+  if (!found) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  await db.query("DELETE $rid;", { rid });
+
+  return NextResponse.json({ ok: true });
+}
+
 

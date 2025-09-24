@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getSurreal } from "@/lib/surrealdb";
-import { CREDITS_PER_DOLLAR, PRICE_PER_CREDIT_USD, GENERATION_CREDITS_PER_IMAGE, REMBG_CREDITS_PER_CALL, UPSCALE_CREDITS_PER_MP } from "@/lib/credits";
+import { CREDITS_PER_DOLLAR, PRICE_PER_CREDIT_USD, GENERATION_CREDITS_PER_IMAGE, REMBG_CREDITS_PER_CALL, UPSCALE_CREDITS_PER_CALL } from "@/lib/credits";
 
 type CreditTxn = {
   user?: unknown;
@@ -140,7 +140,10 @@ export async function GET(req: Request) {
       } else if (op === 'rembg') {
         costPerCreditUsd = 0.00666 / Math.max(1, REMBG_CREDITS_PER_CALL);
       } else if (op === 'upscale') {
-        costPerCreditUsd = 0.03 / Math.max(1, UPSCALE_CREDITS_PER_MP);
+        // SeedVR2 vendor cost is time-based; with flat 1 credit/user charge, estimate vendor $/credit with a 9s reference at $0.0005/s
+        const referenceSeconds = 9.01; // example: 1248x832 at 2x → ~9.01s
+        const vendorUsdPerCall = 0.0005 * referenceSeconds; // ≈ $0.004505
+        costPerCreditUsd = vendorUsdPerCall / Math.max(1, UPSCALE_CREDITS_PER_CALL);
       } else if (op.startsWith('streak_restore')) {
         costPerCreditUsd = 0; // internal, no vendor spend
       } else {

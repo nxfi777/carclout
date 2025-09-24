@@ -139,13 +139,16 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         const url: string | null = await getViewUrl(key, scope);
         if (url) {
           const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img=new window.Image(); img.onload=()=> resolve({ w: img.naturalWidth||img.width, h: img.naturalHeight||img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
+          // Hide/do not attempt if already at or beyond 4K
+          if (dims && ((dims.w >= 3840) || (dims.h >= 2160))) { toast.error('Already at maximum resolution.'); return; }
           if (dims && dims.w>0 && dims.h>0) { payload = { r2_key: key, original_width: dims.w, original_height: dims.h }; }
         }
       } catch {}
       const res = await fetch('/api/tools/upscale', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json().catch(()=>({}));
       if (res.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
-      if (res.status === 400 && (data?.error === 'UPSCALE_LIMIT_6MP')) { toast.error('Upscale exceeds the 6MP limit. Try a smaller image.'); return; }
+      if (res.status === 400 && (data?.error === 'UPSCALE_AT_MAX')) { toast.error('Already at maximum resolution.'); return; }
+      if (res.status === 400 && (data?.error === 'UPSCALE_DIM_OVERFLOW')) { toast.error('Upscale would exceed the 4K limit.'); return; }
       if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { toast.error('This image was already upscaled. Use the original.'); return; }
       if (!res.ok || !data?.key) { toast.error(data?.error || 'Upscale failed'); return; }
       toast.success('Upscaled image saved to /library');
@@ -1454,11 +1457,11 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                             {it.type==='file' && /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(it.name) ? (
                               <>
                                 <ContextMenuItem onSelect={()=>{ const key = it.key || `${path ? `${path}/` : ''}${it.name}`; setDesignKey(key); setDesignOpen(true); }}>Open in Designer</ContextMenuItem>
-                                <ContextMenuItem onSelect={async()=>{
+                                  <ContextMenuItem onSelect={async()=>{
                                   if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
                                   const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
                                   await doUpscale(key);
-                                }}>{`Upscale (up to 6MP)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</ContextMenuItem>
+                                  }}>{`Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</ContextMenuItem>
                               </>
                             ) : null}
                             {!isReservedHooksRoot ? (
@@ -1569,7 +1572,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                     if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
                                     const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
                                     await doUpscale(key);
-                                  }}>{`Upscale (up to 6MP)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</ContextMenuItem>
+                                  }}>{`Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</ContextMenuItem>
                                 </>
                               ) : null}
                               {!isReservedHooksRoot ? (
@@ -1609,7 +1612,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                 {previewVariants.length > 1 ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button size="sm" variant="outline">{previewVariants[activePreviewVariantIndex]?.name || 'Original'}</Button>
+                      <Button size="sm" variant="outline">{previewVariants[activePreviewVariantIndex]?.name || 'Original'}<span className="ml-1 opacity-80">▾</span></Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="min-w-40">
                       {previewVariants.map((v, idx) => (
@@ -1644,7 +1647,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                 if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
                 if (!preview?.key) return;
                 await doUpscale(preview.key);
-              }}>{`Upscale (up to 6MP)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</Button>
+              }}>{`Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</Button>
               </div>
             </div>
           </div>
@@ -1665,10 +1668,12 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                 saveLabel={path==='vehicles' ? 'Save (choose folder)' : 'Save to workspace'}
                 onReplaceBgKey={(newKey)=>{ try { if (newKey) { setDesignKey(newKey); } } catch {} }}
                 showAnimate={(() => { try { const name = (designKey || '').split('/').pop() || ''; return /^[0-9T\-:.]+-[a-z0-9\-]+/i.test(name); } catch { return false; } })()}
-                onAnimate={async (blob)=>{
+                onAnimate={async (getBlob)=>{
                   try {
                     if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
                     // Upload current canvas to workspace as start frame
+                    const blob = await getBlob();
+                    if (!blob) return;
                     const filename = `design-${Date.now()}.png`;
                     const file = new File([blob], filename, { type: 'image/png' });
                     const form = new FormData(); form.append('file', file, filename); form.append('path', 'library');

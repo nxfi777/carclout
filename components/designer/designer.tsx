@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
+import ElectricBorder from "@/components/electric-border";
 import carLoadAnimation from "@/public/carload.json";
 import { LayerEditorProvider } from "@/components/layer-editor/LayerEditorProvider";
 import LayerEditorShell from "@/components/layer-editor/LayerEditorShell";
@@ -20,7 +21,19 @@ type RembgConfig = {
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-export function Designer({ bgKey, rembg, defaultHeadline, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate }: { bgKey: string; rembg?: RembgConfig; defaultHeadline?: string; onClose?: () => void; onSave?: (blob: Blob) => Promise<void> | void; saveLabel?: string; aspectRatio?: number; onReplaceBgKey?: (newKey: string, newUrl?: string) => void; onTryAgain?: () => void; showAnimate?: boolean; onAnimate?: (blob: Blob) => Promise<void> | void; }){
+function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate }: {
+  bgKey: string;
+  rembg?: RembgConfig;
+  defaultHeadline?: string;
+  onClose?: () => void;
+  onSave?: (blob: Blob) => Promise<void> | void;
+  saveLabel?: string;
+  aspectRatio?: number;
+  onReplaceBgKey?: (newKey: string, newUrl?: string) => void;
+  onTryAgain?: () => void;
+  showAnimate?: boolean;
+  onAnimate?: (getBlob: () => Promise<Blob | null>) => Promise<void> | void;
+}){
   const [busy, setBusy] = useState(true);
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const [fgUrl, setFgUrl] = useState<string | null>(null);
@@ -126,6 +139,8 @@ export function Designer({ bgKey, rembg, defaultHeadline, onClose, onSave, saveL
       const res = await fetch('/api/tools/upscale', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json().catch(()=>({}));
       if (res.status === 402) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Not enough credits.'); } catch {} setUpscaling(false); return; }
+      if (res.status === 400 && (data?.error === 'UPSCALE_AT_MAX')) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Already at maximum resolution.'); } catch {} setUpscaling(false); return; }
+      if (res.status === 400 && (data?.error === 'UPSCALE_DIM_OVERFLOW')) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Upscale would exceed the 4K limit.'); } catch {} setUpscaling(false); return; }
       if (!res.ok || !data?.key) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.(String((data as { error?: string })?.error || 'Upscale failed')); } catch {} setUpscaling(false); return; }
       if (typeof onReplaceBgKey === 'function') {
         try { onReplaceBgKey(String(data.key), typeof data?.url === 'string' ? String(data.url) : undefined); } catch {}
@@ -156,25 +171,29 @@ export function Designer({ bgKey, rembg, defaultHeadline, onClose, onSave, saveL
         <LayerEditorShell />
           <div className={`pt-2 flex flex-wrap items-center ${onTryAgain ? 'justify-between' : 'justify-end'} gap-2`}>
             {onTryAgain ? (
-              <Button className="w-full sm:w-auto" variant="outline" onClick={onTryAgain}>Try again</Button>
+              <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={onTryAgain}>Try again</Button>
             ) : null}
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button className="w-full sm:w-auto" variant="outline" onClick={upscaleBackground} disabled={upscaling}>
-                {upscaling ? 'Upscaling…' : 'Upscale background'}
-              </Button>
               {showAnimate ? (
-                <Button className="w-full sm:w-auto" variant="secondary" onClick={async()=>{
-                  try {
-                    const blob = await exportCompositeBlob();
-                    if (!blob) return;
-                    if (typeof onAnimate === 'function') await onAnimate(blob);
-                  } catch {}
-                }}>Animate</Button>
+                <ElectricBorder color="#ff6a00" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
+                  <Button type="button" className="w-full sm:w-auto" variant="secondary" onClick={async()=>{
+                    try {
+                      if (typeof onAnimate === 'function') {
+                        await onAnimate(exportCompositeBlob);
+                      }
+                    } catch {}
+                  }}>Animate</Button>
+                </ElectricBorder>
               ) : null}
+              <ElectricBorder color="#ff6a00" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
+                <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={upscaleBackground} disabled={upscaling}>
+                  {upscaling ? 'Upscaling…' : 'Upscale'}
+                </Button>
+              </ElectricBorder>
               {onSave ? (
-                <Button className="w-full sm:w-auto" disabled={saving} onClick={saveComposite}>{saveLabel || 'Save'}</Button>
+                <Button type="button" className="w-full sm:w-auto" disabled={saving} onClick={saveComposite}>{saveLabel || 'Save'}</Button>
               ) : null}
-              <Button className="w-full sm:w-auto" onClick={downloadComposite} disabled={downloading}>
+              <Button type="button" className="w-full sm:w-auto" onClick={downloadComposite} disabled={downloading}>
                 {downloading ? 'Downloading…' : 'Download'}
               </Button>
             </div>
@@ -183,6 +202,25 @@ export function Designer({ bgKey, rembg, defaultHeadline, onClose, onSave, saveL
     </div>
   );
 }
+
+export const Designer = React.memo(DesignerComponent, (prevProps, nextProps) => {
+  // Custom comparison to prevent re-renders when props haven't actually changed
+  return (
+    prevProps.bgKey === nextProps.bgKey &&
+    JSON.stringify(prevProps.rembg) === JSON.stringify(nextProps.rembg) &&
+    prevProps.defaultHeadline === nextProps.defaultHeadline &&
+    prevProps.onClose === nextProps.onClose &&
+    prevProps.onSave === nextProps.onSave &&
+    prevProps.saveLabel === nextProps.saveLabel &&
+    prevProps.aspectRatio === nextProps.aspectRatio &&
+    prevProps.onReplaceBgKey === nextProps.onReplaceBgKey &&
+    prevProps.onTryAgain === nextProps.onTryAgain &&
+    prevProps.showAnimate === nextProps.showAnimate &&
+    prevProps.onAnimate === nextProps.onAnimate
+  );
+});
+
+Designer.displayName = 'Designer';
 
 export default Designer;
 

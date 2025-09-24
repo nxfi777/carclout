@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { STREAK_RESTORE_CREDITS_PER_DAY } from '@/lib/credits';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { getViewUrl } from '@/lib/view-url-client';
+import { Trash2 } from 'lucide-react';
 
 type StreakPoint = { day: string; value: number };
 
@@ -177,6 +178,9 @@ function DashboardHomePageInner() {
   const [caption, setCaption] = useState('');
   const [title, setTitle] = useState('Post on Instagram');
   const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -206,6 +210,28 @@ function DashboardHomePageInner() {
     const h = (name || '').trim().replace(/^@+/, '');
     if (!h) { window.open('https://instagram.com', '_blank', 'noopener,noreferrer'); return; }
     window.open(`https://instagram.com/${encodeURIComponent(h)}`, '_blank', 'noopener,noreferrer');
+  }
+
+  function requestDeleteReminder(id?: string) {
+    if (!id) return;
+    setDeletingId(id);
+    setConfirmOpen(true);
+  }
+
+  async function confirmDeleteReminder() {
+    if (!deletingId) { setConfirmOpen(false); return; }
+    setDeleteBusy(true);
+    try {
+      const res = await fetch(`/api/reminders?id=${encodeURIComponent(deletingId)}`, { method: 'DELETE' });
+      const json = await res.json().catch(()=>({}));
+      if (!res.ok) { toast.error(json?.error || 'Failed to delete'); return; }
+      setReminders((prev)=> prev.filter((r)=> r.id !== deletingId));
+      toast.success('Reminder deleted');
+      setConfirmOpen(false);
+      setDeletingId(null);
+    } finally {
+      setDeleteBusy(false);
+    }
   }
 
   return (
@@ -284,7 +310,12 @@ function DashboardHomePageInner() {
             <div className="space-y-2">
               {reminders.length ? reminders.map((r)=> (
                 <div key={r.id} className="rounded border border-[color:var(--border)] p-3">
-                  <div className="text-sm font-medium">{r.title || 'Reminder'}</div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-sm font-medium">{r.title || 'Reminder'}</div>
+                    <Button variant="ghost" size="icon" aria-label="Delete reminder" onClick={()=>requestDeleteReminder(r.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                   <div className="text-xs text-white/70">{(function(){
                     const raw = r.scheduled_at || '';
                     try {
@@ -308,6 +339,20 @@ function DashboardHomePageInner() {
                 <div className="text-sm text-white/60">No reminders yet.</div>
               )}
             </div>
+            <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete reminder?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={confirmDeleteReminder} disabled={deleteBusy}>{deleteBusy ? 'Deleting…' : 'Delete'}</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       </section>

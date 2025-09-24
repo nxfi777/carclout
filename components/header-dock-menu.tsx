@@ -1,10 +1,10 @@
 'use client';
 
 import React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Menu, Home, Play, LayoutTemplate, Music2, MessagesSquare, Folder, Radio, Megaphone, Wrench, Lock } from 'lucide-react';
+import { Menu, Home, Play, LayoutTemplate, Music2, MessagesSquare, Folder, Megaphone, Wrench } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 type DockItem = {
@@ -16,24 +16,12 @@ type DockItem = {
 
 export default function HeaderDockMenu() {
   const [open, setOpen] = useState(false);
-  const [plan, setPlan] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
+  
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const me = await fetch('/api/me', { cache: 'no-store' }).then(r=>r.json());
-        if (!alive) return;
-        setPlan((me?.plan as string | null | undefined) || null);
-        setRole((me?.role as string | null | undefined) || null);
-      } catch {}
-    })();
-    return () => { alive = false; };
-  }, []);
+  
 
   const mode: 'dashboard' | 'admin' | null = useMemo(() => {
     if (!pathname) return null;
@@ -52,26 +40,6 @@ export default function HeaderDockMenu() {
         { icon: <MessagesSquare size={16} />, label: 'Chat', href: '/dashboard/chat', onClick: () => router.push('/dashboard/chat') },
         { icon: <Folder size={16} />, label: 'Workspace', href: '/dashboard/workspace', onClick: () => router.push('/dashboard/workspace') },
       ];
-      // Livestreams (locked on non-pro, admins bypass)
-      const isUnlocked = (plan === 'pro') || (role === 'admin');
-      arr.splice(6, 0, {
-        icon: (
-          <div className="relative">
-            <Radio size={16} />
-            {!isUnlocked ? (
-              <span aria-hidden className="absolute -bottom-1.5 -right-1.5 inline-flex items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)]/90" style={{ width: '0.9rem', height: '0.9rem' }}>
-                <Lock className="opacity-80" style={{ width: '0.6rem', height: '0.6rem' }} />
-              </span>
-            ) : null}
-          </div>
-        ),
-        label: isUnlocked ? 'Livestreams' : 'Livestreams 🔒',
-        href: isUnlocked ? '/dashboard/livestreams' : undefined,
-        onClick: () => {
-          if (isUnlocked) { router.push('/dashboard/livestreams'); return; }
-          try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
-        }
-      });
       return arr;
     }
     if (mode === 'admin') {
@@ -90,7 +58,7 @@ export default function HeaderDockMenu() {
       ];
     }
     return [];
-  }, [mode, router, searchParams, plan, role]);
+  }, [mode, router, searchParams]);
 
   if (!mode) return null;
 

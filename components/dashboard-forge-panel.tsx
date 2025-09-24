@@ -1,7 +1,7 @@
 "use client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DashboardWorkspacePanel } from "@/components/dashboard-workspace-panel";
-import TabsViewFancy from "@/components/ui/tabs-view-fancy";
+import ContentTabs from "@/components/ui/content-tabs";
 import { Separator } from "@/components/ui/separator";
 
 export function DashboardForgePanel() {
@@ -26,7 +26,7 @@ export function DashboardForgePanel() {
             <DashboardWorkspacePanel />
           </TabsContent>
           <TabsContent value="content" className="h-full">
-            <TabsViewFancy />
+            <ContentTabs />
           </TabsContent>
         </div>
       </Tabs>

@@ -8,6 +8,8 @@ import FooterGate from "@/components/footer-gate";
 import { Toaster } from "@/components/ui/sonner";
 import SessionProviderWrapper from "@/components/session-provider";
 
+export const dynamic = "force-dynamic";
+
 const roboto = Roboto({
   variable: "--font-geist-sans",
   subsets: ["latin"],

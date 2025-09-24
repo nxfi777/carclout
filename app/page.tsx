@@ -42,7 +42,7 @@ export default async function Home() {
               <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Personal Workspace</li>
               <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Templates</li>
               <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Hooks</li>
-              <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Livestreams</li>
+              {/* Livestreams temporarily hidden */}
               <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Community</li>
               <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Tutorials</li>
               <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Photography</li>
@@ -60,7 +60,7 @@ export default async function Home() {
             <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Personal Workspace</li>
             <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Templates</li>
             <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Hooks</li>
-            <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Livestreams</li>
+            {/* Livestreams temporarily hidden */}
             <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Community</li>
             <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Tutorials</li>
             <li className="flex items-center gap-[0.5rem]"><span className="inline-block h-[0.35rem] w-[0.35rem] rounded-full bg-[color:var(--primary)]"></span>Photography</li>

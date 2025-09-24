@@ -2,6 +2,7 @@
 
 export type VideoResolution = '480p' | '720p' | '1080p';
 export type VideoAspectRatio = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16' | 'auto';
+export type VideoProvider = 'seedance' | 'kling2_5';
 
 export const PRICE_PER_CREDIT_USD = 0.01; // 1 credit = $0.01
 export const CREDITS_PER_DOLLAR = Math.round(1 / PRICE_PER_CREDIT_USD); // 100
@@ -58,8 +59,13 @@ export function estimateVideoVendorUsd(
   resolution: VideoResolution,
   durationSeconds: number,
   fps: number = DEFAULT_VIDEO_FPS,
-  aspect: VideoAspectRatio = 'auto'
+  aspect: VideoAspectRatio = 'auto',
+  provider: VideoProvider = 'seedance'
 ): number {
+  if (provider === 'kling2_5') {
+    const blocks = Math.max(1, Math.ceil(Math.max(1, Math.round(durationSeconds)) / 5));
+    return Math.max(0, 0.35 * blocks);
+  }
   const tokens = estimateVideoTokens(resolution, durationSeconds, fps, aspect);
   return Math.max(0, (tokens / 1_000_000) * VIDEO_VENDOR_USD_PER_MILLION_TOKENS);
 }
@@ -68,9 +74,10 @@ export function estimateVideoCredits(
   resolution: VideoResolution,
   durationSeconds: number,
   fps: number = DEFAULT_VIDEO_FPS,
-  aspect: VideoAspectRatio = 'auto'
+  aspect: VideoAspectRatio = 'auto',
+  provider: VideoProvider = 'seedance'
 ): number {
-  const usd = estimateVideoVendorUsd(resolution, durationSeconds, fps, aspect) * VIDEO_MARKUP_MULTIPLIER;
+  const usd = estimateVideoVendorUsd(resolution, durationSeconds, fps, aspect, provider) * VIDEO_MARKUP_MULTIPLIER;
   const credits = Math.ceil(usd * CREDITS_PER_DOLLAR);
   return Math.max(1, credits);
 }

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import NextImage from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -25,8 +25,8 @@ import { TemplateCard } from '@/components/templates/template-card';
 import { DropZone } from '@/components/ui/drop-zone';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { confirmToast } from '@/components/ui/toast-helpers';
-import { Separator } from '@/components/ui/separator';
 import { getViewUrl, getViewUrls } from '@/lib/view-url-client';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
  
 
 export function HooksTabContent() {
@@ -386,7 +386,7 @@ function MobileHooksSkeleton(){
 }
 // extractFirstFrame not used; remove to satisfy unused warnings
 
-export default function TabsViewFancy() {
+export default function ContentTabs() {
   const [activeTab, setActiveTab] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -526,6 +526,7 @@ type Template = {
     aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
     camera_fixed?: boolean;
     fps?: number;
+    provider?: 'seedance'|'kling2_5';
   } | null;
 };
 
@@ -568,13 +569,14 @@ export function TemplatesTabContent(){
   // Video animation modal state
   const [animConfirmOpen, setAnimConfirmOpen] = useState(false);
   const [animBusy, setAnimBusy] = useState(false);
-  const [animStartKey, setAnimStartKey] = useState<string | null>(null);
   const [animCredits, setAnimCredits] = useState<number | undefined>(undefined);
   const [animResultUrl, setAnimResultUrl] = useState<string | null>(null);
   const [animResultKey, setAnimResultKey] = useState<string | null>(null);
   const [animLoading, setAnimLoading] = useState(false);
   const sessionRef = useRef<number>(0);
   const deeplinkedRef = useRef<boolean>(false);
+  const animPendingBlobRef = useRef<Blob | null>(null);
+  const [animHasPending, setAnimHasPending] = useState(false);
 
   // Reset generated output/designer state when switching templates or closing the dialog
   function resetTemplateSession() {
@@ -595,7 +597,8 @@ export function TemplatesTabContent(){
       // Reset animation session state
       setAnimConfirmOpen(false);
       setAnimBusy(false);
-      setAnimStartKey(null);
+      animPendingBlobRef.current = null;
+      setAnimHasPending(false);
       setAnimCredits(undefined);
       setAnimResultUrl(null);
       setAnimResultKey(null);
@@ -701,6 +704,7 @@ export function TemplatesTabContent(){
                   aspect_ratio: typeof v?.aspect_ratio === 'string' ? (v?.aspect_ratio as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto') : undefined,
                   camera_fixed: !!(v as { camera_fixed?: unknown })?.camera_fixed,
                   fps: ((): number | undefined => { const n = Number((v as { fps?: unknown })?.fps); return Number.isFinite(n) && n>0 ? Math.round(n) : undefined; })(),
+                  provider: (v as { provider?: unknown })?.provider as 'seedance'|'kling2_5' | undefined,
                 };
               }
               return null;
@@ -887,7 +891,7 @@ export function TemplatesTabContent(){
     </div>
   );
 
-  async function saveDesignToGenerations(blob: Blob) {
+  const saveDesignToGenerations = useCallback(async (blob: Blob) => {
     try {
       const filename = `design-${Date.now()}.png`;
       const file = new File([blob], filename, { type: 'image/png' });
@@ -904,7 +908,7 @@ export function TemplatesTabContent(){
       // Clear selected images so next use starts fresh
       setSelectedImageKeys([]);
     } catch {}
-  }
+  }, []);
 
   async function handleUploadFiles(files: File[]) {
     const arr = Array.isArray(files) ? files : (files as unknown as File[]);
@@ -946,13 +950,60 @@ export function TemplatesTabContent(){
 
   // Build dynamic variable fields from template
   const activeTemplate = useMemo(()=> items.find((t)=> t.id === active?.id || t.slug === active?.slug), [items, active]);
+  
+  // Stable callbacks for Designer component
+  const handleDesignerClose = useCallback(() => {
+    setDesignOpen(false);
+    setSelectedImageKeys([]);
+  }, []);
+
+  const handleDesignerTryAgain = useCallback(() => {
+    try {
+      setDesignOpen(false);
+      setResultUrl(null);
+    } catch {}
+  }, []);
+
+  const handleDesignerReplaceBgKey = useCallback((newKey: string, newUrl?: string) => {
+    try {
+      if (newKey) {
+        setActiveKey(newKey);
+        if (newUrl) setActiveUrl(newUrl);
+      }
+    } catch {}
+  }, []);
+
+  const handleDesignerAnimate = useCallback(async (getBlob: () => Promise<Blob | null>) => {
+    try {
+      if (canonicalPlan(me?.plan) !== 'ultra') {
+        try {
+          window.dispatchEvent(new CustomEvent('open-pro-upsell'));
+        } catch {}
+        return;
+      }
+      setAnimConfirmOpen(true);
+      setAnimCredits(undefined as unknown as number);
+      setAnimResultUrl(null);
+      setAnimResultKey(null);
+      const blob = await getBlob();
+      if (!blob) {
+        setAnimConfirmOpen(false);
+        return;
+      }
+      animPendingBlobRef.current = blob;
+      setAnimHasPending(true);
+    } catch {}
+  }, [me?.plan]);
+
   useEffect(()=>{
     const srcs: Array<'vehicle'|'user'> = Array.isArray(activeTemplate?.allowedImageSources) ? (activeTemplate!.allowedImageSources as Array<'vehicle'|'user'>) : ['vehicle','user'];
-    if (srcs.includes('vehicle')) setSource('vehicle'); else setSource('upload');
+    if (srcs.includes('vehicle')) { setSource('vehicle'); setImageTab('vehicles'); }
+    else { setSource('upload'); setImageTab('upload'); }
     try { const n = Number((activeTemplate as { maxUploadImages?: number } | undefined)?.maxUploadImages || 1); setRequiredImages(Number.isFinite(n) && n>0 ? Math.max(1, Math.floor(n)) : 1); } catch { setRequiredImages(1); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTemplate?.id, activeTemplate?.slug]);
   const [varState, setVarState] = useState<Record<string, string>>({});
+  const [imageTab, setImageTab] = useState<'vehicles'|'upload'|'workspace'>('vehicles');
   useEffect(()=>{
     setVarState({});
   }, [open, active?.id, active?.slug]);
@@ -1323,7 +1374,7 @@ export function TemplatesTabContent(){
               ) : animResultUrl ? (
                 <div className="space-y-3">
                   <div className="w-full grid place-items-center">
-                    <video src={animResultUrl} controls autoPlay muted playsInline className="rounded bg-black w-auto max-w-full sm:max-w-[48rem] max-h-[56vh] h-auto object-contain" />
+                    <video src={animResultUrl} controls autoPlay loop muted playsInline className="rounded bg-black w-auto max-w-full sm:max-w-[48rem] max-h-[56vh] h-auto object-contain" />
                     <div className="text-xs text-white/70 mt-2">Saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="underline">/library</a></div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1362,67 +1413,94 @@ export function TemplatesTabContent(){
                     bgKey={String((activeKey || resultKey) || '')}
                     rembg={{ enabled: true }}
                     defaultHeadline={(findVehicleForSelected()?.make || '').toUpperCase()}
-                    onClose={()=> { setDesignOpen(false); setSelectedImageKeys([]); }}
-                    onTryAgain={()=>{ try { setDesignOpen(false); setResultUrl(null); } catch {} }}
+                    onClose={handleDesignerClose}
+                    onTryAgain={handleDesignerTryAgain}
                     onSave={saveDesignToGenerations}
                     saveLabel={'Save to workspace'}
                     aspectRatio={typeof activeTemplate?.aspectRatio === 'number' ? Number(activeTemplate.aspectRatio) : undefined}
-                    onReplaceBgKey={(newKey, newUrl)=>{ try { if (newKey) { setActiveKey(newKey); if (newUrl) setActiveUrl(newUrl); } } catch {} }}
+                    onReplaceBgKey={handleDesignerReplaceBgKey}
                     showAnimate={!!(activeTemplate?.video && (activeTemplate.video as { enabled?: boolean } | null | undefined)?.enabled)}
-                    onAnimate={async (blob)=>{
-                      try {
-                        if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
-                        // Upload start frame
-                        const filename = `design-${Date.now()}.png`;
-                        const file = new File([blob], filename, { type: 'image/png' });
-                        const form = new FormData(); form.append('file', file, filename); form.append('path', 'library');
-                        const up = await fetch('/api/storage/upload', { method: 'POST', body: form });
-                        const dj = await up.json().catch(()=>({}));
-                        const key = typeof dj?.key === 'string' ? String(dj.key) : '';
-                        if (!key) { toast.error('Failed to prepare animation'); return; }
-                        // Precompute credits and open confirm modal
-                        try {
-                          const { estimateVideoCredits } = await import('@/lib/credits-client');
-                          const v = activeTemplate?.video as { duration?: string|number; resolution?: '480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto' } | null | undefined;
-                          const duration = Number(v?.duration || 5);
-                          const resolution = (v?.resolution || '1080p') as '480p'|'720p'|'1080p';
-                          const fps = Number(v?.fps || 24);
-                          const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
-                          const credits = estimateVideoCredits(resolution, duration, fps, aspect);
-                          setAnimCredits(credits);
-                        } catch { setAnimCredits(undefined as unknown as number); }
-                        setAnimStartKey(key);
-                        setAnimConfirmOpen(true);
-                      } catch {}
-                    }}
+                    onAnimate={handleDesignerAnimate}
                   />
                   {/* Animate confirm modal */}
-                  <Dialog open={animConfirmOpen} onOpenChange={(o)=>{ if (!o && !animBusy) { setAnimConfirmOpen(false); setAnimStartKey(null); setAnimCredits(undefined); } }}>
-                    <DialogContent className="max-w-md">
+                  <Dialog open={animConfirmOpen} onOpenChange={(o)=>{
+                    if (!o) {
+                      if (animBusy) {
+                        return;
+                      }
+                      setAnimConfirmOpen(false);
+                      animPendingBlobRef.current = null;
+                      setAnimHasPending(false);
+                      setAnimCredits(undefined);
+                    }
+                  }}>
+                    <DialogContent
+                      className="max-w-md"
+                    >
                       <DialogHeader>
                         <DialogTitle>Animate this design?</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-3">
                         <div className="text-sm text-white/80">Generate a short video from your current canvas. The video will be auto-saved to /library.</div>
+                        {animBusy ? (
+                          <div className="text-xs text-white/60">Preparing start frame…</div>
+                        ) : null}
                         {typeof animCredits === 'number' ? (
                           <div className="text-xs text-white/70">Estimated credits: <span className="font-medium text-white/90">{animCredits}</span></div>
                         ) : null}
                       </div>
                       <DialogFooter>
-                        <Button variant="outline" onClick={()=>{ setAnimConfirmOpen(false); }}>Cancel</Button>
-                        <Button disabled={!animStartKey} onClick={async()=>{
-                          if (!animStartKey) return;
-                          // Close modal and show loading state in designer
-                          setAnimConfirmOpen(false);
-                          setAnimLoading(true);
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={()=>{
+                            if (animBusy) return;
+                            animPendingBlobRef.current = null;
+                            setAnimHasPending(false);
+                            setAnimConfirmOpen(false);
+                          }}
+                          disabled={animBusy}
+                        >
+                          Cancel
+                        </Button>
+                        <Button type="button" disabled={!animHasPending || animBusy || animLoading} onClick={async()=>{
+                          if (!animHasPending || !animPendingBlobRef.current) return;
+                          setAnimBusy(true);
                           try {
-                            const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: active?.id, templateSlug: active?.slug, startKey: animStartKey }) });
+                            const filename = `design-${Date.now()}.png`;
+                            const file = new File([animPendingBlobRef.current], filename, { type: 'image/png' });
+                            const form = new FormData(); form.append('file', file, filename); form.append('path', 'library');
+                            const up = await fetch('/api/storage/upload', { method: 'POST', body: form });
+                            const dj = await up.json().catch(()=>({}));
+                            const startKey = typeof dj?.key === 'string' ? String(dj.key) : '';
+                            if (!startKey) { toast.error('Failed to prepare animation'); return; }
+
+                            try {
+                              const { estimateVideoCredits } = await import('@/lib/credits-client');
+                              const v = activeTemplate?.video as { duration?: string|number; resolution?: '480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5' } | null | undefined;
+                              const duration = Number(v?.duration || 5);
+                              const resolution = (v?.resolution || '1080p') as '480p'|'720p'|'1080p';
+                              const provider = (v?.provider === 'kling2_5') ? 'kling2_5' : 'seedance';
+                              const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
+                              const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+                              const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
+                              setAnimCredits(credits);
+                            } catch { setAnimCredits(undefined as unknown as number); }
+
+                            setAnimConfirmOpen(false);
+                            setAnimLoading(true);
+                            const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: active?.id, templateSlug: active?.slug, startKey }) });
                             const out = await resp.json().catch(()=>({}));
                             if (resp.status === 402) { toast.error('Not enough credits. Top up in Billing.'); setAnimLoading(false); return; }
                             if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); setAnimLoading(false); return; }
                             setAnimResultUrl(String(out.url));
                             if (typeof out?.key === 'string') setAnimResultKey(String(out.key));
-                          } finally { setAnimLoading(false); }
+                          } finally {
+                            setAnimLoading(false);
+                            setAnimBusy(false);
+                            animPendingBlobRef.current = null;
+                            setAnimHasPending(false);
+                          }
                         }}>Generate</Button>
                       </DialogFooter>
                     </DialogContent>
@@ -1462,7 +1540,8 @@ export function TemplatesTabContent(){
                       const res = await fetch('/api/tools/upscale', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payloadObj) });
                       const data = await res.json().catch(()=>({}));
                       if (res.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
-                      if (res.status === 400 && (data?.error === 'UPSCALE_LIMIT_6MP')) { toast.error('Upscale exceeds the 6MP limit. Try a smaller image.'); return; }
+                      if (res.status === 400 && (data?.error === 'UPSCALE_AT_MAX')) { toast.error('Already at maximum resolution.'); return; }
+                      if (res.status === 400 && (data?.error === 'UPSCALE_DIM_OVERFLOW')) { toast.error('Upscale would exceed the 4K limit.'); return; }
                       if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { toast.error('This image was already upscaled. Use the original.'); return; }
                       if (!res.ok || !data?.url || !data?.key) { toast.error(data?.error || 'Upscale failed'); return; }
                       const entry = { key: String(data.key), url: String(data.url) };
@@ -1470,7 +1549,7 @@ export function TemplatesTabContent(){
                       setActiveKey(entry.key);
                       setActiveUrl(entry.url);
                     } finally { setUpscaleBusy(false); }
-                  }}>{upscales.length ? 'Upscale again' : `Upscale (up to 6MP)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                  }}>{upscales.length ? 'Upscale again' : `Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
                   </Button>
                   <Button className="flex-1 sm:flex-none min-w-[9rem]" onClick={async()=>{
                   try {
@@ -1580,190 +1659,219 @@ export function TemplatesTabContent(){
                   );
                 })()}
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div />
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
-                      <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="text-base">
-                        {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}
-                      </Button>
-                      {selectedImageKeys.length >= requiredImages ? (
-                        <span className="text-xs text-white/70 whitespace-nowrap">Costs 7 credits</span>
-                      ) : null}
-                    </div>
-                  </div>
+                <div className="space-y-4">
+                  {(() => {
+                    const allowSrcs = (Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']);
+                    const allowVehicle = allowSrcs.includes('vehicle');
+                    const allowUser = allowSrcs.includes('user');
+                    return (
+                      <Tabs
+                        value={(() => {
+                          // Normalize current tab if disabled by template
+                          if (!allowUser && (imageTab === 'upload' || imageTab === 'workspace')) return 'vehicles';
+                          if (!allowVehicle && imageTab === 'vehicles') return 'upload';
+                          return imageTab;
+                        })()}
+                        onValueChange={(v)=>{ setImageTab(v as 'vehicles'|'upload'|'workspace'); setSource(v === 'vehicles' ? 'vehicle' : 'upload'); }}
+                        className="w-full"
+                      >
+                        <TabsList className="bg-transparent p-0 gap-2">
+                          {allowVehicle ? (
+                            <TabsTrigger value="vehicles" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">Vehicles</TabsTrigger>
+                          ) : null}
+                          {allowUser ? (
+                            <TabsTrigger value="upload" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">Upload</TabsTrigger>
+                          ) : null}
+                          {allowUser ? (
+                            <TabsTrigger value="workspace" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">Workspace</TabsTrigger>
+                          ) : null}
+                        </TabsList>
 
-                  {(Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']).includes('vehicle') ? (
-                    <div className="space-y-2">
-                      {profileVehicles.length ? (
-                        <div className="flex items-center gap-2">
-                          <div className="text-xs text-white/70">Vehicle</div>
-                          <Select value={(() => { const v = findVehicleForSelected(); if (!v) return ''; const i = profileVehicles.indexOf(v); return String(i); })()} onValueChange={(v)=>{
-                            const idx = parseInt(v);
-                            const vobj = profileVehicles[idx];
-                            if (!vobj) return;
-                            const slug = uniqueSlugForIndex(profileVehicles, idx);
-                            const first = vehiclePhotos.find(k=> (k||'').includes(`/vehicles/${slug}/`)) || null;
-                            setSelectedVehicleKey(first);
-                          }}>
-                            <SelectTrigger className="h-9 w-56"><SelectValue placeholder="Select vehicle" /></SelectTrigger>
-                            <SelectContent>
-                              {profileVehicles.map((v, i)=> (
-                                <SelectItem key={`${v.make}-${v.model}-${i}`} value={String(i)}>{v.make} {v.model} ({v.type})</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-xs text-white/70">
-                          No vehicles found.
-                          <Button size="sm" variant="secondary" onClick={()=>{ try { window.dispatchEvent(new CustomEvent('open-profile')); setTimeout(()=>{ try { window.dispatchEvent(new CustomEvent('highlight-vehicles')); } catch {} }, 300); } catch {} }}>Add vehicle</Button>
-                        </div>
-                      )}
-                      <div className="overflow-visible sm:overflow-x-auto">
-                        <div className="flex flex-wrap gap-3 pb-2">
-                          {vehiclePhotos.length ? vehiclePhotos.map((k)=> (
-                              <button key={k} onClick={()=>{ setSelectedVehicleKey(k); toggleSelect(k); }} className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
-                              <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(k) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
-                                <div className="rounded overflow-hidden relative bg-black/20">
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img src={(() => { try { const c = typeof window!== 'undefined' ? sessionStorage.getItem(`ignite:veh:${k}`) : null; if (c) { const obj = JSON.parse(c) as { url?: string }; if (obj?.url) return obj.url; } } catch {} return ''; })()} alt="vehicle" className="w-full h-auto object-contain cursor-pointer" />
-                              <span className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`} onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSelectedVehicleKey(k); toggleSelect(k); }}>
-                                    <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
-                                      {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
-                                    </motion.span>
-                                  </span>
-                                </div>
+                        {allowVehicle ? (
+                          <TabsContent value="vehicles" className="mt-2 space-y-2">
+                            {profileVehicles.length ? (
+                              <div className="flex items-center gap-2">
+                                <div className="text-xs text-white/70">Vehicle</div>
+                                <Select value={(() => { const v = findVehicleForSelected(); if (!v) return ''; const i = profileVehicles.indexOf(v); return String(i); })()} onValueChange={(v)=>{
+                                  setSource('vehicle');
+                                  const idx = parseInt(v);
+                                  const vobj = profileVehicles[idx];
+                                  if (!vobj) return;
+                                  const slug = uniqueSlugForIndex(profileVehicles, idx);
+                                  const first = vehiclePhotos.find(k=> (k||'').includes(`/vehicles/${slug}/`)) || null;
+                                  setSelectedVehicleKey(first);
+                                }}>
+                                  <SelectTrigger className="h-9 w-56"><SelectValue placeholder="Select vehicle" /></SelectTrigger>
+                                  <SelectContent>
+                                    {profileVehicles.map((v, i)=> (
+                                      <SelectItem key={`${v.make}-${v.model}-${i}`} value={String(i)}>{v.make} {v.model} ({v.type})</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </div>
-                            </button>
-                          )) : (
-                            <div className="text-sm text-white/60">No vehicle photos found. Upload in profile.</div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {(Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']).includes('user') ? (
-                    <>
-                      <Separator className="my-2" />
-                      <div className="text-xs text-white/70">Upload image</div>
-                      <div className="space-y-2">
-                      <DropZone accept="image/*" onDrop={handleUploadFiles} disabled={uploading}>
-                        <div className="flex flex-col items-center gap-2 py-10">
-                          <UploadIcon className="w-[1.25rem] h-[1.25rem] text-white/70" />
-                          <div className="text-sm text-white/80">Drag and drop image(s)</div>
-                          <div className="text-xs text-white/60">Select up to {requiredImages}</div>
-                        </div>
-                      </DropZone>
-                      {uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}
-                      {uploadedKeys.length ? (
-                        <div className="space-y-2">
-                          <div className="text-xs text-white/70">Uploaded this session</div>
-                          <ul className="flex flex-wrap gap-3 pb-2">
-                            {uploadedKeys.map((k) => (
-                              <ContextMenu key={k}>
-                                <ContextMenuTrigger asChild>
-                                  <li className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
-                                    <button type="button" className="block w-full h-full" onClick={() => toggleSelect(k)}>
-                                      <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(k) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
-                                        <div className="rounded overflow-hidden relative bg-black/20">
-                                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                                          <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-auto object-contain cursor-pointer" />
-                                          <span
-                                            className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`}
-                                            onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } toggleSelect(k); }}
-                                          >
-                                            <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
-                                              {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
-                                            </motion.span>
-                                          </span>
-                                        </div>
-                                      </div>
-                                    </button>
-                                  </li>
-                                </ContextMenuTrigger>
-                                <ContextMenuContent className="w-48 z-[60]">
-                                  <ContextMenuItem onSelect={async()=>{
-                                    const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
-                                    if (!ok) return;
-                                    try {
-                                      await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: k, isFolder: false }) });
-                                      setUploadedKeys(prev=> prev.filter(x=> x!==k));
-                                      setUploadedPreviews(prev=> { const next = { ...prev }; try { delete (next as Record<string,string>)[k]; } catch {}; return next; });
-                                      setSelectedImageKeys(prev=> prev.filter(x=> x!==k));
-                                      toast.success('Deleted');
-                                    } catch {
-                                      toast.error('Delete failed');
-                                    }
-                                  }}>Delete</ContextMenuItem>
-                                </ContextMenuContent>
-                              </ContextMenu>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                      </div>
-
-                      <Separator className="my-2" />
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-white/70">Your library</div>
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={refreshLibrary} disabled={libraryLoading} aria-label="Refresh library">
-                          <RotateCw className={`w-4 h-4 ${libraryLoading ? 'animate-spin' : ''}`} />
-                        </Button>
-                      </div>
-                      {libraryLoading ? (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                          {Array.from({ length: 8 }).map((_, i)=> (<Skeleton key={`wkl-${i}`} className="w-full aspect-square" />))}
-                        </div>
-                      ) : (
-                        <ul className="flex flex-wrap gap-3 pb-2">
-                          {libraryItems.map((it)=> (
-                            <ContextMenu key={it.key}>
-                              <ContextMenuTrigger asChild>
-                                <li className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
-                                  <button type="button" className="block w-full h-full" onClick={()=> toggleSelect(it.key)}>
-                                    <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(it.key) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
+                            ) : (
+                              <div className="flex items-center gap-2 text-xs text-white/70">
+                                No vehicles found.
+                                <Button size="sm" variant="secondary" onClick={()=>{ try { window.dispatchEvent(new CustomEvent('open-profile')); setTimeout(()=>{ try { window.dispatchEvent(new CustomEvent('highlight-vehicles')); } catch {} }, 300); } catch {} }}>Add vehicle</Button>
+                              </div>
+                            )}
+                            <div className="overflow-visible sm:overflow-x-auto">
+                              <div className="flex flex-wrap gap-3 pb-2">
+                                {vehiclePhotos.length ? vehiclePhotos.map((k)=> (
+                                  <button key={k} onClick={()=>{ setSource('vehicle'); setSelectedVehicleKey(k); toggleSelect(k); }} className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
+                                    <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(k) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
                                       <div className="rounded overflow-hidden relative bg-black/20">
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img src={it.url} alt={it.name} className="w-full h-auto object-contain cursor-pointer" />
-                                        <span
-                                          className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(it.key)?'text-green-400':'text-white'} p-1`}
-                                          onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } toggleSelect(it.key); }}
-                                        >
-                                          <motion.span animate={selectedImageKeys.includes(it.key) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
-                                            {selectedImageKeys.includes(it.key) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
+                                        <img src={(() => { try { const c = typeof window!== 'undefined' ? sessionStorage.getItem(`ignite:veh:${k}`) : null; if (c) { const obj = JSON.parse(c) as { url?: string }; if (obj?.url) return obj.url; } } catch {} return ''; })()} alt="vehicle" className="w-full h-auto object-contain cursor-pointer" />
+                                        <span className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`} onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSource('vehicle'); setSelectedVehicleKey(k); toggleSelect(k); }}>
+                                          <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
+                                            {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
                                           </motion.span>
                                         </span>
                                       </div>
                                     </div>
                                   </button>
-                                </li>
-                              </ContextMenuTrigger>
-                              <ContextMenuContent className="w-48 z-[60]">
-                                <ContextMenuItem onSelect={async()=>{
-                                  const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
-                                  if (!ok) return;
-                                  try {
-                                    await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: it.key, isFolder: false }) });
-                                    setLibraryItems(prev=> prev.filter(x=> x.key !== it.key));
-                                    setSelectedImageKeys(prev=> prev.filter(x=> x !== it.key));
-                                    toast.success('Deleted');
-                                  } catch {
-                                    toast.error('Delete failed');
-                                  }
-                                }}>Delete</ContextMenuItem>
-                              </ContextMenuContent>
-                            </ContextMenu>
-                          ))}
-                        </ul>
-                      )}
-                    </>
-                  ) : null}
+                                )) : (
+                                  <div className="text-sm text-white/60">No vehicle photos found. Upload in profile.</div>
+                                )}
+                              </div>
+                            </div>
+                          </TabsContent>
+                        ) : null}
+
+                        {allowUser ? (
+                          <TabsContent value="upload" className="mt-2 space-y-2">
+                            <DropZone accept="image/*" onDrop={(files)=>{ setSource('upload'); return handleUploadFiles(files); }} disabled={uploading}>
+                              <div className="flex flex-col items-center gap-2 py-10">
+                                <UploadIcon className="w-[1.25rem] h-[1.25rem] text-white/70" />
+                                <div className="text-sm text-white/80">Drag and drop image(s)</div>
+                                <div className="text-xs text-white/60">Select up to {requiredImages}</div>
+                              </div>
+                            </DropZone>
+                            {uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}
+                            {uploadedKeys.length ? (
+                              <div className="space-y-2">
+                                <div className="text-xs text-white/70">Uploaded this session</div>
+                                <ul className="flex flex-wrap gap-3 pb-2">
+                                  {uploadedKeys.map((k) => (
+                                    <ContextMenu key={k}>
+                                      <ContextMenuTrigger asChild>
+                                        <li className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
+                                          <button type="button" className="block w-full h-full" onClick={() => { setSource('upload'); toggleSelect(k); }}>
+                                            <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(k) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
+                                              <div className="rounded overflow-hidden relative bg-black/20">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-auto object-contain cursor-pointer" />
+                                                <span
+                                                  className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`}
+                                                  onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSource('upload'); toggleSelect(k); }}
+                                                >
+                                                  <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
+                                                    {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
+                                                  </motion.span>
+                                                </span>
+                                              </div>
+                                            </div>
+                                          </button>
+                                        </li>
+                                      </ContextMenuTrigger>
+                                      <ContextMenuContent className="w-48 z-[60]">
+                                        <ContextMenuItem onSelect={async()=>{
+                                          const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
+                                          if (!ok) return;
+                                          try {
+                                            await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: k, isFolder: false }) });
+                                            setUploadedKeys(prev=> prev.filter(x=> x!==k));
+                                            setUploadedPreviews(prev=> { const next = { ...prev }; try { delete (next as Record<string,string>)[k]; } catch {}; return next; });
+                                            setSelectedImageKeys(prev=> prev.filter(x=> x!==k));
+                                            toast.success('Deleted');
+                                          } catch {
+                                            toast.error('Delete failed');
+                                          }
+                                        }}>Delete</ContextMenuItem>
+                                      </ContextMenuContent>
+                                    </ContextMenu>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                          </TabsContent>
+                        ) : null}
+
+                        {allowUser ? (
+                          <TabsContent value="workspace" className="mt-2">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-xs text-white/70">Your library</div>
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={refreshLibrary} disabled={libraryLoading} aria-label="Refresh library">
+                                <RotateCw className={`w-4 h-4 ${libraryLoading ? 'animate-spin' : ''}`} />
+                              </Button>
+                            </div>
+                            {libraryLoading ? (
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                {Array.from({ length: 8 }).map((_, i)=> (<Skeleton key={`wkl-${i}`} className="w-full aspect-square" />))}
+                              </div>
+                            ) : (
+                              <ul className="flex flex-wrap gap-3 pb-2">
+                                {libraryItems.map((it)=> (
+                                  <ContextMenu key={it.key}>
+                                    <ContextMenuTrigger asChild>
+                                      <li className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
+                                        <button type="button" className="block w-full h-full" onClick={()=> { setSource('upload'); toggleSelect(it.key); }}>
+                                          <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(it.key) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
+                                            <div className="rounded overflow-hidden relative bg-black/20">
+                                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                                              <img src={it.url} alt={it.name} className="w-full h-auto object-contain cursor-pointer" />
+                                              <span
+                                                className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(it.key)?'text-green-400':'text-white'} p-1`}
+                                                onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSource('upload'); toggleSelect(it.key); }}
+                                              >
+                                                <motion.span animate={selectedImageKeys.includes(it.key) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
+                                                  {selectedImageKeys.includes(it.key) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
+                                                </motion.span>
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </button>
+                                      </li>
+                                    </ContextMenuTrigger>
+                                    <ContextMenuContent className="w-48 z-[60]">
+                                      <ContextMenuItem onSelect={async()=>{
+                                        const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
+                                        if (!ok) return;
+                                        try {
+                                          await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: it.key, isFolder: false }) });
+                                          setLibraryItems(prev=> prev.filter(x=> x.key !== it.key));
+                                          setSelectedImageKeys(prev=> prev.filter(x=> x !== it.key));
+                                          toast.success('Deleted');
+                                        } catch {
+                                          toast.error('Delete failed');
+                                        }
+                                      }}>Delete</ContextMenuItem>
+                                    </ContextMenuContent>
+                                  </ContextMenu>
+                                ))}
+                              </ul>
+                            )}
+                          </TabsContent>
+                        ) : null}
+                      </Tabs>
+                    );
+                  })()}
                 </div>
               </div>
-              <DialogFooter className="hidden" />
+              <DialogFooter>
+                <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
+                  <div className="flex items-center gap-2">
+                    {selectedImageKeys.length >= requiredImages ? (
+                      <span className="text-xs text-white/70 whitespace-nowrap">Costs 7 credits</span>
+                    ) : null}
+                    <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="text-base">
+                      {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}
+                    </Button>
+                  </div>
+                </div>
+              </DialogFooter>
               <FixedAspectCropper
                 open={cropOpen}
                 imageUrl={cropUrl}

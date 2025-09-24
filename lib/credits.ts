@@ -10,20 +10,19 @@ export const CREDITS_PER_DOLLAR = Math.round(1 / PRICE_PER_CREDIT_USD); // 100
 export const GENERATION_CREDITS_PER_IMAGE = 6;
 // - BiRefNet (rembg) ~0.00666 avg ⇒ charge 1 credit ($0.01) ~50% margin
 export const REMBG_CREDITS_PER_CALL = 1;
-// - Upscale $0.03 per MP ⇒ charge 5 credits per MP ($0.05) ~67% margin
-export const UPSCALE_CREDITS_PER_MP = 5;
+// - Upscale (SeedVR2) flat: $0.0005 per compute second. Our flat charge: 1 credit per call
+export const UPSCALE_CREDITS_PER_CALL = 1;
 // - Streak restore: +25 credits per missed day
 export const STREAK_RESTORE_CREDITS_PER_DAY = 25;
 
-export function estimateUpscaleCredits(originalWidth: number, originalHeight: number, upscaleFactor: number): number {
-  const mp = (originalWidth * originalHeight * Math.pow(Math.max(1, upscaleFactor), 2)) / 1_000_000;
-  const credits = Math.ceil(mp * UPSCALE_CREDITS_PER_MP);
-  return Math.max(1, credits);
+export function estimateUpscaleCredits(_originalWidth: number, _originalHeight: number, _upscaleFactor: number): number {
+  // Flat pricing for UI estimation
+  return UPSCALE_CREDITS_PER_CALL;
 }
 
-export function actualUpscaleCredits(finalWidth: number, finalHeight: number): number {
-  const mp = (Math.max(1, finalWidth) * Math.max(1, finalHeight)) / 1_000_000;
-  return Math.max(1, Math.ceil(mp * UPSCALE_CREDITS_PER_MP));
+export function actualUpscaleCredits(_finalWidth: number, _finalHeight: number): number {
+  // Flat post-success charge
+  return UPSCALE_CREDITS_PER_CALL;
 }
 
 export async function getUserRecordIdByEmail(email: string): Promise<RecordId<"user"> | null> {
@@ -92,6 +91,7 @@ export function includedMonthlyCreditsForPlan(plan: "basic" | "pro" | "ultra" | 
 // Video pricing helpers
 export type VideoResolution = '480p' | '720p' | '1080p';
 export type VideoAspectRatio = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16' | 'auto';
+export type VideoProvider = 'seedance' | 'kling2_5';
 
 export const DEFAULT_VIDEO_FPS = 24; // aligns with ~ $0.62 for 1080p 5s
 export const VIDEO_VENDOR_USD_PER_MILLION_TOKENS = 2.5; // vendor guidance
@@ -148,8 +148,15 @@ export function estimateVideoVendorUsd(
   resolution: VideoResolution,
   durationSeconds: number,
   fps: number = DEFAULT_VIDEO_FPS,
-  aspect: VideoAspectRatio = 'auto'
+  aspect: VideoAspectRatio = 'auto',
+  provider: VideoProvider = 'seedance'
 ): number {
+  if (provider === 'kling2_5') {
+    // Kling flat rate: $0.35 per 5 seconds block
+    const blocks = Math.max(1, Math.ceil(Math.max(1, Math.round(durationSeconds)) / 5));
+    const usd = 0.35 * blocks;
+    return Math.max(0, usd);
+  }
   const tokens = estimateVideoTokens(resolution, durationSeconds, fps, aspect);
   const usd = (tokens / 1_000_000) * VIDEO_VENDOR_USD_PER_MILLION_TOKENS;
   return Math.max(0, usd);
@@ -159,12 +166,44 @@ export function estimateVideoCredits(
   resolution: VideoResolution,
   durationSeconds: number,
   fps: number = DEFAULT_VIDEO_FPS,
-  aspect: VideoAspectRatio = 'auto'
+  aspect: VideoAspectRatio = 'auto',
+  provider: VideoProvider = 'seedance'
 ): number {
-  const usd = estimateVideoVendorUsd(resolution, durationSeconds, fps, aspect);
+  const usd = estimateVideoVendorUsd(resolution, durationSeconds, fps, aspect, provider);
   const withMargin = usd * VIDEO_MARKUP_MULTIPLIER;
   const credits = Math.ceil(withMargin * CREDITS_PER_DOLLAR);
   return Math.max(1, credits);
+}
+
+
+// Idempotent post-success charge: deduct credits only once for a unique ref
+export async function chargeCreditsOnce(email: string, amount: number, reason: string, ref: string): Promise<void> {
+  if (amount <= 0) return;
+  const db = await getSurreal();
+  const rid = await getUserRecordIdByEmail(email);
+  if (!rid) throw new Error("User not found");
+  const reasonTag = `charge:${reason}`;
+  // Idempotency: if we already charged with this (ref, reason), skip
+  const existsRes = await db.query("SELECT id FROM credit_txn WHERE ref = $ref AND reason = $reason LIMIT 1;", { ref, reason: reasonTag });
+  const existsRow = Array.isArray(existsRes) && Array.isArray(existsRes[0]) ? (existsRes[0][0] as { id?: unknown } | undefined) : undefined;
+  if (existsRow) return;
+
+  // Atomic balance decrement only if sufficient funds
+  const updateRes = await db.query(
+    "UPDATE user SET credits_balance = (credits_balance ?? 0) - $amount WHERE id = $rid AND (credits_balance ?? 0) >= $amount RETURN AFTER;",
+    { rid, amount }
+  );
+  const updated = Array.isArray(updateRes) && Array.isArray(updateRes[0]) ? (updateRes[0][0] as { credits_balance?: number } | undefined) : undefined;
+  if (!updated) {
+    throw new Error("INSUFFICIENT_CREDITS");
+  }
+
+  // Record ledger entry
+  const nowIso = new Date().toISOString();
+  await db.query(
+    `CREATE credit_txn SET user = $rid, delta = -$amount, reason = $reason, ref = $ref, created_at = d"${nowIso}";`,
+    { rid, amount, reason: reasonTag, ref }
+  );
 }
 
 

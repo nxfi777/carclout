@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Dock, { type DockItemData } from '@/components/ui/Dock';
-import { Home, MessagesSquare, Wrench, Radio, Play, LayoutTemplate, Music2, Folder, Megaphone, ChartBarIncreasing, Lock } from 'lucide-react';
+import { Home, MessagesSquare, Wrench, Play, LayoutTemplate, Music2, Folder, Megaphone, ChartBarIncreasing } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 export default function HeaderDock() {
@@ -11,21 +11,7 @@ export default function HeaderDock() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [plan, setPlan] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const me = await fetch('/api/me', { cache: 'no-store' }).then(r=>r.json());
-        if (!alive) return;
-        setPlan((me?.plan as string | null | undefined) || null);
-        setRole((me?.role as string | null | undefined) || null);
-      } catch {}
-    })();
-    return () => { alive = false; };
-  }, []);
+  
 
   const mode: 'dashboard' | 'admin' | null = useMemo(() => {
     if (!pathname) return null;
@@ -44,26 +30,6 @@ export default function HeaderDock() {
         { icon: <MessagesSquare size={16} />, label: 'Chat', href: '/dashboard/chat', onClick: () => router.push('/dashboard/chat') },
         { icon: <Folder size={16} />, label: 'Workspace', href: '/dashboard/workspace', onClick: () => router.push('/dashboard/workspace') },
       ];
-      // Livestreams (locked on non-pro, but admins bypass)
-      const isUnlocked = (plan === 'pro') || (role === 'admin');
-      arr.splice(6, 0, {
-        icon: (
-          <div className="relative">
-            <Radio size={16} />
-            {!isUnlocked ? (
-              <span aria-hidden className="absolute -bottom-1.5 -right-1.5 inline-flex items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)]/90" style={{ width: '0.9rem', height: '0.9rem' }}>
-                <Lock className="opacity-80" style={{ width: '0.6rem', height: '0.6rem' }} />
-              </span>
-            ) : null}
-          </div>
-        ),
-        label: 'Livestreams',
-        href: isUnlocked ? '/dashboard/livestreams' : undefined,
-        onClick: () => {
-          if (isUnlocked) { router.push('/dashboard/livestreams'); return; }
-          try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
-        }
-      });
       return arr;
     }
     if (mode === 'admin') {
@@ -83,7 +49,7 @@ export default function HeaderDock() {
       ];
     }
     return [];
-  }, [mode, router, searchParams, plan, role]);
+  }, [mode, router, searchParams]);
 
   if (!mounted || !mode) return null;
   return (

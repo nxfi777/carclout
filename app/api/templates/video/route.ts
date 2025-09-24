@@ -3,10 +3,10 @@ import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { getSurreal } from "@/lib/surrealdb";
 import { createViewUrl, ensureFolder, r2, bucket } from "@/lib/r2";
-import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { fal } from "@fal-ai/client";
 import { RecordId } from "surrealdb";
-import { estimateVideoCredits, DEFAULT_VIDEO_FPS, requireAndReserveCredits } from "@/lib/credits";
+import { estimateVideoCredits, DEFAULT_VIDEO_FPS, chargeCreditsOnce } from "@/lib/credits";
 export const runtime = "nodejs";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
@@ -112,13 +112,8 @@ export async function POST(req: Request) {
 
     const duration = Math.max(1, Math.min(120, Math.round(Number(durationStr || 5))));
 
-    // Pricing: estimate credits and reserve
-    const credits = estimateVideoCredits(resolution, duration, fps, aspect_ratio);
-    try {
-      await requireAndReserveCredits(user.email, credits, 'video', String(template?.slug || template?.id || 'template'));
-    } catch {
-      return NextResponse.json({ error: 'INSUFFICIENT_CREDITS' }, { status: 402 });
-    }
+    // Pricing: estimate credits for display/check purposes only; we'll charge post-success
+    const credits = estimateVideoCredits(resolution, duration, fps, aspect_ratio, provider);
 
     // Resolve the start image, upload to FAL storage
     const userRoot = `users/${sanitizeUserId(user.email)}`;
@@ -136,13 +131,17 @@ export async function POST(req: Request) {
     try {
       if (provider === 'kling2_5') {
         const klingDuration = duration >= 10 ? '10' : '5';
+        const cfgScale = ((): number => {
+          try { const n = Number((vconf as { cfg_scale?: number })?.cfg_scale); return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.5; } catch { return 0.5; }
+        })();
         const input = {
           prompt: videoPrompt,
           image_url,
           duration: klingDuration,
           negative_prompt: 'blur, distort, and low quality',
-          cfg_scale: 0.5,
+          cfg_scale: cfgScale,
         } as const;
+        try { console.log("[FAL INPUT]", JSON.stringify({ model: "fal-ai/kling-video/v2.5-turbo/pro/image-to-video", input }, null, 2)); } catch {}
         result = await fal.subscribe("fal-ai/kling-video/v2.5-turbo/pro/image-to-video", {
           input: input as any,
           logs: true,
@@ -165,6 +164,7 @@ export async function POST(req: Request) {
           enable_safety_checker: true,
           ...(typeof seed === 'number' ? { seed } : {}),
         } as const;
+        try { console.log("[FAL INPUT]", JSON.stringify({ model: "fal-ai/bytedance/seedance/v1/pro/image-to-video", input }, null, 2)); } catch {}
         result = await fal.subscribe("fal-ai/bytedance/seedance/v1/pro/image-to-video", {
           input: input as any,
           logs: true,
@@ -234,6 +234,14 @@ export async function POST(req: Request) {
 
     await ensureFolder(`${userRoot}/library/`);
     await r2.send(new PutObjectCommand({ Bucket: bucket, Key: singleOutKey, Body: finalVideoBytes, ContentType: 'video/mp4' }));
+
+    // Charge idempotently after successful persistence; use object key as ref
+    try {
+      await chargeCreditsOnce(user.email, credits, 'video', singleOutKey);
+    } catch {
+      try { await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: singleOutKey })); } catch {}
+      return NextResponse.json({ error: 'INSUFFICIENT_CREDITS' }, { status: 402 });
+    }
 
     const { url } = await createViewUrl(singleOutKey);
     return NextResponse.json({ key: singleOutKey, url, credits });

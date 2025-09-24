@@ -1,10 +1,10 @@
 "use client";
-import TabsViewFancy from '@/components/ui/tabs-view-fancy';
+import ContentTabs from '@/components/ui/content-tabs';
 
 export default function DashboardContentPage() {
   return (
     <main className="p-3 md:p-4">
-      <TabsViewFancy />
+      <ContentTabs />
     </main>
   );
 }

@@ -8,6 +8,7 @@ import type {
 } from "@/types/designer";
 import { generateId } from "@/types/designer";
 import { defaultShapeDefaults } from "@/types/designer";
+import { toast } from "sonner";
 
 const initialState: DesignerState = {
   tool: "select",
@@ -38,16 +39,8 @@ function reducer(state: DesignerState, action: DesignerAction): DesignerState {
     case "update_shape_defaults":
       return { ...state, shapeDefaults: { ...state.shapeDefaults, ...(action.patch || {}) } };
     case "add_layer": {
-      // Insert new objects just below the mask layer if it exists, otherwise at end/top
-      const maskIndex = state.layers.findIndex(l => l.type === 'mask');
-      let layers: Layer[];
-      if (maskIndex >= 0) {
-        layers = [...state.layers];
-        const insertAt = Math.max(0, Math.min(maskIndex, layers.length));
-        layers.splice(insertAt, 0, action.layer);
-      } else {
-        layers = action.atTop ? [...state.layers, action.layer] : [action.layer, ...state.layers];
-      }
+      // Add layers normally, no special handling for mask layer
+      const layers = action.atTop ? [...state.layers, action.layer] : [action.layer, ...state.layers];
       return { ...state, layers, activeLayerId: action.layer.id, editingLayerId: action.layer.type === 'text' ? action.layer.id : state.editingLayerId };
     }
     case "update_layer": {
@@ -55,9 +48,12 @@ function reducer(state: DesignerState, action: DesignerAction): DesignerState {
       return { ...state, layers };
     }
     case "remove_layer": {
-      // Prevent deleting the mask layer
+      // Prevent deleting the mask layer with toast notification
       const target = state.layers.find(l => l.id === action.id);
-      if (target && target.type === 'mask') return state;
+      if (target && target.type === 'mask') {
+        toast.info('The car cutout layer cannot be deleted, but you can hide it in the layers panel');
+        return state;
+      }
       const layers = state.layers.filter((l) => l.id !== action.id);
       const activeLayerId = state.activeLayerId === action.id ? null : state.activeLayerId;
       return { ...state, layers, activeLayerId };
@@ -240,7 +236,16 @@ export function DesignerProvider({ children, initial }: { children: React.ReactN
         redo();
         return;
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        const id = state.activeLayerId; if (!id) return; e.preventDefault(); dispatchWithHistory({ type: 'remove_layer', id });
+        const id = state.activeLayerId; 
+        if (!id) return; 
+        e.preventDefault(); 
+        // Check if it's a mask layer before attempting deletion
+        const layer = state.layers.find(l => l.id === id);
+        if (layer && layer.type === 'mask') {
+          toast.info('The car cutout layer cannot be deleted, but you can hide it in the layers panel');
+          return;
+        }
+        dispatchWithHistory({ type: 'remove_layer', id });
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         const id = state.activeLayerId; if (!id) return; e.preventDefault();
         const src = state.layers.find(l=> l.id===id); if (!src) return;

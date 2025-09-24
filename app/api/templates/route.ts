@@ -40,6 +40,7 @@ type TemplateDoc = {
     camera_fixed?: boolean;
     seed?: number | null;
     fps?: number; // for cost estimation only
+    cfg_scale?: number; // Kling only (0..1)
     previewKey?: string | null; // admin-scope R2 key for hover preview
   } | null;
   created_at?: string;
@@ -248,6 +249,14 @@ export async function POST(req: Request) {
           const ar = (aspectRatios as readonly string[]).includes(arRaw) ? (arRaw as (typeof aspectRatios)[number]) : 'auto';
           const provRaw = String((v as { provider?: unknown })?.provider || 'seedance');
           const provider: 'seedance' | 'kling2_5' = provRaw === 'kling2_5' ? 'kling2_5' : 'seedance';
+          const cfg_scale = ((): number | undefined => {
+            try {
+              const n = Number((v as { cfg_scale?: unknown })?.cfg_scale);
+              if (!Number.isFinite(n)) return undefined;
+              const clamped = Math.min(1, Math.max(0, n));
+              return clamped;
+            } catch { return undefined; }
+          })();
           return {
             enabled: !!(v as { enabled?: unknown })?.enabled,
             provider,
@@ -258,11 +267,12 @@ export async function POST(req: Request) {
             camera_fixed: !!(v as { camera_fixed?: unknown })?.camera_fixed,
             seed: ((): number | null => { const n = Number((v as { seed?: unknown })?.seed); return Number.isFinite(n) ? Math.round(n) : null; })(),
             fps: ((): number | undefined => { const n = Number((v as { fps?: unknown })?.fps); return Number.isFinite(n) && n>0 ? Math.round(n) : undefined; })(),
+            cfg_scale,
             previewKey: typeof (v as { previewKey?: unknown })?.previewKey === 'string' ? String((v as { previewKey?: unknown }).previewKey) : null,
           } as TemplateDoc['video'];
         }
       } catch {}
-      return { enabled: false, provider: 'seedance', prompt: '', duration: '5', resolution: '1080p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, previewKey: null } as TemplateDoc['video'];
+      return { enabled: false, provider: 'seedance', prompt: '', duration: '5', resolution: '1080p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, cfg_scale: undefined, previewKey: null } as TemplateDoc['video'];
     })(),
     created_at: createdIso,
     created_by: user.email,

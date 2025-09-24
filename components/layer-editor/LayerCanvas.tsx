@@ -420,7 +420,6 @@ function CanvasMenu() {
               <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'send_backward', id }); }}>Send backward</ContextMenuItem>
               <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'send_to_front', id }); }}>Bring to front</ContextMenuItem>
               <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'send_to_back', id }); }}>Send to back</ContextMenuItem>
-              <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'toggle_above_mask', id }); }}>{(state.layers.find(l=> l.id===id)?.aboveMask ? 'Place below car' : 'Place above car')}</ContextMenuItem>
               <ContextMenuSeparator />
             </>
           )}

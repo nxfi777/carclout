@@ -17,18 +17,18 @@ export default function LayersPanel({ className }: { className?: string }) {
   const moveBoundaryUp = React.useCallback(() => {
     if (state.maskLocked) return;
     const b = boundaryIndex;
-    if (b <= 0) return;
-    const target = layers[b - 1];
+    if (b >= layers.length) return; // no layer above boundary to move down
+    const target = layers[b]; // first layer currently above the mask
     if (!target) return;
-    dispatch({ type: 'update_layer', id: target.id, patch: { aboveMask: true } });
+    dispatch({ type: 'update_layer', id: target.id, patch: { aboveMask: false } });
   }, [boundaryIndex, dispatch, layers, state.maskLocked]);
   const moveBoundaryDown = React.useCallback(() => {
     if (state.maskLocked) return;
     const b = boundaryIndex;
-    if (b >= layers.length) return;
-    const target = layers[b];
+    if (b <= 0) return; // no layer below boundary to move up
+    const target = layers[b - 1]; // last layer currently below the mask
     if (!target) return;
-    dispatch({ type: 'update_layer', id: target.id, patch: { aboveMask: false } });
+    dispatch({ type: 'update_layer', id: target.id, patch: { aboveMask: true } });
   }, [boundaryIndex, dispatch, layers, state.maskLocked]);
   return (
     <div className={cn("w-64 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm overflow-hidden", className)}>
@@ -57,9 +57,9 @@ export default function LayersPanel({ className }: { className?: string }) {
             label="Car cutout"
             active={active === '::mask::'}
             onSelect={() => dispatch({ type: 'select_layer', id: '::mask::' })}
-            locked={!!state.maskLocked}
+            locked={true}
             hidden={!!state.maskHidden}
-            onToggleLock={()=> dispatch({ type: 'toggle_mask_lock' })}
+            onToggleLock={()=> {}}
             onToggleHide={()=> dispatch({ type: 'toggle_mask_hide' })}
             onBoundaryUp={moveBoundaryUp}
             onBoundaryDown={moveBoundaryDown}
@@ -80,15 +80,7 @@ export default function LayersPanel({ className }: { className?: string }) {
           />
         ))}
 
-        {/* Background (locked) */}
-        {state.backgroundUrl ? (
-          <SpecialRow
-            label="Background"
-            active={false}
-            onSelect={()=>{}}
-            locked={true}
-          />
-        ) : null}
+        {/* Background row hidden in layers panel */}
       </div>
     </div>
   );
@@ -143,8 +135,8 @@ function SpecialRow({ label, active, onSelect, locked, hidden, onToggleLock, onT
       {label === 'Car cutout' ? (
         locked ? <div className="shrink-0 w-6 h-6" /> : (
           <div className="shrink-0 flex items-center gap-0.5">
-            <button type="button" className="p-1 rounded hover:bg-white/10" onClick={(e)=>{ e.stopPropagation(); if (onBoundaryDown) { onBoundaryDown(); } }} aria-label="Move boundary down"><ChevronDown className="size-4 opacity-90" /></button>
             <button type="button" className="p-1 rounded hover:bg-white/10" onClick={(e)=>{ e.stopPropagation(); if (onBoundaryUp) { onBoundaryUp(); } }} aria-label="Move boundary up"><ChevronUp className="size-4 opacity-90" /></button>
+            <button type="button" className="p-1 rounded hover:bg-white/10" onClick={(e)=>{ e.stopPropagation(); if (onBoundaryDown) { onBoundaryDown(); } }} aria-label="Move boundary down"><ChevronDown className="size-4 opacity-90" /></button>
           </div>
         )
       ) : (

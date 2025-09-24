@@ -4,7 +4,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import HeaderCredits from "./header-credits";
-import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { LogOut, CarFront } from "lucide-react";
 import PresenceMenu from "./presence-menu";
@@ -26,6 +25,7 @@ export default function HeaderUser({
   const [remaining, setRemaining] = useState<number | null>(null);
   const [xpIntoLevel, setXpIntoLevel] = useState<number | null>(null);
   const [levelSpan, setLevelSpan] = useState<number | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     function onProfileUpdated(e: Event) {
@@ -80,7 +80,7 @@ export default function HeaderUser({
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
           <div className="flex items-center gap-2 cursor-pointer">
             <div className="hidden md:block text-sm text-left">
@@ -133,11 +133,17 @@ export default function HeaderUser({
             <div className="mt-2"><HeaderCredits /></div>
           </div>
           <DropdownMenuSeparator className="md:hidden" />
-          <DropdownMenuItem className="cursor-pointer" asChild>
-            <Link href="#" onClick={(e)=>{ e.preventDefault(); try { window.dispatchEvent(new CustomEvent('open-profile')); } catch {} }}>Profile</Link>
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onSelect={(e)=>{ e.preventDefault(); try { setOpen(false); window.dispatchEvent(new CustomEvent('open-profile')); } catch {} }}
+          >
+            Profile
           </DropdownMenuItem>
-          <DropdownMenuItem className="cursor-pointer" asChild>
-            <Link href="#" onClick={(e)=>{ e.preventDefault(); try { window.dispatchEvent(new CustomEvent('open-billing')); } catch {} }}>Billing</Link>
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onSelect={(e)=>{ e.preventDefault(); try { setOpen(false); window.dispatchEvent(new CustomEvent('open-billing')); } catch {} }}
+          >
+            Billing
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

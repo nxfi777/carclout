@@ -33,10 +33,10 @@ import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { getSurreal } from "@/lib/surrealdb";
 import { createViewUrl, ensureFolder, r2, bucket } from "@/lib/r2";
-import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { fal } from "@fal-ai/client";
 import { RecordId } from "surrealdb";
-import { requireAndReserveCredits, GENERATION_CREDITS_PER_IMAGE } from "@/lib/credits";
+import { GENERATION_CREDITS_PER_IMAGE, chargeCreditsOnce } from "@/lib/credits";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
@@ -249,11 +249,7 @@ export async function POST(req: Request) {
 
     let result: any;
     try {
-      try {
-        await requireAndReserveCredits(user.email, GENERATION_CREDITS_PER_IMAGE, "generation", String(template?.slug || template?.id || "template"));
-      } catch {
-        return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
-      }
+      // Do not charge upfront. We'll charge once the generation successfully completes and is persisted.
       function clampImageSize(w?: number, h?: number): { width: number; height: number } | null {
         try {
           const min = 1024, max = 4096;
@@ -331,6 +327,15 @@ export async function POST(req: Request) {
     const fileName = `${createdIso.replace(/[:.]/g, "-")}-${safeSlug}.${ext}`;
     const outKey = `${userKeyPrefix}${fileName}`;
     await r2.send(new PutObjectCommand({ Bucket: bucket, Key: outKey, Body: new Uint8Array(arrayBuffer), ContentType: fileRes.headers.get("content-type") || "image/jpeg" }));
+
+    // Charge credits idempotently now that we have a successful generation and stored artifact
+    try {
+      await chargeCreditsOnce(user.email, GENERATION_CREDITS_PER_IMAGE, "generation", outKey);
+    } catch {
+      // Roll back stored artifact if user cannot be charged
+      try { await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: outKey })); } catch {}
+      return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
+    }
 
   // Response includes storage key and signed view url
     const { url: viewUrl } = await createViewUrl(outKey);

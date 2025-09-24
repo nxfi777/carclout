@@ -2,22 +2,15 @@ import { NextResponse } from "next/server";
 import { fal } from "@fal-ai/client";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { createViewUrl, ensureFolder, r2, bucket } from "@/lib/r2";
-import { requireAndReserveCredits, actualUpscaleCredits } from "@/lib/credits";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { chargeCreditsOnce } from "@/lib/credits";
+import { PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
 type UpscaleRequest = {
   r2_key?: string;
   image_url?: string;
-  prompt?: string;
-  negative_prompt?: string;
-  upscale_factor?: number; // 1..4
-  creativity?: number; // 0..1
-  resemblance?: number; // 0..1
-  guidance_scale?: number; // 0..20
-  num_inference_steps?: number; // 4..50
-  enable_safety_checker?: boolean;
+  upscale_factor?: number; // 1..4, default 2
   original_width?: number;
   original_height?: number;
 };
@@ -47,36 +40,32 @@ export async function POST(req: Request) {
     }
     if (!sourceUrl) return NextResponse.json({ error: "Could not resolve image URL" }, { status: 400 });
 
+    // Compute max allowed upscale factor based on provider limits (4K max: 3840x2160)
+    const MAX_W = 3840;
+    const MAX_H = 2160;
+
+    let factorToUse = Math.max(1, Math.min(4, Number(body.upscale_factor ?? 2)));
     const input = {
       image_url: sourceUrl,
-      prompt: typeof body.prompt === "string" && body.prompt.trim() ? body.prompt : "masterpiece, best quality, highres",
-      negative_prompt: typeof body.negative_prompt === "string" && body.negative_prompt.trim() ? body.negative_prompt : "(worst quality, low quality, normal quality:2)",
-      upscale_factor: Math.max(1, Math.min(4, Number(body.upscale_factor ?? 2))),
-      creativity: Math.max(0, Math.min(1, Number(body.creativity ?? 0))),
-      resemblance: Math.max(0, Math.min(1, Number(body.resemblance ?? 0.6))),
-      guidance_scale: Math.max(0, Math.min(20, Number(body.guidance_scale ?? 4))),
-      num_inference_steps: Math.max(4, Math.min(50, parseInt(String(body.num_inference_steps ?? 18)))),
-      enable_safety_checker: body.enable_safety_checker !== false,
-    } as const;
+      upscale_factor: factorToUse,
+    } as { image_url: string; upscale_factor: number };
 
-    // Enforce 6MP max final area when dimensions are known
-    const MAX_FINAL_MP = 6; // 6 megapixels limit
+    // Enforce provider max dimensions when original dimensions are known and auto-clamp to the highest allowed factor
     const ow = Math.max(0, Number(body.original_width || 0));
     const oh = Math.max(0, Number(body.original_height || 0));
-    let creditsCost = 0;
-    let reserved = false;
+    let _creditsCost = 0; // display-only
     if (ow && oh) {
-      const predictedMp = ((ow * oh) / 1_000_000) * Math.pow(input.upscale_factor, 2);
-      if (predictedMp > MAX_FINAL_MP + 1e-6) {
-        return NextResponse.json({ error: "UPSCALE_LIMIT_6MP", message: "Upscale would exceed the 6MP limit." }, { status: 400 });
+      const maxByWidth = MAX_W / ow;
+      const maxByHeight = MAX_H / oh;
+      const allowedMax = Math.max(1, Math.min(4, maxByWidth, maxByHeight));
+      if (allowedMax <= 1 + 1e-6) {
+        return NextResponse.json({ error: "UPSCALE_AT_MAX", message: "Image is already at the maximum allowed resolution." }, { status: 400 });
       }
-      creditsCost = Math.max(1, Math.ceil(((ow * oh) / 1_000_000) * Math.pow(input.upscale_factor, 2) * 6));
-      try {
-        await requireAndReserveCredits(user.email, creditsCost, "upscale", null);
-        reserved = true;
-      } catch {
-        return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
-      }
+      // Always use the maximum allowed upscale for this image as per spec
+      factorToUse = Math.max(1, Math.min(4, Math.round(allowedMax * 100) / 100));
+      input.upscale_factor = factorToUse;
+      // Display-only estimate; billing is flat 1 credit after success
+      _creditsCost = 1;
     }
 
     let result: unknown;
@@ -139,26 +128,26 @@ export async function POST(req: Request) {
       const h = Number(fileRes.headers.get("x-image-height") || 0);
       if (w && h) { width = w; height = h; }
     } catch {}
-    if (!reserved) {
-      // If final dimensions are available, enforce 6MP limit here as well
-      if (width && height) {
-        const finalMp = (width * height) / 1_000_000;
-        if (finalMp > MAX_FINAL_MP + 1e-6) {
-          return NextResponse.json({ error: "UPSCALE_LIMIT_6MP", message: "Upscale exceeds the 6MP limit." }, { status: 400 });
-        }
+    // Enforce final 4K dimension limit defensively (in case provider ever overshoots)
+    if (width && height) {
+      if (width > MAX_W + 1 || height > MAX_H + 1) {
+        return NextResponse.json({ error: "UPSCALE_DIM_OVERFLOW", message: "Upscaled image exceeds the 4K limit." }, { status: 400 });
       }
-      creditsCost = (width && height) ? actualUpscaleCredits(width, height) : 6; // minimum charge 6 credits if unknown
-      try {
-        await requireAndReserveCredits(user.email, creditsCost, "upscale", outKey);
-        reserved = true;
-      } catch {
-        return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
-      }
+    }
+
+    // Determine final charge and charge idempotently after success
+    const finalCost = 1; // flat 1 credit per call
+    try {
+      await chargeCreditsOnce(user.email, finalCost, "upscale", outKey);
+    } catch {
+      // If charging fails, roll back the stored artifact
+      try { await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: outKey })); } catch {}
+      return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
     }
     await r2.send(new PutObjectCommand({ Bucket: bucket, Key: outKey, Body: buf, ContentType: ct }));
 
     const { url } = await createViewUrl(outKey);
-    return NextResponse.json({ key: outKey, url, credits_charged: creditsCost });
+    return NextResponse.json({ key: outKey, url, credits_charged: finalCost });
   } catch (err) {
     try { console.error("/api/tools/upscale error", err); } catch {}
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -363,6 +363,12 @@ function LayerView({ layer, selected, editingId, onPointerDown }: { layer: Layer
 function CanvasMenu() {
   const { state, dispatch } = useDesigner();
   const id = state.activeLayerId;
+  
+  // Find the layer index to determine if it's at front/back
+  const layerIndex = id ? state.layers.findIndex(l => l.id === id) : -1;
+  const isAtFront = layerIndex === state.layers.length - 1;
+  const isAtBack = layerIndex === 0;
+  
   return (
     <ContextMenuContent className="w-56">
       {id ? (
@@ -391,10 +397,18 @@ function CanvasMenu() {
             }
             return null;
           })()}
-          <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'bring_forward', id }); }}>Bring forward</ContextMenuItem>
-          <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'send_backward', id }); }}>Send backward</ContextMenuItem>
-          <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'send_to_front', id }); }}>Bring to front</ContextMenuItem>
-          <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'send_to_back', id }); }}>Send to back</ContextMenuItem>
+          {!isAtFront && (
+            <>
+              <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'bring_forward', id }); }}>Bring forward</ContextMenuItem>
+              <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'send_to_front', id }); }}>Bring to front</ContextMenuItem>
+            </>
+          )}
+          {!isAtBack && (
+            <>
+              <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'send_backward', id }); }}>Send backward</ContextMenuItem>
+              <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'send_to_back', id }); }}>Send to back</ContextMenuItem>
+            </>
+          )}
           {/* aboveMask is no longer used in Designer */}
           <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'update_layer', id, patch: { locked: !(state.layers.find(l=> l.id===id)?.locked) } }); }}>{(state.layers.find(l=> l.id===id)?.locked ? 'Unlock' : 'Lock')}</ContextMenuItem>
           <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); dispatch({ type: 'update_layer', id, patch: { hidden: !(state.layers.find(l=> l.id===id)?.hidden) } }); }}>{(state.layers.find(l=> l.id===id)?.hidden ? 'Show' : 'Hide')}</ContextMenuItem>
