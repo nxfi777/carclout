@@ -38,8 +38,6 @@ export function HooksTabContent() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [activeIdx, _setActiveIdx] = useState<number | null>(null);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressFiredRef = useRef(false);
   const [downloadIdx, setDownloadIdx] = useState<number | null>(null);
   const [playerIdx, setPlayerIdx] = useState<number | null>(null);
 
@@ -58,19 +56,40 @@ export function HooksTabContent() {
     } catch {}
   }
 
-  // Play/pause active preview without remounting the <video>
+  // Pause inactive previews so only the selected card plays
   useEffect(() => {
     try {
-      videoRefs.current.forEach((v, idx) => {
-        if (!v) return;
-        if (idx === activeIdx) {
-          v.play().catch(() => {});
-        } else {
-          try { v.pause(); } catch {}
-        }
+      videoRefs.current.forEach((video, idx) => {
+        if (!video) return;
+        if (activeIdx !== null && idx === activeIdx) return;
+        try { video.pause(); } catch {}
       });
     } catch {}
   }, [activeIdx]);
+
+  const activateCard = useCallback((idx: number) => {
+    const video = videoRefs.current[idx] ?? null;
+    _setActiveIdx((prev) => {
+      if (prev === idx) return prev;
+      if (video) {
+        try {
+          video.playsInline = true;
+          video.muted = false;
+          video.controls = true;
+          video.play().catch(() => {});
+        } catch {}
+      }
+      if (prev !== null && prev !== idx) {
+        const prevVideo = videoRefs.current[prev] ?? null;
+        if (prevVideo) {
+          try {
+            prevVideo.pause();
+          } catch {}
+        }
+      }
+      return idx;
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -139,30 +158,6 @@ export function HooksTabContent() {
   if (isMobile) {
     const toShow = (items || []).slice(0, visibleCount);
     const hasMore = visibleCount < (items?.length || 0);
-    function startPress(i: number) {
-      try { longPressFiredRef.current = false; } catch {}
-      try { if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } } catch {}
-      try {
-        longPressTimerRef.current = window.setTimeout(() => {
-          try { longPressFiredRef.current = true; setDownloadIdx(i); } catch {}
-        }, 550);
-      } catch {}
-    }
-    function endPress(i: number) {
-      try { if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } } catch {}
-      if (!longPressFiredRef.current) {
-        try {
-          _setActiveIdx(i);
-          const v = videoRefs.current[i];
-          if (v) {
-            try { v.playsInline = true; v.muted = false; v.controls = true; v.play().catch(()=>{}); } catch {}
-          }
-        } catch {}
-      }
-    }
-    function cancelPress() {
-      try { if (longPressTimerRef.current) { window.clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } } catch {}
-    }
     return (
       <div className="w-full h-full min-h-[65vh]">
         <div className="px-6 pt-1 pb-2">
@@ -183,14 +178,17 @@ export function HooksTabContent() {
                 key={`${it.text}-${_idx}`}
                 role="button"
                 tabIndex={0}
-                onClick={(e)=>{ try { if (activeIdx === _idx) return; e.preventDefault(); e.stopPropagation(); endPress(_idx); } catch {} }}
-                onPointerDown={(e)=>{ try { if (activeIdx === _idx) return; if ((e as unknown as { pointerType?: string }).pointerType === 'touch') startPress(_idx); } catch {} }}
-                onPointerUp={(e)=>{ try { if (activeIdx === _idx) return; if ((e as unknown as { pointerType?: string }).pointerType === 'touch') endPress(_idx); } catch {} }}
-                onPointerCancel={()=>{ cancelPress(); }}
-                onPointerLeave={()=>{ cancelPress(); }}
+                onClick={(e)=>{
+                  try {
+                    if (activeIdx === _idx) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    activateCard(_idx);
+                  } catch {}
+                }}
                 onContextMenu={(e)=>{ try { e.preventDefault(); } catch {} }}
-                className="rounded-lg overflow-hidden bg-white/5 border border-white/10 text-left select-none"
-                style={{ WebkitUserSelect: 'none' as unknown as undefined }}
+                className="relative rounded-lg overflow-hidden bg-white/5 border border-white/10 text-left select-none"
+                style={{ WebkitUserSelect: 'none' as unknown as undefined, WebkitTouchCallout: 'none' as unknown as undefined }}
               >
                 <div className="relative w-full aspect-[3/4]">
                   {/* Keep video mounted to leverage browser caching and avoid refetches */}
@@ -202,11 +200,54 @@ export function HooksTabContent() {
                       className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                       playsInline
                       controls={activeIdx === _idx}
+                      controlsList="nodownload noplaybackrate"
                       preload="metadata"
-                      onClick={(e)=>{ try { e.stopPropagation(); const v = e.currentTarget as HTMLVideoElement; if (v.paused) v.play().catch(()=>{}); else v.pause(); } catch {} }}
+                      style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+                      onClick={(e)=>{
+                        try {
+                          if (activeIdx === _idx) return; // native controls are visible; let iOS handle clicks
+                          if (e.target === e.currentTarget) {
+                            e.stopPropagation();
+                            activateCard(_idx);
+                          }
+                        } catch {}
+                      }}
+                      onContextMenu={(e)=>{ try { e.preventDefault(); } catch {} }}
+                      onPlay={(e)=>{
+                        try {
+                          const idx = videoRefs.current.indexOf(e.currentTarget ?? null);
+                          if (idx >= 0) {
+                            _setActiveIdx(idx);
+                          }
+                        } catch {}
+                      }}
+                      onPause={(e)=>{
+                        try {
+                          const idx = videoRefs.current.indexOf(e.currentTarget ?? null);
+                          if (idx >= 0 && activeIdx === idx) {
+                            _setActiveIdx(idx);
+                          }
+                        } catch {}
+                      }}
                     />
                   ) : null}
-                  <NextImage src={it.image} alt="Hook" fill sizes="(max-width: 640px) 50vw, 33vw" className={`object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} />
+                  <NextImage src={it.image} alt="Hook" fill draggable={false} sizes="(max-width: 640px) 50vw, 33vw" className={`object-cover transition-opacity duration-200 ${activeIdx === _idx ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }} />
+                </div>
+                <div className="border-t border-white/10 bg-black/40 px-2 py-2 flex items-center justify-center text-white">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-9 w-full max-w-[16rem] rounded-full text-xs"
+                    onClick={(e)=>{
+                      try {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDownloadIdx(_idx);
+                      } catch {}
+                    }}
+                  >
+                    Download
+                  </Button>
                 </div>
               </div>
             ))}
@@ -903,7 +944,18 @@ export function TemplatesTabContent(){
         try { const d = await res.json(); toast.error(d?.error || 'Failed to save'); } catch { toast.error('Failed to save'); }
         return;
       }
-      try { toast.success('Saved to /library'); } catch {}
+      try {
+        toast.success('Saved to your library', {
+          action: {
+            label: 'Open',
+            onClick: () => {
+              try {
+                window.open('/dashboard?view=forge&tab=workspace&path=library', '_blank');
+              } catch {}
+            },
+          },
+        });
+      } catch {}
       setDesignOpen(false);
       // Clear selected images so next use starts fresh
       setSelectedImageKeys([]);
@@ -1273,17 +1325,12 @@ export function TemplatesTabContent(){
 
   return (
     <div>
-      <div className="relative flex items-center justify-between mb-2 gap-2">
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="text-xs text-white/70">
-            {items.length} template{items.length === 1 ? '' : 's'}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
+      <div className="grid gap-3 mb-4 sm:gap-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="flex items-center gap-2">
             <div className="text-xs text-white/70">Filter</div>
             <Select value={filterBy} onValueChange={(v: 'all' | 'favorites' | 'video')=> setFilterBy(v || 'all')}>
-              <SelectTrigger className="h-8 min-w-[10rem]"><SelectValue placeholder="All" /></SelectTrigger>
+              <SelectTrigger className="h-8 min-w-[8rem] sm:min-w-[10rem]"><SelectValue placeholder="All" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
                 <SelectItem value="favorites">My favourites</SelectItem>
@@ -1291,26 +1338,36 @@ export function TemplatesTabContent(){
               </SelectContent>
             </Select>
           </div>
+          <div className="text-xs text-white/70 text-right whitespace-nowrap">
+            {items.length} template{items.length === 1 ? '' : 's'}
+          </div>
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="flex items-center gap-2">
             <div className="text-xs text-white/70">Sort</div>
             <Select value={sortBy} onValueChange={(v: 'recent' | 'favorites')=> setSortBy(v || 'recent')}>
-              <SelectTrigger className="h-8 min-w-[10rem]"><SelectValue placeholder="Most recent" /></SelectTrigger>
+              <SelectTrigger className="h-8 min-w-[8rem] sm:min-w-[10rem]"><SelectValue placeholder="Most recent" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="recent">Most recent</SelectItem>
                 <SelectItem value="favorites">Most favourited</SelectItem>
               </SelectContent>
             </Select>
           </div>
-        </div>
-        <div className="ml-auto">
-          <Button asChild size="sm" variant="secondary" className="inline-flex items-center">
-            <Link href="/dashboard/workspace?path=library" onMouseEnter={()=> setChevHover(true)} onMouseLeave={()=> setChevHover(false)}>
-              Recent images
-              <motion.span className="ml-2 inline-flex" animate={chevHover ? { x: [0, 6, 0] } : { x: 0 }} transition={chevHover ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}>
-                <ChevronRight className="w-4 h-4" />
-              </motion.span>
-            </Link>
-          </Button>
+          <Link
+            href="/dashboard/workspace?path=library"
+            className="inline-flex items-center gap-2 justify-self-end text-xs font-medium text-white/80 hover:text-white transition sm:text-sm"
+            onMouseEnter={()=> setChevHover(true)}
+            onMouseLeave={()=> setChevHover(false)}
+          >
+            Recent images
+            <motion.span
+              className="inline-flex"
+              animate={chevHover ? { x: [0, 6, 0] } : { x: 0 }}
+              transition={chevHover ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </motion.span>
+          </Link>
         </div>
       </div>
       {grid}
@@ -1319,15 +1376,11 @@ export function TemplatesTabContent(){
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>{designOpen ? 'Designer' : (active?.name || 'Template')}</span>
-              {designOpen && resultUrl ? (
-                <span className="mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">
-                  Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a>
-                </span>
-              ) : (
-                <span className="mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">
+              {(!designOpen && !busy && !resultUrl) ? (
+                <span className="hidden sm:inline mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">
                   For best results, use a car photo that matches this template&apos;s orientation
                 </span>
-              )}
+              ) : null}
             </DialogTitle>
           </DialogHeader>
           {busy ? (
@@ -1416,7 +1469,7 @@ export function TemplatesTabContent(){
                     onClose={handleDesignerClose}
                     onTryAgain={handleDesignerTryAgain}
                     onSave={saveDesignToGenerations}
-                    saveLabel={'Save to workspace'}
+                    saveLabel={'Save'}
                     aspectRatio={typeof activeTemplate?.aspectRatio === 'number' ? Number(activeTemplate.aspectRatio) : undefined}
                     onReplaceBgKey={handleDesignerReplaceBgKey}
                     showAnimate={!!(activeTemplate?.video && (activeTemplate.video as { enabled?: boolean } | null | undefined)?.enabled)}
@@ -1511,7 +1564,6 @@ export function TemplatesTabContent(){
           ) : resultUrl ? (
             <div className="space-y-3">
               <div className="w-full grid place-items-center">
-                <div className="text-xs text-white/70 mb-1">Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a></div>
                 {activeUrl || resultUrl ? (
                   <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-full sm:max-w-[32rem] max-h-[56vh] h-auto object-contain" />
                 ) : null}
@@ -1665,17 +1717,29 @@ export function TemplatesTabContent(){
                     const allowVehicle = allowSrcs.includes('vehicle');
                     const allowUser = allowSrcs.includes('user');
                     return (
-                      <Tabs
-                        value={(() => {
-                          // Normalize current tab if disabled by template
-                          if (!allowUser && (imageTab === 'upload' || imageTab === 'workspace')) return 'vehicles';
-                          if (!allowVehicle && imageTab === 'vehicles') return 'upload';
-                          return imageTab;
-                        })()}
-                        onValueChange={(v)=>{ setImageTab(v as 'vehicles'|'upload'|'workspace'); setSource(v === 'vehicles' ? 'vehicle' : 'upload'); }}
-                        className="w-full"
-                      >
-                        <TabsList className="bg-transparent p-0 gap-2">
+                      <div className="space-y-3">
+                        <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
+                          <div className="flex items-center gap-2">
+                            {selectedImageKeys.length >= requiredImages ? (
+                              <span className="text-xs text-white/70 whitespace-nowrap">Costs 7 credits</span>
+                            ) : null}
+                            <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="text-base">
+                              {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}
+                            </Button>
+                          </div>
+                        </div>
+                        <Tabs
+                          value={(() => {
+                            // Normalize current tab if disabled by template
+                            if (!allowUser && (imageTab === 'upload' || imageTab === 'workspace')) return 'vehicles';
+                            if (!allowVehicle && imageTab === 'vehicles') return 'upload';
+                            return imageTab;
+                          })()}
+                          onValueChange={(v)=>{ setImageTab(v as 'vehicles'|'upload'|'workspace'); setSource(v === 'vehicles' ? 'vehicle' : 'upload'); }}
+                          className="w-full"
+                        >
+                          <TabsList className="bg-transparent p-0 gap-2">
                           {allowVehicle ? (
                             <TabsTrigger value="vehicles" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">Vehicles</TabsTrigger>
                           ) : null}
@@ -1855,23 +1919,11 @@ export function TemplatesTabContent(){
                           </TabsContent>
                         ) : null}
                       </Tabs>
+                    </div>
                     );
                   })()}
                 </div>
               </div>
-              <DialogFooter>
-                <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
-                  <div className="flex items-center gap-2">
-                    {selectedImageKeys.length >= requiredImages ? (
-                      <span className="text-xs text-white/70 whitespace-nowrap">Costs 7 credits</span>
-                    ) : null}
-                    <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="text-base">
-                      {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}
-                    </Button>
-                  </div>
-                </div>
-              </DialogFooter>
               <FixedAspectCropper
                 open={cropOpen}
                 imageUrl={cropUrl}

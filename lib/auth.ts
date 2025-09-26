@@ -2,6 +2,7 @@ import NextAuth, { type DefaultSession, type NextAuthConfig } from "next-auth";
 import Resend from "next-auth/providers/resend";
 import Facebook from "next-auth/providers/facebook";
 import { IgniteSurrealAdapter } from "@/lib/customAdapter";
+import { getBaseUrl, getEnvBaseUrl } from "@/lib/base-url";
 
 declare module "next-auth" {
   interface Session extends DefaultSession {
@@ -19,10 +20,12 @@ async function sendVerificationRequest({
   identifier: email,
   url,
   provider,
+  request,
 }: {
   identifier: string;
   url: string;
   provider: { apiKey?: string; from?: string };
+  request?: Request;
 }) {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -34,7 +37,7 @@ async function sendVerificationRequest({
       from: provider.from,
       to: email,
       subject: `Sign in to Nytforge Ignition`,
-      html: createEmail({ url, email }),
+      html: createEmail({ url, email, request }),
       text: `Sign in to Nytforge Ignition\n\nClick this link to sign in: ${url}\n\nIf you did not request this email, you can ignore it.`,
     }),
   });
@@ -43,12 +46,8 @@ async function sendVerificationRequest({
   }
 }
 
-function createEmail({ url, email }: { url: string; email: string }) {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    process.env.NEXTAUTH_URL ||
-    process.env.AUTH_URL ||
-    "https://ignition.nytforge.com";
+function createEmail({ url, email, request }: { url: string; email: string; request?: Request }) {
+  const baseUrl = request ? getBaseUrl(request) : getEnvBaseUrl();
   return `
   <div style="background:#0b1020;padding:1rem;margin:0">
     <div style="font-family:Roboto,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;max-width:36rem;margin:0 auto;background:#111a36;color:#e7ecff;border-radius:0.75rem;border:1px solid #263166;padding:1.5rem;">

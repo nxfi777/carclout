@@ -1,3 +1,16 @@
+import type { Metadata } from "next";
+import { createMetadata, NO_INDEX_ROBOTS } from "@/lib/seo";
+
+export const metadata: Metadata = {
+  ...createMetadata({
+    title: "Check your email",
+    description: "We sent a magic link to your inbox. Open it to finish signing into Ignition.",
+    path: "/auth/verify",
+    keywords: ["verify email", "magic link", "ignition login"],
+    robots: NO_INDEX_ROBOTS,
+  }),
+};
+
 export default function VerifyPage() {
   return (
     <div className="flex-1 flex items-center justify-center px-[1.5rem] py-[2rem]">

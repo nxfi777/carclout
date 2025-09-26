@@ -13,6 +13,21 @@ type Item = {
   label: string;
 };
 
+type ToolboxExtrasArgs = {
+  isHorizontal: boolean;
+  tooltipSide: "top" | "right" | "bottom" | "left";
+  tooltipAlign: "start" | "center" | "end";
+  popoverSide: "top" | "right" | "bottom" | "left";
+  popoverAlign: "start" | "center" | "end";
+  popoverOffset: number;
+};
+
+type ToolboxProps = {
+  className?: string;
+  orientation?: "vertical" | "horizontal";
+  extraEnd?: React.ReactNode | ((args: ToolboxExtrasArgs) => React.ReactNode);
+};
+
 // Temporarily hide specific tools from the UI without removing them
 const hiddenTools: Item["id"][] = ["shape", "image"];
 
@@ -23,10 +38,27 @@ const items: Item[] = [
   { id: "image", icon: <Images className="size-5" />, label: "Image" },
 ];
 
-export default function Toolbox({ className }: { className?: string }) {
+export default function Toolbox({ className, orientation = "vertical", extraEnd }: ToolboxProps) {
   const { state, dispatch } = useLayerEditor();
+  const isHorizontal = orientation === "horizontal";
+  const tooltipSide = isHorizontal ? "top" : "right";
+  const tooltipAlign: ToolboxExtrasArgs["tooltipAlign"] = "center";
+  const popoverSide = isHorizontal ? "top" : "right";
+  const popoverAlign = isHorizontal ? "center" : "start";
+  const popoverOffset = isHorizontal ? 10 : 8;
+  const extras = typeof extraEnd === "function"
+    ? extraEnd({ isHorizontal, tooltipSide, tooltipAlign, popoverSide, popoverAlign, popoverOffset })
+    : extraEnd;
   return (
-    <div className={cn("flex flex-col gap-1 p-1 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm w-12 sm:w-14", className)}>
+    <div
+      className={cn(
+        "flex rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm",
+        isHorizontal
+          ? "flex-row items-center justify-center gap-4 px-5 py-3"
+          : "flex-col gap-1 p-1 w-12 sm:w-14",
+        className,
+      )}
+    >
       {items.filter((it) => !hiddenTools.includes(it.id)).map((it) => {
         const active = state.tool === it.id;
         return (
@@ -36,7 +68,8 @@ export default function Toolbox({ className }: { className?: string }) {
                 type="button"
                 onClick={() => dispatch({ type: "set_tool", tool: it.id })}
                 className={cn(
-                  "flex items-center justify-center rounded-md h-10 sm:h-12 focus-visible:outline-hidden",
+                  "flex items-center justify-center rounded-md focus-visible:outline-hidden shrink-0",
+                  isHorizontal ? "h-12 w-12" : "h-10 sm:h-12 w-12",
                   active ? "bg-primary text-primary-foreground" : "bg-transparent hover:bg-white/10"
                 )}
                 aria-label={it.label}
@@ -44,7 +77,7 @@ export default function Toolbox({ className }: { className?: string }) {
                 {it.icon}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="px-2 py-1 text-xs">
+            <TooltipContent side={tooltipSide} className="px-2 py-1 text-xs">
               {it.label}
             </TooltipContent>
           </Tooltip>
@@ -57,21 +90,27 @@ export default function Toolbox({ className }: { className?: string }) {
               <button
                 type="button"
                 className={cn(
-                  "flex items-center justify-center rounded-md h-10 sm:h-12 focus-visible:outline-hidden bg-transparent hover:bg-white/10"
+                  "flex items-center justify-center rounded-md focus-visible:outline-hidden bg-transparent hover:bg-white/10 shrink-0",
+                  isHorizontal ? "h-12 w-12" : "h-10 sm:h-12 w-12"
                 )}
                 aria-label="Layers"
-                title="Layers"
               >
                 <Layers className="size-5" />
               </button>
             </TooltipTrigger>
           </PopoverTrigger>
-          <TooltipContent side="right" className="px-2 py-1 text-xs">Layers</TooltipContent>
+          <TooltipContent side={tooltipSide} className="px-2 py-1 text-xs">Layers</TooltipContent>
         </Tooltip>
-        <PopoverContent align="start" sideOffset={8} className="p-0 w-64">
+        <PopoverContent
+          align={popoverAlign}
+          side={popoverSide}
+          sideOffset={popoverOffset}
+          className="p-0 w-64"
+        >
           <LayersPanel />
         </PopoverContent>
       </Popover>
+      {extras}
     </div>
   );
 }

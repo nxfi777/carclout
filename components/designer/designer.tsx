@@ -1,11 +1,13 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
 import ElectricBorder from "@/components/electric-border";
 import carLoadAnimation from "@/public/carload.json";
 import { LayerEditorProvider } from "@/components/layer-editor/LayerEditorProvider";
 import LayerEditorShell from "@/components/layer-editor/LayerEditorShell";
+import { DesignerActionsProvider } from "@/components/designer/DesignerActionsContext";
 import { composeLayersToBlob } from "@/lib/layer-export";
 import { createDefaultText } from "@/types/layer-editor";
 import { getViewUrl } from "@/lib/view-url-client";
@@ -73,7 +75,7 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
     return ()=>{ cancelled = true; };
   }, [bgKey, rembg]);
 
-  async function downloadComposite(){
+  const downloadComposite = useCallback(async () => {
     if (downloading || !bgUrl) return;
     setDownloading(true);
     try {
@@ -88,9 +90,9 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
       a.click();
       setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
     } finally { setDownloading(false); }
-  }
+  }, [bgUrl, downloading, fgUrl]);
 
-  async function saveComposite(){
+  const saveComposite = useCallback(async () => {
     if (!onSave || !bgUrl) return;
     if (saving) return;
     setSaving(true);
@@ -99,7 +101,6 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
       const snap = getState ? getState() : { backgroundUrl: bgUrl, carMaskUrl: fgUrl || null, layers: [] as import("@/types/layer-editor").Layer[] };
       const blob = await composeLayersToBlob({ backgroundUrl: snap.backgroundUrl, carMaskUrl: snap.carMaskUrl, layers: snap.layers });
       if (!blob) return;
-      // Compare md5 of composed vs background; skip save if same
       try {
         const [md5Bg, md5Out] = await Promise.all([
           (async()=>{
@@ -109,22 +110,23 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
             const ab = await blob.arrayBuffer(); const { default: SparkMD5 } = await import('spark-md5'); return SparkMD5.ArrayBuffer.hash(ab);
           })(),
         ]);
-        if (md5Bg && md5Out && md5Bg === md5Out) return; // no changes
+        if (md5Bg && md5Out && md5Bg === md5Out) return;
       } catch {}
       await onSave(blob);
     } finally { setSaving(false); }
-  }
+  }, [bgUrl, fgUrl, onSave, saving]);
 
-  async function exportCompositeBlob(): Promise<Blob | null> {
+  const exportCompositeBlob = useCallback(async (): Promise<Blob | null> => {
+    if (!bgUrl) return null;
     try {
       const getState = (window as unknown as { getLayerEditorSnapshot?: ()=>{ backgroundUrl: string; carMaskUrl?: string | null; layers: import("@/types/layer-editor").Layer[] } }).getLayerEditorSnapshot;
-      const snap = getState ? getState() : { backgroundUrl: bgUrl!, carMaskUrl: fgUrl || null, layers: [] as import("@/types/layer-editor").Layer[] };
+      const snap = getState ? getState() : { backgroundUrl: bgUrl, carMaskUrl: fgUrl || null, layers: [] as import("@/types/layer-editor").Layer[] };
       const blob = await composeLayersToBlob({ backgroundUrl: snap.backgroundUrl, carMaskUrl: snap.carMaskUrl, layers: snap.layers });
       return blob;
     } catch { return null; }
-  }
+  }, [bgUrl, fgUrl]);
 
-  async function upscaleBackground(){
+  const upscaleBackground = useCallback(async () => {
     if (upscaling) return;
     setUpscaling(true);
     try {
@@ -146,7 +148,62 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
         try { onReplaceBgKey(String(data.key), typeof data?.url === 'string' ? String(data.url) : undefined); } catch {}
       }
     } catch {} finally { setUpscaling(false); }
-  }
+  }, [bgKey, onReplaceBgKey, upscaling]);
+
+  const actions = React.useMemo(() => {
+    const list: import("@/components/designer/DesignerActionsContext").DesignerActionDescriptor[] = [];
+    if (onTryAgain) {
+      list.push({
+        key: "try-again",
+        label: "Try again",
+        onSelect: onTryAgain,
+        section: "leading",
+        variant: "outline",
+      });
+    }
+    list.push({
+      key: "upscale",
+      label: upscaling ? "Upscaling…" : "Upscale",
+      onSelect: upscaleBackground,
+      disabled: upscaling,
+      variant: "outline",
+      electric: true,
+      loading: upscaling,
+      section: "primary",
+    });
+    if (showAnimate && onAnimate) {
+      list.push({
+        key: "animate",
+        label: "Animate",
+        onSelect: async () => {
+          try {
+            await onAnimate(exportCompositeBlob);
+          } catch {}
+        },
+        variant: "secondary",
+        electric: true,
+      });
+    }
+    if (onSave) {
+      list.push({
+        key: "save",
+        label: saving ? "Saving…" : (saveLabel || "Save"),
+        onSelect: saveComposite,
+        disabled: saving,
+        loading: saving,
+      });
+    }
+    list.push({
+      key: "download",
+      label: downloading ? "Downloading…" : "Download",
+      onSelect: downloadComposite,
+      disabled: downloading,
+      loading: downloading,
+      icon: !downloading ? <Download className="size-4" aria-hidden /> : undefined,
+      srLabel: "Download design",
+    });
+    return list;
+  }, [onTryAgain, onSave, saveLabel, showAnimate, onAnimate, downloading, saving, upscaling, downloadComposite, exportCompositeBlob, saveComposite, upscaleBackground]);
 
   if (busy) {
     return (
@@ -166,39 +223,58 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
 
   return (
     <div className="space-y-3">
-      <LayerEditorProvider initial={{ backgroundUrl: bgUrl, carMaskUrl: fgUrl, layers: (typeof defaultHeadline === 'string' && defaultHeadline.trim()) ? [{ ...createDefaultText(50, 80), text: defaultHeadline.toUpperCase() }] : [] }}>
-        <ExposeLayerState />
-        <LayerEditorShell />
-          <div className={`pt-2 flex flex-wrap items-center ${onTryAgain ? 'justify-between' : 'justify-end'} gap-2`}>
-            {onTryAgain ? (
-              <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={onTryAgain}>Try again</Button>
-            ) : null}
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {showAnimate ? (
+      <DesignerActionsProvider value={{ actions }}>
+        <LayerEditorProvider initial={{ backgroundUrl: bgUrl, carMaskUrl: fgUrl, layers: (typeof defaultHeadline === 'string' && defaultHeadline.trim()) ? [{ ...createDefaultText(50, 80), text: defaultHeadline.toUpperCase() }] : [] }}>
+          <ExposeLayerState />
+          <LayerEditorShell />
+          <div className="pt-2">
+            <div className={`hidden sm:flex flex-wrap items-center ${onTryAgain ? 'justify-between' : 'justify-end'} gap-2`}
+              aria-label="Designer actions"
+              role="toolbar"
+            >
+              {onTryAgain ? (
+                <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={onTryAgain}>Try again</Button>
+              ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {showAnimate ? (
+                  <ElectricBorder color="#ff6a00" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
+                    <Button type="button" className="w-full sm:w-auto" variant="secondary" onClick={async()=>{
+                      try {
+                        if (typeof onAnimate === 'function') {
+                          await onAnimate(exportCompositeBlob);
+                        }
+                      } catch {}
+                    }}>Animate</Button>
+                  </ElectricBorder>
+                ) : null}
                 <ElectricBorder color="#ff6a00" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
-                  <Button type="button" className="w-full sm:w-auto" variant="secondary" onClick={async()=>{
-                    try {
-                      if (typeof onAnimate === 'function') {
-                        await onAnimate(exportCompositeBlob);
-                      }
-                    } catch {}
-                  }}>Animate</Button>
+                  <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={upscaleBackground} disabled={upscaling}>
+                    {upscaling ? 'Upscaling…' : 'Upscale'}
+                  </Button>
                 </ElectricBorder>
-              ) : null}
-              <ElectricBorder color="#ff6a00" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
-                <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={upscaleBackground} disabled={upscaling}>
-                  {upscaling ? 'Upscaling…' : 'Upscale'}
+                {onSave ? (
+                  <Button type="button" className="w-full sm:w-auto" disabled={saving} onClick={saveComposite}>{saveLabel || 'Save'}</Button>
+                ) : null}
+                <Button
+                  type="button"
+                  className="w-full sm:w-auto flex items-center justify-center"
+                  onClick={downloadComposite}
+                  disabled={downloading}
+                  title="Download"
+                  aria-label={downloading ? 'Downloading' : 'Download'}
+                >
+                  {downloading ? 'Downloading…' : (
+                    <>
+                      <Download className="size-4" aria-hidden />
+                      <span className="sr-only">Download</span>
+                    </>
+                  )}
                 </Button>
-              </ElectricBorder>
-              {onSave ? (
-                <Button type="button" className="w-full sm:w-auto" disabled={saving} onClick={saveComposite}>{saveLabel || 'Save'}</Button>
-              ) : null}
-              <Button type="button" className="w-full sm:w-auto" onClick={downloadComposite} disabled={downloading}>
-                {downloading ? 'Downloading…' : 'Download'}
-              </Button>
+              </div>
             </div>
           </div>
-      </LayerEditorProvider>
+        </LayerEditorProvider>
+      </DesignerActionsProvider>
     </div>
   );
 }

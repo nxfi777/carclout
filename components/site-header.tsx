@@ -8,7 +8,6 @@ import ProfileDialog from "@/components/profile-dialog";
 import { getSurreal } from "@/lib/surrealdb";
 import HeaderUser from "./header-user";
 import BillingDialog from "@/components/billing-dialog";
-import DailyBonusDialog from "@/components/daily-bonus-dialog";
 import HeaderDock from "./header-dock";
 import HeaderDockMenu from "./header-dock-menu";
 import ProUpsellDialog from "./pro-upsell-dialog";
@@ -114,7 +113,6 @@ export default async function SiteHeader() {
                 </div>
                 <div className="hidden md:flex items-center gap-2">
                   <BillingDialog />
-                  <DailyBonusDialog />
                 </div>
               </>
             ) : null}

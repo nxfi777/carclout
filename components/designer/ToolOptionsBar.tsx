@@ -3,40 +3,46 @@ import React from "react";
 import NextImage from "next/image";
 import { useDesigner, useActiveLayer } from "@/components/designer/DesignerProvider";
 import { cn } from "@/lib/utils";
+import { parseColor, setColorAlpha } from "@/lib/color";
 // Removed unused DropdownMenu imports
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Popover, PopoverContent, PopoverAnchor } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverAnchor, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronDown } from "lucide-react";
 import { Square, Circle, Triangle, Wand2, Minus, AlignCenterHorizontal, AlignCenterVertical, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2 } from "lucide-react";
+import { BsTransparency } from "react-icons/bs";
+import { FaTextWidth } from "react-icons/fa";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Separator } from "@/components/ui/separator";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 
 export default function ToolOptionsBar({ className }: { className?: string }) {
   const { state, undo, redo, canUndo, canRedo } = useDesigner();
-  const layer = useActiveLayer();
-  const isTextSelected = !!layer && layer.type === 'text';
-  const isShapeSelected = !!layer && layer.type === 'shape';
-
+  const { hasTextSelected, hasShapeSelected } = React.useMemo(()=> {
+    const activeLayer = state.layers.find((l)=> l.id === state.activeLayerId) || null;
+    return {
+      hasTextSelected: activeLayer?.type === 'text',
+      hasShapeSelected: activeLayer?.type === 'shape',
+    };
+  }, [state.layers, state.activeLayerId]);
   return (
-    <div className={cn("flex items-center gap-2 px-2 py-1 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm flex-wrap", className)}>
-      <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
-        <Button size="sm" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4 mr-1" />Undo</Button>
-        <Button size="sm" variant="outline" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)"><Redo2 className="size-4 mr-1" />Redo</Button>
+    <div className="space-y-1">
+      <div className={cn("relative z-10 flex items-center gap-2 px-2 py-1 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm flex-wrap", className)}>
+        <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
+          <Button size="sm" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4 mr-1" />Undo</Button>
+          <Button size="sm" variant="outline" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)"><Redo2 className="size-4 mr-1" />Redo</Button>
+        </div>
+        {state.tool === 'text' && hasTextSelected ? <TextOptions /> : null}
+        {state.tool === 'marquee' ? <MarqueeOptions /> : null}
+        {state.tool === 'shape' ? <ShapeOptions /> : null}
+        {hasShapeSelected ? <ShapeStyleOptions /> : null}
+        {state.tool === 'image' ? <ImageOptions /> : null}
+        <MaskControls />
+        <RotationOptions />
+        {(['select','text','shape','image'] as string[]).includes(state.tool) ? <AlignControls /> : null}
+        {state.tool !== 'select' ? <EffectsDropdown /> : null}
       </div>
-      {(['select','text'] as string[]).includes(state.tool) && isTextSelected ? <TextOptions /> : null}
-      {state.tool === 'marquee' ? <MarqueeOptions /> : null}
-      {state.tool === 'shape' ? <ShapeOptions /> : null}
-      {state.tool === 'shape' && !isShapeSelected ? <ShapeDefaultsOptions /> : null}
-      {isShapeSelected ? <ShapeStyleOptions /> : null}
-      {state.tool === 'image' ? <ImageOptions /> : null}
-      {state.tool === 'fill' ? <FillOptions /> : null}
-      <RotationOptions />
-      {(['select','text','shape','image'] as string[]).includes(state.tool) ? <AlignControls /> : null}
-      {state.tool !== 'select' ? <EffectsDropdown /> : null}
       {state.tool === 'text' ? <TextToolHint /> : null}
     </div>
   );
@@ -59,47 +65,11 @@ function TextOptions() {
   const currentPx = isText ? Math.round((((layer as unknown as import("@/types/designer").TextLayer).fontSizeEm || Math.max(0.5, (((layer as unknown as import("@/types/designer").TextLayer).heightPct || 12) / 3))) * 16)) : 32;
   const sizes = [6,8,10,12,14,16,18,20,24,28,32,36,40,48,56,64,72,96,120,144,160];
   // Helpers to support color alpha for text (similar to shape fill handling)
-  function hexFromColor(input: string | undefined): string {
-    try {
-      if (!input) return '#ffffff';
-      if (input.startsWith('#')) {
-        if (input.length === 4) {
-          const r = input[1]; const g = input[2]; const b = input[3];
-          return `#${r}${r}${g}${g}${b}${b}`;
-        }
-        return input.slice(0, 7);
-      }
-      const m = input.match(/rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-      if (m) {
-        const r = Math.max(0, Math.min(255, Number(m[1] || 255)))|0;
-        const g = Math.max(0, Math.min(255, Number(m[2] || 255)))|0;
-        const b = Math.max(0, Math.min(255, Number(m[3] || 255)))|0;
-        const toHex = (n: number)=> n.toString(16).padStart(2,'0');
-        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-      }
-      return '#ffffff';
-    } catch { return '#ffffff'; }
-  }
-  function rgbaStringFrom(hex: string, alpha: number): string {
-    try {
-      const h = hex.replace('#','');
-      const r = parseInt(h.slice(0,2),16);
-      const g = parseInt(h.slice(2,4),16);
-      const b = parseInt(h.slice(4,6),16);
-      const a = Math.max(0, Math.min(1, alpha));
-      return `rgba(${r},${g},${b},${a})`;
-    } catch { return 'rgba(255,255,255,1)'; }
-  }
-  const textHex = isText ? hexFromColor(((layer as import("@/types/designer").TextLayer).color)) : '#ffffff';
-  const textAlpha = ((): number => {
-    try {
-      if (!isText) return 1;
-      const colorStr = String((layer as import("@/types/designer").TextLayer)?.color || '');
-      const m = colorStr.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\)/i);
-      if (m) return Math.max(0, Math.min(1, Number(m[1] || 1)));
-      return 1;
-    } catch { return 1; }
-  })();
+  const textColorParsed = isText ? parseColor((layer as import("@/types/designer").TextLayer).color) : parseColor('#ffffff');
+  const textHex = `#${textColorParsed.r.toString(16).padStart(2, '0')}${textColorParsed.g.toString(16).padStart(2, '0')}${textColorParsed.b.toString(16).padStart(2, '0')}`;
+  const textAlpha = textColorParsed.a;
+  const textOpacityPct = Math.round(textAlpha * 100);
+  const widthPct = isText ? Math.round((((layer as import("@/types/designer").TextLayer).scaleX || 1) * 100)) : 100;
   return (
     <>
       <Labeled label="Font">
@@ -111,36 +81,27 @@ function TextOptions() {
         />
       </Labeled>
       <Labeled label="Spacing">
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Slider
-                  className="w-36"
-                  min={-0.1}
-                  max={1}
-                  step={0.01}
-                  value={[isText ? (layer as import("@/types/designer").TextLayer).letterSpacingEm : 0]}
-                  onValueChange={(v)=>{
-                    if (!isText) return;
-                    const next = Number(v?.[0] || 0);
-                    dispatch({ type: 'update_layer', id: layer.id, patch: { letterSpacingEm: next } });
-                  }}
-                />
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={()=>{ if (!isText) return; dispatch({ type: 'update_layer', id: layer.id, patch: { letterSpacingEm: 0 } }); }}
-              >
-                Reset
-              </Button>
-            </div>
-          </ContextMenuTrigger>
-            <ContextMenuContent>
-              <ContextMenuItem onClick={()=>{ if (!isText) return; dispatch({ type: 'update_layer', id: layer.id, patch: { letterSpacingEm: 0 } }); }}>Reset letter spacing</ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
+        <div className="flex items-center gap-2">
+          <Slider
+            className="w-36"
+            min={-0.1}
+            max={1}
+            step={0.01}
+            value={[isText ? (layer as import("@/types/designer").TextLayer).letterSpacingEm : 0]}
+            onValueChange={(v)=>{
+              if (!isText) return;
+              const next = Number(v?.[0] || 0);
+              dispatch({ type: 'update_layer', id: layer.id, patch: { letterSpacingEm: next } });
+            }}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={()=>{ if (!isText) return; dispatch({ type: 'update_layer', id: layer.id, patch: { letterSpacingEm: 0 } }); }}
+          >
+            Reset
+          </Button>
+        </div>
       </Labeled>
       <Labeled label="Size">
         <div className="flex items-center gap-0">
@@ -203,48 +164,56 @@ function TextOptions() {
       <Labeled label="Text Align">
         <ToggleGroup type="single" size="sm" value={(isText ? (layer as import("@/types/designer").TextLayer).textAlign || 'center' : undefined)} onValueChange={(v)=>{ if (!isText) return; const next = (v || 'center') as 'left'|'center'|'right'|'justify'; dispatch({ type: 'update_layer', id: layer.id, patch: { textAlign: next } }); }}>
           <ToggleGroupItem value="left" aria-label="Align left" className="h-8 w-8">
-            <TextAlignStart className="size-4" />
+            <TextAlignStart aria-hidden className="size-4" />
           </ToggleGroupItem>
           <ToggleGroupItem value="center" aria-label="Align center" className="h-8 w-8">
-            <TextAlignCenter className="size-4" />
+            <TextAlignCenter aria-hidden className="size-4" />
           </ToggleGroupItem>
           <ToggleGroupItem value="right" aria-label="Align right" className="h-8 w-8">
-            <TextAlignEnd className="size-4" />
+            <TextAlignEnd aria-hidden className="size-4" />
           </ToggleGroupItem>
           <ToggleGroupItem value="justify" aria-label="Justify" className="h-8 w-8">
-            <TextAlignJustify className="size-4" />
+            <TextAlignJustify aria-hidden className="size-4" />
           </ToggleGroupItem>
         </ToggleGroup>
       </Labeled>
       <Labeled label="Width">
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <div className="flex items-center gap-3">
-              <Slider
-                className="w-36"
-                min={10}
-                max={300}
-                step={1}
-                value={[isText ? Math.round((((layer as import("@/types/designer").TextLayer).scaleX || 1) * 100)) : 100]}
-                onValueChange={(v)=>{
-                  if (!isText) return;
-                  const scaleX = Math.max(0.25, Math.min(3, (Number(v?.[0] || 100) / 100)));
-                  dispatch({ type: 'update_layer', id: layer.id, patch: { scaleX } });
-                }}
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={()=>{ if (!isText) return; const sy = Number((layer as import("@/types/designer").TextLayer).scaleY) || 1; dispatch({ type: 'update_layer', id: layer.id, patch: { scaleX: sy } }); }}
-              >
-                Reset
-              </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="icon" variant="outline" className="h-8 w-8" title="Adjust width">
+              <FaTextWidth aria-hidden size={16} />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 space-y-3" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
+            <div className="flex items-center justify-between text-sm text-white/70">
+              <span>Width</span>
+              <span className="text-white">{widthPct}%</span>
             </div>
-          </ContextMenuTrigger>
-            <ContextMenuContent>
-              <ContextMenuItem onClick={()=>{ if (!isText) return; const sy = Number((layer as import("@/types/designer").TextLayer).scaleY) || 1; dispatch({ type: 'update_layer', id: layer.id, patch: { scaleX: sy } }); }}>Reset width</ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
+            <Slider
+              className="w-full"
+              min={10}
+              max={300}
+              step={1}
+              value={[widthPct]}
+              onValueChange={(v)=>{
+                if (!isText) return;
+                const scaleX = Math.max(0.25, Math.min(3, (Number(v?.[0] || 100) / 100)));
+                dispatch({ type: 'update_layer', id: layer.id, patch: { scaleX } });
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={()=>{
+                if (!isText) return;
+                const sy = Number((layer as import("@/types/designer").TextLayer).scaleY) || 1;
+                dispatch({ type: 'update_layer', id: layer.id, patch: { scaleX: sy } });
+              }}
+            >
+              Reset
+            </Button>
+          </PopoverContent>
+        </Popover>
       </Labeled>
       <Labeled label="Color">
         <input
@@ -254,25 +223,38 @@ function TextOptions() {
           onChange={(e)=>{
             if (!isText) return;
             const hex = e.target.value;
-            const next = rgbaStringFrom(hex, textAlpha);
+            const next = setColorAlpha(hex, textAlpha);
             dispatch({ type: 'update_layer', id: layer.id, patch: { color: next } });
           }}
         />
         <div className="flex items-center gap-2 pl-1">
-          <div className="text-[0.8rem] text-white/70">Opacity</div>
-          <Slider
-            className="w-28"
-            min={0}
-            max={100}
-            step={1}
-            value={[Math.round(textAlpha*100)]}
-            onValueChange={(v)=>{
-              if (!isText) return;
-              const a = Math.max(0, Math.min(100, Number(v?.[0] || 100))) / 100;
-              const next = rgbaStringFrom(textHex, a);
-              dispatch({ type: 'update_layer', id: layer.id, patch: { color: next } });
-            }}
-          />
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="icon" variant="outline" className="h-8 w-8" title="Adjust opacity">
+                <BsTransparency aria-hidden size={16} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 space-y-3" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
+              <div className="flex items-center justify-between text-sm text-white/70">
+                <span>Opacity</span>
+                <span className="text-white">{textOpacityPct}%</span>
+              </div>
+              <Slider
+                className="w-full"
+                min={0}
+                max={100}
+                step={1}
+                value={[textOpacityPct]}
+                onValueChange={(v)=>{
+                  if (!isText) return;
+                  const a = Math.max(0, Math.min(100, Number(v?.[0] || 100))) / 100;
+                  const next = setColorAlpha(textHex, a);
+                  dispatch({ type: 'update_layer', id: layer.id, patch: { color: next } });
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+          <div className="text-xs text-white/60">{textOpacityPct}%</div>
         </div>
       </Labeled>
     </>
@@ -283,8 +265,18 @@ function MarqueeOptions() {
   const { state, dispatch } = useDesigner();
   return (
     <Labeled label="Marquee">
-      <button className={cn("px-2 py-1 rounded", state.marqueeMode==='rectangle' ? 'bg-white/10' : 'hover:bg-white/10')} onClick={()=> dispatch({ type: 'set_marquee_mode', mode: 'rectangle' })}><Square className="size-4" /></button>
-      <button className={cn("px-2 py-1 rounded", state.marqueeMode==='ellipse' ? 'bg-white/10' : 'hover:bg-white/10')} onClick={()=> dispatch({ type: 'set_marquee_mode', mode: 'ellipse' })}><Circle className="size-4" /></button>
+      <button
+        className={cn("px-2 py-1 rounded", state.marqueeMode==='rectangle' ? 'bg-white/10' : 'hover:bg-white/10')}
+        onClick={()=> dispatch({ type: 'set_marquee_mode', mode: 'rectangle' })}
+      >
+        <Square aria-hidden className="size-4" />
+      </button>
+      <button
+        className={cn("px-2 py-1 rounded", state.marqueeMode==='ellipse' ? 'bg-white/10' : 'hover:bg-white/10')}
+        onClick={()=> dispatch({ type: 'set_marquee_mode', mode: 'ellipse' })}
+      >
+        <Circle aria-hidden className="size-4" />
+      </button>
       {/* Lasso/polygon can be added later; keep UI placeholders minimal */}
     </Labeled>
   );
@@ -301,28 +293,28 @@ function ShapeOptions() {
         onClick={()=> dispatch({ type: 'set_shape_kind', kind: 'rectangle' })}
         title="Rectangle"
       >
-        <Square className="size-4" />
+        <Square aria-hidden className="size-4" />
       </button>
       <button
         className={cn("px-2 py-1 rounded", current==='ellipse' ? 'bg-white/10' : 'hover:bg-white/10')}
         onClick={()=> dispatch({ type: 'set_shape_kind', kind: 'ellipse' })}
         title="Ellipse"
       >
-        <Circle className="size-4" />
+        <Circle aria-hidden className="size-4" />
       </button>
       <button
         className={cn("px-2 py-1 rounded", current==='triangle' ? 'bg-white/10' : 'hover:bg-white/10')}
         onClick={()=> dispatch({ type: 'set_shape_kind', kind: 'triangle' })}
         title="Triangle"
       >
-        <Triangle className="size-4" />
+        <Triangle aria-hidden className="size-4" />
       </button>
       <button
         className={cn("px-2 py-1 rounded", current==='line' ? 'bg-white/10' : 'hover:bg-white/10')}
         onClick={()=> dispatch({ type: 'set_shape_kind', kind: 'line' })}
         title="Line"
       >
-        <Minus className="size-4" />
+        <Minus aria-hidden className="size-4" />
       </button>
     </Labeled>
   );
@@ -356,26 +348,10 @@ function ShapeStyleOptions() {
     } catch { return '#ffffff'; }
   }
 
-  function rgbaStringFrom(hex: string, alpha: number): string {
-    try {
-      const h = hex.replace('#','');
-      const r = parseInt(h.slice(0,2),16);
-      const g = parseInt(h.slice(2,4),16);
-      const b = parseInt(h.slice(4,6),16);
-      const a = Math.max(0, Math.min(1, alpha));
-      return `rgba(${r},${g},${b},${a})`;
-    } catch { return 'rgba(255,255,255,1)'; }
-  }
-
-  const fillHex = isShape ? hexFromColor(((layer as import("@/types/designer").ShapeLayer).fill)) : '#ffffff';
-  const fillAlpha = ((): number => {
-    try {
-      const fillStr = String((layer as import("@/types/designer").ShapeLayer)?.fill || '');
-      const m = fillStr.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\)/i);
-      if (m) return Math.max(0, Math.min(1, Number(m[1] || 1)));
-      return 1;
-    } catch { return 1; }
-  })();
+  const fillColorParsed = isShape ? parseColor((layer as import("@/types/designer").ShapeLayer).fill) : parseColor('#ffffff');
+  const fillHex = `#${fillColorParsed.r.toString(16).padStart(2, '0')}${fillColorParsed.g.toString(16).padStart(2, '0')}${fillColorParsed.b.toString(16).padStart(2, '0')}`;
+  const fillAlpha = fillColorParsed.a;
+  const fillOpacityPct = Math.round(fillAlpha * 100);
   const strokeHex = isShape ? hexFromColor((layer as import("@/types/designer").ShapeLayer).stroke || '#ffffff') : '#ffffff';
   const strokeWidth = isShape ? Number((layer as import("@/types/designer").ShapeLayer).strokeWidth || 2) : 2;
   const radiusPct = isShape ? Number((layer as import("@/types/designer").ShapeLayer).radiusPct || 0) : 0;
@@ -397,19 +373,37 @@ function ShapeStyleOptions() {
           value={fillHex}
           onChange={(e)=>{
             const hex = e.target.value;
-            const next = rgbaStringFrom(hex, fillAlpha);
+            const next = setColorAlpha(hex, fillAlpha);
             dispatch({ type: 'update_layer', id: layer!.id, patch: { fill: next } });
           }}
         />
         <div className="flex items-center gap-2 pl-1">
-          <div className="text-[0.8rem] text-white/70">Opacity</div>
-          <Slider className="w-28" min={0} max={100} step={1} value={[Math.round(fillAlpha*100)]}
-            onValueChange={(v)=>{
-              const a = Math.max(0, Math.min(100, Number(v?.[0] || 100))) / 100;
-              const next = rgbaStringFrom(fillHex, a);
-              dispatch({ type: 'update_layer', id: layer!.id, patch: { fill: next } });
-            }}
-          />
+          <Popover>
+            <PopoverTrigger asChild>
+            <Button size="icon" variant="outline" className="h-8 w-8" title="Adjust fill opacity">
+              <BsTransparency aria-hidden size={16} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 space-y-3" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
+              <div className="flex items-center justify-between text-sm text-white/70">
+                <span>Opacity</span>
+                <span className="text-white">{fillOpacityPct}%</span>
+              </div>
+              <Slider
+                className="w-full"
+                min={0}
+                max={100}
+                step={1}
+                value={[fillOpacityPct]}
+                onValueChange={(v)=>{
+                  const a = Math.max(0, Math.min(100, Number(v?.[0] || 100))) / 100;
+                  const next = setColorAlpha(fillHex, a);
+                  dispatch({ type: 'update_layer', id: layer!.id, patch: { fill: next } });
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+          <div className="text-xs text-white/60">{fillOpacityPct}%</div>
         </div>
       </Labeled>
       <Labeled label="Border">
@@ -446,110 +440,6 @@ function ShapeStyleOptions() {
   );
 }
 
-function ShapeDefaultsOptions() {
-  const { state, dispatch } = useDesigner();
-  const defaults = state.shapeDefaults || { fill: 'rgba(255,255,255,0.2)', stroke: 'rgba(255,255,255,0.9)', strokeWidth: 2, radiusPct: 0.06 };
-
-  function hexFromColor(input: string | undefined): string {
-    try {
-      if (!input) return '#ffffff';
-      if (input.startsWith('#')) {
-        if (input.length === 4) {
-          const r = input[1]; const g = input[2]; const b = input[3];
-          return `#${r}${r}${g}${g}${b}${b}`;
-        }
-        return input.slice(0, 7);
-      }
-      const m = input.match(/rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-      if (m) {
-        const r = Math.max(0, Math.min(255, Number(m[1] || 255)))|0;
-        const g = Math.max(0, Math.min(255, Number(m[2] || 255)))|0;
-        const b = Math.max(0, Math.min(255, Number(m[3] || 255)))|0;
-        const toHex = (n: number)=> n.toString(16).padStart(2,'0');
-        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-      }
-      return '#ffffff';
-    } catch { return '#ffffff'; }
-  }
-
-  function rgbaStringFrom(hex: string, alpha: number): string {
-    try {
-      const h = hex.replace('#','');
-      const r = parseInt(h.slice(0,2),16);
-      const g = parseInt(h.slice(2,4),16);
-      const b = parseInt(h.slice(4,6),16);
-      const a = Math.max(0, Math.min(1, alpha));
-      return `rgba(${r},${g},${b},${a})`;
-    } catch { return 'rgba(255,255,255,1)'; }
-  }
-
-  const fillHex = hexFromColor(defaults.fill);
-  const fillAlpha = ((): number => {
-    try {
-      const m = String(defaults.fill || '').match(/rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\)/i);
-      if (m) return Math.max(0, Math.min(1, Number(m[1] || 1)));
-      return 1;
-    } catch { return 1; }
-  })();
-  const strokeHex = hexFromColor(defaults.stroke || '#ffffff');
-  const strokeWidth = Number(defaults.strokeWidth || 2);
-  const radiusPct = Number(defaults.radiusPct || 0);
-
-  return (
-    <>
-      <Labeled label="Fill">
-        <input
-          type="color"
-          className="h-8 w-10 rounded"
-          value={fillHex}
-          onChange={(e)=>{
-            const hex = e.target.value;
-            const next = rgbaStringFrom(hex, fillAlpha);
-            dispatch({ type: 'update_shape_defaults', patch: { fill: next } });
-          }}
-        />
-        <div className="flex items-center gap-2 pl-1">
-          <div className="text-[0.8rem] text-white/70">Opacity</div>
-          <Slider className="w-28" min={0} max={100} step={1} value={[Math.round(fillAlpha*100)]}
-            onValueChange={(v)=>{
-              const a = Math.max(0, Math.min(100, Number(v?.[0] || 100))) / 100;
-              const next = rgbaStringFrom(fillHex, a);
-              dispatch({ type: 'update_shape_defaults', patch: { fill: next } });
-            }}
-          />
-        </div>
-      </Labeled>
-      <Labeled label="Border">
-        <input
-          type="color"
-          className="h-8 w-10 rounded"
-          value={strokeHex}
-          onChange={(e)=>{
-            const hex = e.target.value;
-            dispatch({ type: 'update_shape_defaults', patch: { stroke: hex } });
-          }}
-        />
-        <div className="flex items-center gap-2 pl-1">
-          <div className="text-[0.8rem] text-white/70">Width</div>
-          <Slider className="w-28" min={0} max={40} step={1} value={[strokeWidth]}
-            onValueChange={(v)=>{
-              const w = Math.max(0, Math.min(200, Number(v?.[0] || 0)));
-              dispatch({ type: 'update_shape_defaults', patch: { strokeWidth: w } });
-            }}
-          />
-        </div>
-      </Labeled>
-      <Labeled label="Radius">
-        <Slider className="w-36" min={0} max={0.5} step={0.01} value={[radiusPct]}
-          onValueChange={(v)=>{
-            const rp = Math.max(0, Math.min(0.5, Number(v?.[0] || 0)));
-            dispatch({ type: 'update_shape_defaults', patch: { radiusPct: rp } });
-          }}
-        />
-      </Labeled>
-    </>
-  );
-}
 function ImageOptions() {
   const { dispatch } = useDesigner();
   const [carKeys, setCarKeys] = React.useState<string[]>([]);
@@ -684,15 +574,6 @@ function ImageOptions() {
   );
 }
 
-function FillOptions() {
-  return (
-    <Labeled label="Fill">
-      <input type="color" className="h-8 w-10 rounded" defaultValue="#ff3366" onChange={()=>{ /* used at paint time */ }} />
-      <div className="text-[0.8rem] text-white/70 pl-1">Tap inside a marquee</div>
-    </Labeled>
-  );
-}
-
 function AlignControls() {
   const layer = useActiveLayer();
   const { dispatch } = useDesigner();
@@ -706,7 +587,7 @@ function AlignControls() {
         disabled={disabled}
         onClick={()=>{ if (!layer) return; dispatch({ type: 'update_layer', id: layer.id, patch: { xPct: 50 } }); }}
       >
-        <AlignCenterVertical className="size-4" />
+        <AlignCenterVertical aria-hidden className="size-4" />
       </Button>
       <Button
         size="icon"
@@ -715,7 +596,7 @@ function AlignControls() {
         disabled={disabled}
         onClick={()=>{ if (!layer) return; dispatch({ type: 'update_layer', id: layer.id, patch: { yPct: 50 } }); }}
       >
-        <AlignCenterHorizontal className="size-4" />
+        <AlignCenterHorizontal aria-hidden className="size-4" />
       </Button>
     </Labeled>
   );
@@ -819,7 +700,7 @@ function EffectsDropdown() {
 function TextToolHint() {
   return (
     <div
-      className="ml-auto pl-3 text-xs sm:text-sm text-white/70 flex items-center whitespace-nowrap"
+      className="pt-2 text-center text-xs sm:text-sm text-white/70"
       role="note"
       aria-live="polite"
     >
@@ -959,5 +840,22 @@ function ShadowOffsetPad({ valueX, valueY, max, onChange }: { valueX: number; va
         </button>
       </div>
     </div>
+  );
+}
+
+function MaskControls(){
+  const { state, dispatch } = useDesigner();
+  const maskLayer = React.useMemo(()=> state.layers.find(l=> l.type === 'mask') || null, [state.layers]);
+  if (!maskLayer) return null;
+  const hidden = !!state.maskHidden;
+  return (
+    <Labeled label="Cutout">
+      <Button size="sm" variant={hidden ? 'destructive' : 'outline'} onClick={()=> dispatch({ type: 'toggle_mask_hide' })}>
+        {hidden ? 'Show' : 'Hide'}
+      </Button>
+      {hidden ? (
+        <div className="text-[0.75rem] text-white/70 pl-2">Cutout hidden</div>
+      ) : null}
+    </Labeled>
   );
 }

@@ -10,17 +10,18 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 export default function DesignerShell() {
   return (
     <TooltipProvider>
-      <div className="flex items-start gap-2 sm:gap-3">
-        <div className="sticky top-2 sm:top-3 self-start">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+        <div className="hidden sm:flex sm:flex-col sm:gap-3 sm:sticky sm:top-3 sm:self-start">
           <Toolbox />
-          <div className="mt-2">
-            <LayersPanel />
-          </div>
+          <LayersPanel />
         </div>
-        <div className="flex-1 min-w-0 space-y-2">
+        <div className="flex-1 min-w-0 space-y-3">
           <ToolOptionsBar />
           <div data-designer-canvas>
             <DesignerCanvas />
+          </div>
+          <div className="flex justify-center sm:hidden">
+          <Toolbox orientation="horizontal" showMobileActions />
           </div>
         </div>
         <AddViaToolInteractions />

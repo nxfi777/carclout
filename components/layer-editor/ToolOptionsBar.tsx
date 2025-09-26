@@ -6,37 +6,97 @@ import NextImage from "next/image";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverAnchor } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverAnchor, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2 } from "lucide-react";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
-import type { Layer, TextLayer, ShapeLayer } from "@/types/layer-editor";
+import type { ShapeLayer, TextLayer } from "@/types/designer";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2, Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical, Check } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { BsTransparency } from "react-icons/bs";
+import { FaFont } from "react-icons/fa6";
+import { RiLetterSpacing2 } from "react-icons/ri";
+import { LuRotate3D } from "react-icons/lu";
+import { CgFontHeight } from "react-icons/cg";
+
+const FONT_FAMILIES = [
+  "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+  "Arial, Helvetica, sans-serif",
+  "Helvetica, Arial, sans-serif",
+  "Georgia, serif",
+  '"Times New Roman", Times, serif',
+  '"Courier New", Courier, monospace',
+  'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',
+  "Poppins",
+  "Montserrat",
+  "Oswald",
+  "Bebas Neue",
+  "Lato",
+  "Open Sans",
+  "Roboto Condensed",
+  "Anton",
+  "Barlow Condensed",
+  "Playfair Display",
+  "Merriweather",
+  "DM Sans",
+  "Sora",
+  "Exo 2",
+  "Orbitron",
+  "Rajdhani",
+  "Roboto Mono",
+  "Source Code Pro",
+  "Fira Code",
+  "Raleway",
+  "Nunito",
+  "Ubuntu",
+  "Work Sans",
+  "PT Sans",
+  "PT Serif",
+  "Rubik",
+  "Manrope",
+  "Cabin",
+  "Quicksand",
+  "Alegreya",
+  "Libre Baskerville",
+  "Arvo",
+  "Noto Sans",
+  "Noto Serif",
+] as const;
+
+type FontFamilyOption = {
+  value: (typeof FONT_FAMILIES)[number];
+  label: string;
+};
+
+const FONT_OPTIONS: FontFamilyOption[] = FONT_FAMILIES.map((value)=> ({
+  value,
+  label: value.split(",")[0]?.replace(/"/g, "").trim() || value,
+}));
 
 export default function ToolOptionsBar({ className }: { className?: string }) {
   const { state, undo, redo, canUndo, canRedo } = useLayerEditor();
   const selectedIds = state.selectedLayerIds && state.selectedLayerIds.length > 0 ? state.selectedLayerIds : (state.activeLayerId ? [state.activeLayerId] : []);
-  const selectedLayers: Layer[] = state.layers.filter((l) => selectedIds.includes(l.id));
+  const selectedLayers = state.layers.filter((l) => selectedIds.includes(l.id));
   const hasTextSelected = selectedLayers.some((l) => l.type === 'text');
   const hasShapeSelected = selectedLayers.some((l) => l.type === 'shape');
 
   return (
-    <div className={cn("relative z-10 flex items-center gap-2 px-2 py-1 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm flex-wrap", className)}>
-      <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
-        <Button size="sm" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4 mr-1" />Undo</Button>
-        <Button size="sm" variant="outline" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)"><Redo2 className="size-4 mr-1" />Redo</Button>
+    <div className="space-y-1">
+      <div className={cn("relative z-10 flex items-center gap-2 px-2 py-1 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm flex-wrap", className)}>
+        <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
+          <Button size="icon" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" /></Button>
+          <Button size="icon" variant="outline" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)"><Redo2 className="size-4" /></Button>
+        </div>
+        {state.tool === 'text' ? <AlignControls /> : null}
+        {state.tool === 'text' && hasTextSelected ? <TextOptions /> : null}
+        {state.tool === 'shape' ? <ShapeOptions /> : null}
+        {hasShapeSelected ? <ShapeStyleOptions /> : null}
+        {state.tool === 'image' ? <ImageOptions /> : null}
+        <RotationOptions />
+        {(['select','shape','image'] as string[]).includes(state.tool) ? <AlignControls /> : null}
+        {(['shape','image'] as string[]).includes(state.tool) ? <EffectsDropdown /> : null}
       </div>
-      {state.tool === 'text' && hasTextSelected ? <TextOptions /> : null}
-      {state.tool === 'shape' ? <ShapeOptions /> : null}
-      {hasShapeSelected ? <ShapeStyleOptions /> : null}
-      {state.tool === 'image' ? <ImageOptions /> : null}
-      <RotationOptions />
-      <TiltOptions />
-      {(['select','text','shape','image'] as string[]).includes(state.tool) ? <AlignControls /> : null}
-      <EffectsDropdown />
       {state.tool === 'text' ? <TextToolHint /> : null}
     </div>
   );
@@ -102,6 +162,18 @@ function TextOptions() {
       return 1;
     } catch { return 1; }
   })();
+  const textOpacityPct = Math.round(textAlpha * 100);
+  const lineHeightValue = isText && selectedTextLayers.length === 1 ? selectedTextLayers[0].lineHeightEm : 1.1;
+  const tiltValue = isText && selectedTextLayers.length === 1 ? Math.round(Number(selectedTextLayers[0].tiltYDeg || 0)) : 0;
+  const currentAlign: 'left' | 'center' | 'right' | 'justify' = isText && selectedTextLayers.length === 1
+    ? ((selectedTextLayers[0].textAlign as 'left' | 'center' | 'right' | 'justify' | undefined) || 'center')
+    : 'center';
+  const alignIcons: Record<'left' | 'center' | 'right' | 'justify', React.ReactElement> = {
+    left: <TextAlignStart className="size-4" />,
+    center: <TextAlignCenter className="size-4" />,
+    right: <TextAlignEnd className="size-4" />,
+    justify: <TextAlignJustify className="size-4" />,
+  };
 
   function applyDeltaPx(delta: number) {
     if (!isText) return;
@@ -122,33 +194,94 @@ function TextOptions() {
   }
   return (
     <>
-      <div className="flex items-center gap-1 pr-2 border-r last:border-r-0 border-[var(--border)]">
+      <div className="flex items-center gap-2 pr-2 border-r last:border-r-0 border-[var(--border)]">
         <RichTextToggleGroup />
-      </div>
-      <Labeled label="Font">
-        <Select value={isText && selectedTextLayers.length === 1 ? String(selectedTextLayers[0].fontFamily) : ''} onValueChange={(v)=>{ if (!isText) return; for (const t of selectedTextLayers) { dispatch({ type: 'update_layer', id: t.id, patch: { fontFamily: v } }); } }}>
-          <SelectTrigger className="h-9 w-44">
-            <SelectValue placeholder="Font" />
+        <Select
+          value={currentAlign}
+          onValueChange={(v)=>{
+            if (!isText) return;
+            const next = (v || 'center') as 'left'|'center'|'right'|'justify';
+            for (const t of selectedTextLayers) {
+              dispatch({ type: 'update_layer', id: t.id, patch: { textAlign: next } });
+            }
+          }}
+          disabled={!isText}
+        >
+          <SelectTrigger size="sm" className="h-8 w-9 min-w-0 justify-center px-0" aria-label={`Align ${currentAlign}`} title={`Align ${currentAlign}`}>
+            <span className="flex h-full w-full items-center justify-center">
+              {alignIcons[currentAlign]}
+            </span>
           </SelectTrigger>
-          <SelectContent style={{ maxHeight: 280, overflowY: 'auto' }}>
-            {[
-              'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-              'Arial, Helvetica, sans-serif',
-              'Helvetica, Arial, sans-serif',
-              'Georgia, serif',
-              '"Times New Roman", Times, serif',
-              '"Courier New", Courier, monospace',
-              'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',
-              'Poppins', 'Montserrat', 'Oswald', 'Bebas Neue', 'Lato', 'Open Sans', 'Roboto Condensed', 'Anton', 'Barlow Condensed', 'Playfair Display', 'Merriweather', 'DM Sans', 'Sora', 'Exo 2', 'Orbitron', 'Rajdhani', 'Roboto Mono', 'Source Code Pro', 'Fira Code', 'Raleway', 'Nunito', 'Ubuntu', 'Work Sans', 'PT Sans', 'PT Serif', 'Rubik', 'Manrope', 'Cabin', 'Quicksand', 'Alegreya', 'Libre Baskerville', 'Arvo', 'Noto Sans', 'Noto Serif'
-            ].map((f)=> (
-              <SelectItem key={f} value={f}>
-                <span style={{ fontFamily: f }}>{f.split(',')[0].replace(/"/g,'')}</span>
-              </SelectItem>
-            ))}
+          <SelectContent align="start" className="w-32 [&_[data-slot=select-item-indicator]]:hidden [&_[data-state=checked]_[data-slot=select-item-indicator]]:inline-flex [&_[data-state=checked]]:text-primary">
+            <SelectItem value="left" textValue="Align left" className="justify-center" aria-label="Align left">
+              <TextAlignStart aria-hidden className="size-4" />
+            </SelectItem>
+            <SelectItem value="center" textValue="Align center" className="justify-center" aria-label="Align center">
+              <TextAlignCenter aria-hidden className="size-4" />
+            </SelectItem>
+            <SelectItem value="right" textValue="Align right" className="justify-center" aria-label="Align right">
+              <TextAlignEnd aria-hidden className="size-4" />
+            </SelectItem>
+            <SelectItem value="justify" textValue="Justify" className="justify-center" aria-label="Justify">
+              <TextAlignJustify aria-hidden className="size-4" />
+            </SelectItem>
           </SelectContent>
         </Select>
-      </Labeled>
-      <Labeled label="Size">
+      </div>
+      <div className="flex items-center gap-2 pr-2 border-r last:border-r-0 border-[var(--border)]">
+        <input
+          type="color"
+          className="h-8 w-10 rounded"
+          value={textHex}
+          onChange={(e)=>{
+            if (!isText) return; const hex = e.target.value; const next = rgbaStringFrom(hex, textAlpha);
+            for (const t of selectedTextLayers) {
+              dispatch({ type: 'update_layer', id: t.id, patch: { color: next } });
+            }
+          }}
+        />
+        <div className="flex items-center gap-2 pl-1">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="icon" variant="outline" className="h-8 w-8" title="Adjust opacity">
+                <BsTransparency aria-hidden size={16} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-52 space-y-3" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
+              <div className="flex items-center justify-between text-sm text-white/70">
+                <span>Opacity</span>
+                <span className="text-white">{textOpacityPct}%</span>
+              </div>
+              <Slider
+                className="w-full"
+                min={0}
+                max={100}
+                step={1}
+                value={[textOpacityPct]}
+                onValueChange={(v)=>{
+                  if (!isText) return;
+                  const a = Math.max(0, Math.min(100, Number(v?.[0] || 100))) / 100;
+                  const next = rgbaStringFrom(textHex, a);
+                  for (const t of selectedTextLayers) {
+                    dispatch({ type: 'update_layer', id: t.id, patch: { color: next } });
+                  }
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 pr-2 border-r last:border-r-0 border-[var(--border)]">
+        <FontFamilyPopover
+          isText={isText}
+          selectedTextLayers={selectedTextLayers}
+          onSelect={(font)=>{
+            if (!isText) return;
+            for (const t of selectedTextLayers) {
+              dispatch({ type: 'update_layer', id: t.id, patch: { fontFamily: font } });
+            }
+          }}
+        />
         <div className="flex items-center gap-0">
           <Button size="icon" variant="outline" className="rounded-r-none" onClick={()=> applyDeltaPx(-2)}>-</Button>
           <Popover open={open} onOpenChange={setOpen}>
@@ -200,75 +333,195 @@ function TextOptions() {
           </Popover>
           <Button size="icon" variant="outline" className="rounded-l-none -ml-px" onClick={()=> applyDeltaPx(2)}>+</Button>
         </div>
-      </Labeled>
-      <Labeled label="Spacing">
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <div className="flex items-center gap-2 w-56">
-              <Slider className="w-36" min={-0.1} max={1} step={0.01} value={[isText && selectedTextLayers.length === 1 ? selectedTextLayers[0].letterSpacingEm : 0]} onValueChange={(v)=>{ if (!isText) return; const next = Number(v?.[0] || 0); for (const t of selectedTextLayers) { dispatch({ type: 'update_layer', id: t.id, patch: { letterSpacingEm: next } }); } }} />
+      </div>
+      <div className="flex items-center gap-2 pr-2 border-r last:border-r-0 border-[var(--border)]">
+        {isText ? <EffectsDropdown variant="inline" /> : null}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="icon" variant="outline" className="h-8 w-8" title="Adjust depth">
+              <LuRotate3D aria-hidden size={16} />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-56 space-y-4" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
+            <div className="flex items-center justify-between text-sm text-white/70">
+              <span>Depth</span>
+              <span className="text-white">{tiltValue}&deg;</span>
             </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem onClick={()=>{ if (!isText) return; for (const t of selectedTextLayers) { dispatch({ type: 'update_layer', id: t.id, patch: { letterSpacingEm: 0 } }); } }}>Reset letter spacing</ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-        <div className="flex items-center gap-2 w-56">
-          <div className="text-[0.75rem] w-16 text-white/60">Line height</div>
-          <Slider className="w-36" min={0.6} max={2} step={0.01} value={[isText && selectedTextLayers.length === 1 ? selectedTextLayers[0].lineHeightEm : 1.1]} onValueChange={(v)=>{ if (!isText) return; const next = Number(v?.[0] || 1.1); for (const t of selectedTextLayers) { dispatch({ type: 'update_layer', id: t.id, patch: { lineHeightEm: next } }); } }} />
-        </div>
-      </Labeled>
-      <Labeled label="Text Align">
-        <ToggleGroup type="single" size="sm"
-          value={(isText && selectedTextLayers.length === 1 ? (selectedTextLayers[0].textAlign || 'center') : undefined)}
-          onValueChange={(v)=>{ if (!isText) return; const next = (v || 'center') as 'left'|'center'|'right'|'justify'; for (const t of selectedTextLayers) { dispatch({ type: 'update_layer', id: t.id, patch: { textAlign: next } }); } }}
-        >
-          <ToggleGroupItem value="left" aria-label="Align left" className="h-8 w-8">
-            <TextAlignStart className="size-4" />
-          </ToggleGroupItem>
-          <ToggleGroupItem value="center" aria-label="Align center" className="h-8 w-8">
-            <TextAlignCenter className="size-4" />
-          </ToggleGroupItem>
-          <ToggleGroupItem value="right" aria-label="Align right" className="h-8 w-8">
-            <TextAlignEnd className="size-4" />
-          </ToggleGroupItem>
-          <ToggleGroupItem value="justify" aria-label="Justify" className="h-8 w-8">
-            <TextAlignJustify className="size-4" />
-          </ToggleGroupItem>
-        </ToggleGroup>
-      </Labeled>
-      <Labeled label="Width">
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <div>
-              <Slider className="w-36" min={10} max={300} step={1} value={[isText && selectedTextLayers.length === 1 ? Math.round(((selectedTextLayers[0].scaleX || 1) * 100)) : 100]} onValueChange={(v)=>{ if (!isText) return; const scaleX = Math.max(0.25, Math.min(3, (Number(v?.[0] || 100) / 100))); for (const t of selectedTextLayers) { dispatch({ type: 'update_layer', id: t.id, patch: { scaleX } }); } }} />
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/60">-</span>
+              <div className="relative flex-1">
+                <Slider
+                  className="flex-1"
+                  min={-45}
+                  max={45}
+                  step={1}
+                  value={[tiltValue]}
+                  onValueChange={(v)=>{
+                    if (!isText) return;
+                    const raw = Number(v?.[0] || 0);
+                    let next = Math.max(-45, Math.min(45, raw));
+                    if (Math.abs(next) <= 2) next = 0;
+                    for (const t of selectedTextLayers) {
+                      dispatch({ type: 'update_layer', id: t.id, patch: { tiltYDeg: next } });
+                    }
+                  }}
+                />
+                <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-xs text-white/40">|</span>
+              </div>
+              <span className="text-xs text-white/60">+</span>
             </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem onClick={()=>{ if (!isText) return; for (const t of selectedTextLayers) { const sy = Number(t.scaleY || 1); dispatch({ type: 'update_layer', id: t.id, patch: { scaleX: sy } }); } }}>Reset width</ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      </Labeled>
-      <Labeled label="Color">
-        <input
-          type="color"
-          className="h-8 w-10 rounded"
-          value={textHex}
-          onChange={(e)=>{
-            if (!isText) return; const hex = e.target.value; const next = rgbaStringFrom(hex, textAlpha);
-            for (const t of selectedTextLayers) { dispatch({ type: 'update_layer', id: t.id, patch: { color: next } }); }
-          }}
-        />
-        <div className="flex items-center gap-2 pl-1">
-          <div className="text-[0.8rem] text-white/70">Opacity</div>
-          <Slider className="w-28" min={0} max={100} step={1} value={[Math.round(textAlpha*100)]}
-            onValueChange={(v)=>{
-              if (!isText) return; const a = Math.max(0, Math.min(100, Number(v?.[0] || 100))) / 100; const next = rgbaStringFrom(textHex, a);
-              for (const t of selectedTextLayers) { dispatch({ type: 'update_layer', id: t.id, patch: { color: next } }); }
-            }}
-          />
-        </div>
-      </Labeled>
+          </PopoverContent>
+        </Popover>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="icon" variant="outline" className="h-8 w-8" title="Adjust letter spacing">
+              <RiLetterSpacing2 aria-hidden size={16} />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-52 space-y-3" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
+            <div className="flex items-center justify-between text-sm text-white/70">
+              <span>Letter spacing</span>
+              <span className="text-white">{(isText && selectedTextLayers.length === 1 ? selectedTextLayers[0].letterSpacingEm : 0).toFixed(2)}</span>
+            </div>
+            <Slider
+              className="w-full"
+              min={-0.1}
+              max={1}
+              step={0.01}
+              value={[isText && selectedTextLayers.length === 1 ? selectedTextLayers[0].letterSpacingEm : 0]}
+              onValueChange={(v)=>{
+                if (!isText) return;
+                const next = Number(v?.[0] || 0);
+                for (const t of selectedTextLayers) {
+                  dispatch({ type: 'update_layer', id: t.id, patch: { letterSpacingEm: next } });
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={()=>{
+                if (!isText) return;
+                for (const t of selectedTextLayers) {
+                  dispatch({ type: 'update_layer', id: t.id, patch: { letterSpacingEm: 0 } });
+                }
+              }}
+            >
+              Reset
+            </Button>
+          </PopoverContent>
+        </Popover>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="icon" variant="outline" className="h-8 w-8" title="Adjust line height">
+              <CgFontHeight aria-hidden size={16} />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-52 space-y-3" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
+            <div className="flex items-center justify-between text-sm text-white/70">
+              <span>Line height</span>
+              <span className="text-white">{lineHeightValue.toFixed(2)}</span>
+            </div>
+            <Slider
+              className="w-full"
+              min={0.6}
+              max={2}
+              step={0.01}
+              value={[lineHeightValue]}
+              onValueChange={(v)=>{
+                if (!isText) return;
+                const next = Number(v?.[0] || 1.1);
+                for (const t of selectedTextLayers) {
+                  dispatch({ type: 'update_layer', id: t.id, patch: { lineHeightEm: next } });
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={()=>{
+                if (!isText) return;
+                for (const t of selectedTextLayers) {
+                  dispatch({ type: 'update_layer', id: t.id, patch: { lineHeightEm: 1.1 } });
+                }
+              }}
+            >
+              Reset
+            </Button>
+          </PopoverContent>
+        </Popover>
+      </div>
     </>
+  );
+}
+
+function FontFamilyPopover({
+  isText,
+  selectedTextLayers,
+  onSelect,
+}: {
+  isText: boolean;
+  selectedTextLayers: TextLayer[];
+  onSelect: (font: string)=> void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const activeFont = React.useMemo(()=>{
+    if (!isText || selectedTextLayers.length === 0) return null;
+    if (selectedTextLayers.length > 1) return null;
+    return selectedTextLayers[0].fontFamily || null;
+  }, [isText, selectedTextLayers]);
+  const activeLabel = React.useMemo(()=>{
+    if (!activeFont) return selectedTextLayers.length > 1 ? "Multiple" : "Font family";
+    return activeFont.split(",")[0]?.replace(/"/g, "").trim() || activeFont;
+  }, [activeFont, selectedTextLayers.length]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-8 w-8"
+          title="Choose font"
+          aria-label="Choose font"
+          disabled={!isText}
+        >
+          <FaFont aria-hidden size={16} />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
+        <Command>
+          <div className="flex items-center justify-between px-3 pt-3 pb-2 text-xs text-white/70 border-b border-[color:var(--border)]">
+            <span>Font family</span>
+            <span className="max-w-36 truncate text-white/80 text-[0.7rem]">{activeLabel}</span>
+          </div>
+          <CommandInput placeholder="Search fonts" autoFocus />
+          <CommandList className="max-h-[20rem] overflow-y-auto">
+            <CommandEmpty>No fonts found.</CommandEmpty>
+            <CommandGroup className="px-0">
+              {FONT_OPTIONS.map(({ value, label })=> {
+                const isActive = !!activeFont && activeFont === value;
+                return (
+                  <CommandItem
+                    key={value}
+                    value={label}
+                    onSelect={() => {
+                      onSelect(value);
+                      setOpen(false);
+                    }}
+                    style={{ fontFamily: value }}
+                    className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                  >
+                    <span className="truncate">{label}</span>
+                    {isActive ? <Check aria-hidden className="size-4 text-primary" /> : null}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -404,17 +657,17 @@ function ShapeOptions() {
         onClick={()=> { dispatch({ type: 'set_tool', tool: 'shape' }); dispatch({ type: 'set_marquee_mode', mode: 'rectangle' }); }}
         title="Rectangle"
       >
-        <Square className="size-4" />
+        <Square aria-hidden className="size-4" />
       </button>
       <button
         className={cn("px-2 py-1 rounded", current==='ellipse' ? 'bg-white/10' : 'hover:bg-white/10')}
         onClick={()=> { dispatch({ type: 'set_tool', tool: 'shape' }); dispatch({ type: 'set_marquee_mode', mode: 'ellipse' }); }}
         title="Ellipse"
       >
-        <Circle className="size-4" />
+        <Circle aria-hidden className="size-4" />
       </button>
       <button className="px-2 py-1 rounded opacity-50 cursor-not-allowed" disabled title="Polygon coming soon">
-        <Triangle className="size-4" />
+        <Triangle aria-hidden className="size-4" />
       </button>
     </Labeled>
   );
@@ -688,7 +941,7 @@ function AlignControls() {
   const { dispatch } = useLayerEditor();
   const disabled = !layer;
   return (
-    <Labeled label="Canvas Align">
+    <div className="flex items-center gap-2 pr-2 border-r last:border-r-0 border-[var(--border)]">
       <Button
         size="icon"
         variant="outline"
@@ -696,7 +949,7 @@ function AlignControls() {
         disabled={disabled}
         onClick={()=>{ if (!layer) return; dispatch({ type: 'update_layer', id: layer.id, patch: { xPct: 50 } }); }}
       >
-        <AlignCenterVertical className="size-4" />
+        <AlignCenterVertical aria-hidden className="size-4" />
       </Button>
       <Button
         size="icon"
@@ -705,9 +958,9 @@ function AlignControls() {
         disabled={disabled}
         onClick={()=>{ if (!layer) return; dispatch({ type: 'update_layer', id: layer.id, patch: { yPct: 50 } }); }}
       >
-        <AlignCenterHorizontal className="size-4" />
+        <AlignCenterHorizontal aria-hidden className="size-4" />
       </Button>
-    </Labeled>
+    </div>
   );
 }
 
@@ -716,52 +969,9 @@ function RotationOptions() {
   return null;
 }
 
-// Depth tilt bidirectional slider (rotateY)
-function TiltOptions() {
-  const { state, dispatch } = useLayerEditor();
-  const selectedIds = state.selectedLayerIds && state.selectedLayerIds.length > 0 ? state.selectedLayerIds : (state.activeLayerId ? [state.activeLayerId] : []);
-  const selectedLayers = state.layers.filter((l) => selectedIds.includes(l.id));
-  if (selectedLayers.length === 0) return null;
-  const single = selectedLayers.length === 1 ? selectedLayers[0] : null;
-  const tilt = Math.round(Number(single ? (single.tiltYDeg || 0) : 0));
-  return (
-    <Labeled label="Depth">
-      <div className="flex items-center gap-2">
-        <div className="text-[0.8rem] text-white/70 w-5 text-right">-</div>
-        <div className="relative w-36">
-          <Slider
-            className="w-full"
-            min={-45}
-            max={45}
-            step={1}
-            value={[tilt]}
-            onValueChange={(v)=>{
-              const raw = Number(v?.[0] || 0);
-              let next = Math.max(-45, Math.min(45, raw));
-              // gentle snap to center
-              if (Math.abs(next) <= 2) next = 0;
-              for (const l of selectedLayers) {
-                dispatch({ type: 'update_layer', id: l.id, patch: { tiltYDeg: next } });
-              }
-            }}
-          />
-          {/* Center tick indicating 0 */}
-          <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-3 border-l border-white/40" />
-        </div>
-        <div className="text-[0.8rem] text-white/70 w-5">+</div>
-        <Button size="sm" variant="outline" onClick={()=>{
-          for (const l of selectedLayers) {
-            dispatch({ type: 'update_layer', id: l.id, patch: { tiltYDeg: 0 } });
-          }
-        }}>Reset</Button>
-      </div>
-    </Labeled>
-  );
-}
-
 // Fill tool removed
 
-function EffectsDropdown() {
+function EffectsDropdown({ variant = "default", className }: { variant?: "default" | "inline"; className?: string }) {
   const layer = useActiveLayer();
   const { dispatch } = useLayerEditor();
   // Hooks must be called unconditionally in the same order on every render
@@ -771,9 +981,30 @@ function EffectsDropdown() {
   const glow = layer.effects.glow;
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <Button size="sm" variant="outline" className="ml-1"><Wand2 className="size-4 mr-1" /> Effects</Button>
-      </PopoverAnchor>
+      <PopoverTrigger asChild>
+        {variant === "inline" ? (
+          <Button
+            size="icon"
+            variant="outline"
+            className={cn("h-8 w-8", className)}
+            title="Effects"
+            aria-label="Effects"
+          >
+            <Wand2 aria-hidden className="size-4" />
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            className={cn("ml-1", className)}
+            title="Effects"
+            aria-label="Effects"
+          >
+            <Wand2 aria-hidden className="size-4 mr-1" />
+            Effects
+          </Button>
+        )}
+      </PopoverTrigger>
       <PopoverContent className="p-2 w-64" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
         <div className="text-xs font-medium mb-1">Glow</div>
         <div className="flex items-center gap-2 mb-2">
@@ -828,7 +1059,7 @@ function EffectsDropdown() {
 function TextToolHint() {
   return (
     <div
-      className="ml-auto pl-3 text-xs sm:text-sm text-white/70 flex items-center whitespace-nowrap"
+      className="pt-2 text-center text-xs sm:text-sm text-white/70"
       role="note"
       aria-live="polite"
     >

@@ -21,6 +21,7 @@ const initialState: DesignerState = {
   carMaskUrl: null,
   maskTranslateXPct: 0,
   maskTranslateYPct: 0,
+  maskHidden: false,
   canvasAspectRatio: 16 / 9,
   editingLayerId: null,
 };
@@ -89,15 +90,18 @@ function reducer(state: DesignerState, action: DesignerAction): DesignerState {
     case "send_to_back": {
       const idx = state.layers.findIndex((l) => l.id === action.id);
       if (idx <= 0) return state;
-      const layers = [...state.layers];
-      const [item] = layers.splice(idx, 1);
-      layers.unshift(item);
+      const target = state.layers[idx];
+      if (target.type === 'mask') return state;
+      const layers = state.layers.filter(l => l.id !== action.id);
+      layers.unshift(target);
       return { ...state, layers };
     }
     case "toggle_above_mask": {
       // No-op: aboveMask is no longer used in the Designer
       return state;
     }
+    case 'toggle_mask_hide':
+      return { ...state, maskHidden: !state.maskHidden };
     case "set_bg":
       return { ...state, backgroundUrl: action.url };
     case "set_mask": {
@@ -175,6 +179,7 @@ export function DesignerProvider({ children, initial }: { children: React.ReactN
       case 'send_to_front':
       case 'send_to_back':
       case 'toggle_above_mask':
+      case 'toggle_mask_hide':
       case 'set_bg':
       case 'set_mask':
       case 'set_shape_kind':
@@ -246,6 +251,9 @@ export function DesignerProvider({ children, initial }: { children: React.ReactN
           return;
         }
         dispatchWithHistory({ type: 'remove_layer', id });
+      } else if (e.key === 'h' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        dispatchWithHistory({ type: 'toggle_mask_hide' });
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         const id = state.activeLayerId; if (!id) return; e.preventDefault();
         const src = state.layers.find(l=> l.id===id); if (!src) return;
@@ -273,6 +281,11 @@ export function useActiveLayer(): Layer | null {
 export function useIsTool(tool: ToolId): boolean {
   const { state } = useDesigner();
   return state.tool === tool;
+}
+
+export function useMaskVisibility(){
+  const { state, dispatch } = useDesigner();
+  return React.useMemo(() => ({ hidden: !!state.maskHidden, toggle: () => dispatch({ type: 'toggle_mask_hide' }) }), [state.maskHidden, dispatch]);
 }
 
 

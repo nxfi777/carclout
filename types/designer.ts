@@ -56,6 +56,7 @@ export type TextLayer = LayerBase & {
   fontSizeEm?: number; // relative font size used for rendering
   letterSpacingEm: number;
   lineHeightEm: number;
+  tiltYDeg?: number;
 };
 
 export type ShapeLayer = LayerBase & {
@@ -95,6 +96,7 @@ export type DesignerState = {
   // Cutout (mask) interactive transform
   maskTranslateXPct?: number; // translation relative to canvas width
   maskTranslateYPct?: number; // translation relative to canvas height
+  maskHidden?: boolean;
   canvasAspectRatio?: number | null; // width / height when known
   editingLayerId?: string | null;
 };
@@ -116,6 +118,7 @@ export type DesignerAction =
   | { type: 'set_bg'; url: string | null }
   | { type: 'set_mask'; url: string | null }
   | { type: 'set_mask_offset'; xPct: number; yPct: number }
+  | { type: 'toggle_mask_hide' }
   | { type: 'start_edit_text'; id: string }
   | { type: 'stop_edit_text' }
   // Internal action used by providers to restore a previous snapshot for undo/redo.

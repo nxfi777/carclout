@@ -1443,7 +1443,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
                 setDesigning(false);
               } catch {}
             }}
-            saveLabel={'Save to workspace'}
+            saveLabel={'Save'}
             aspectRatio={typeof template?.aspectRatio === 'number' ? Number(template?.aspectRatio) : undefined}
             onReplaceBgKey={(newKey, newUrl)=>{ try { if (newKey) { setActiveKey(newKey); if (newUrl) setActiveUrl(newUrl); } } catch {} }}
           />

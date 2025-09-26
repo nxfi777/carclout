@@ -7,6 +7,7 @@ export default function SiteFooter() {
   const socialLinks = [
     { name: "Instagram", href: "https://instagram.com/nytforge" },
     { name: "Kasra", href: "https://instagram.com/kasra_nyt" },
+    { name: "Twitter", href: "https://twitter.com/nytforge" },
   ];
 
   return (
@@ -27,6 +28,9 @@ export default function SiteFooter() {
               aria-label={s.name}
               className="text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors duration-300 underline-offset-4 hover:underline"
               href={s.href}
+              data-umami-event="outbound-link-click"
+              data-umami-event-url={s.href}
+              data-umami-event-label={s.name}
             >
               {s.name}
             </a>

@@ -47,8 +47,6 @@ export default function HeaderUser({
         setRemaining(r.remaining);
         setXpIntoLevel(r.xpIntoLevel ?? r.xp - (r.currentLevelBaseXp ?? 0));
         setLevelSpan(r.levelSpan ?? Math.max(1, (r.nextLevelXp ?? 0) - (r.currentLevelBaseXp ?? 0)));
-        // prompt daily bonus dialog; it will decide eligibility
-        try { window.dispatchEvent(new CustomEvent('prompt-daily-bonus')); } catch {}
       } catch {}
     })();
     return () => { mounted = false; };

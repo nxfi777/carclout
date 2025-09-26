@@ -7,6 +7,10 @@ import SiteFooter from "@/components/site-footer";
 import FooterGate from "@/components/footer-gate";
 import { Toaster } from "@/components/ui/sonner";
 import SessionProviderWrapper from "@/components/session-provider";
+import DailyBonusDrawer from "@/components/daily-bonus-drawer";
+import UmamiTracker from "@/components/umami-tracker";
+import { auth } from "@/lib/auth";
+import { createMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
@@ -23,71 +27,31 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const baseUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  process.env.NEXTAUTH_URL ||
-  process.env.AUTH_URL ||
-  "https://ignition.nytforge.com";
-
 export const metadata: Metadata = {
-  metadataBase: new URL(baseUrl),
+  metadataBase: new URL("/", "http://localhost"),
   title: {
     default: "Ignition — Make Your Car Page Unskippable",
     template: "%s | Ignition",
-  },
-  description: "The content engine built for car creators.",
-  applicationName: "Ignition",
-  authors: [{ name: "Nytforge" }],
-  creator: "Nytforge",
-  keywords: [
-    "Ignition",
-    "Nytforge",
-    "car content",
-    "automotive",
-    "social media",
-    "AI tools",
-  ],
-  alternates: {
-    canonical: "/",
-  },
-  openGraph: {
-    type: "website",
-    siteName: "Ignition",
-    url: "/",
-    title: "Ignition — Make Your Car Page Unskippable",
-    description: "The content engine built for car creators.",
-    images: [
-      {
-        url: "/nytforge.png",
-        width: 1200,
-        height: 630,
-        alt: "Ignition by Nytforge",
-      },
-    ],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Ignition — Make Your Car Page Unskippable",
-    description: "The content engine built for car creators.",
-    images: ["/nytforge.png"],
   },
   icons: {
     icon: [{ url: "/favicon.ico" }],
     shortcut: ["/favicon.ico"],
     apple: [{ url: "/nytforge.png" }],
   },
-  category: "technology",
-  robots: {
-    index: process.env.NODE_ENV === "production",
-    follow: process.env.NODE_ENV === "production",
-  },
+  ...createMetadata({
+    title: "Ignition — Make Your Car Page Unskippable",
+    description: "The content engine built for car creators.",
+    path: "/",
+  }),
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const session = await auth();
   return (
     <html lang="en">
       <body className={`${roboto.className} ${roboto.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh min-h-[100svh] bg-background text-foreground overflow-x-hidden`}>
         <SessionProviderWrapper>
+          <UmamiTracker session={session} />
           <HeaderGate>
             <SiteHeader />
           </HeaderGate>
@@ -99,6 +63,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <FooterGate>
             <SiteFooter />
           </FooterGate>
+          <DailyBonusDrawer />
           <Toaster />
         </SessionProviderWrapper>
       </body>

@@ -4,6 +4,7 @@ import { useDesigner } from "@/components/designer/DesignerProvider";
 import type { Layer, TextLayer, ShapeLayer, ImageLayer } from "@/types/designer";
 import { createDefaultRect, createDefaultText, createDefaultEllipse, createDefaultTriangle, createDefaultLine } from "@/types/designer";
 import { cn } from "@/lib/utils";
+import { getColorAlpha, multiplyColorAlpha } from "@/lib/color";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import TransformControls from "@/components/designer/TransformControls";
 import MarqueeOverlay from "@/components/designer/MarqueeOverlay";
@@ -142,6 +143,15 @@ export default function DesignerCanvas({ className }: { className?: string }) {
 
   const selectionId = state.activeLayerId;
   const editingId = state.editingLayerId ?? null;
+  const visibleLayers = React.useMemo(() => state.layers.filter(l => !l.hidden), [state.layers]);
+  const orderedVisibleLayers = React.useMemo(() => {
+    const nonMask = visibleLayers.filter(layer => layer.type !== 'mask');
+    const mask = visibleLayers.filter(layer => layer.type === 'mask');
+    const byIndex = (layer: Layer) => state.layers.findIndex(l => l.id === layer.id);
+    nonMask.sort((a, b) => byIndex(a) - byIndex(b));
+    mask.sort((a, b) => byIndex(a) - byIndex(b));
+    return { nonMask, mask };
+  }, [visibleLayers, state.layers]);
 
   return (
     <ContextMenu>
@@ -156,30 +166,44 @@ export default function DesignerCanvas({ className }: { className?: string }) {
           )}
 
           {/* Unified layer stack: render in order; special-case mask layer */}
-          {state.layers.filter(l=> !l.hidden).map((layer)=> (
-            layer.type === 'mask' ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={layer.id}
-                alt="mask"
-                src={layer.src || state.carMaskUrl || ''}
-                onPointerDown={(e)=>{
-                  if (state.tool !== 'select') return;
-                  e.stopPropagation();
-                  const tx = state.maskTranslateXPct || 0;
-                  const ty = state.maskTranslateYPct || 0;
-                  setMaskDrag({ x: e.clientX, y: e.clientY, tx, ty });
-                  dispatch({ type: 'select_layer', id: layer.id });
-                }}
-                className={cn("absolute inset-0 w-full h-full object-contain select-none", state.tool === 'select' ? 'cursor-move' : 'cursor-auto')}
-                draggable={false}
-                style={{ transform: `translate(${state.maskTranslateXPct || 0}%, ${state.maskTranslateYPct || 0}%)`, pointerEvents: state.tool === 'select' ? 'auto' : 'none' }}
-              />
-            ) : (
-              <LayerView key={layer.id} layer={layer} selected={selectionId===layer.id} editingId={editingId} onPointerDown={onPointerDownLayer} />
-            )
+          {orderedVisibleLayers.nonMask.map((layer, idx)=> (
+            <LayerView key={layer.id} layer={layer} selected={selectionId===layer.id} editingId={editingId} onPointerDown={onPointerDownLayer} zIndex={idx} />
+          ))}
+          {state.maskHidden ? null : orderedVisibleLayers.mask.map((layer)=> (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={layer.id}
+              alt="mask"
+              src={layer.src || state.carMaskUrl || ''}
+              onPointerDown={(e)=>{
+                if (state.tool !== 'select') return;
+                e.stopPropagation();
+                const tx = state.maskTranslateXPct || 0;
+                const ty = state.maskTranslateYPct || 0;
+                setMaskDrag({ x: e.clientX, y: e.clientY, tx, ty });
+                dispatch({ type: 'select_layer', id: layer.id });
+              }}
+              className={cn("absolute inset-0 w-full h-full object-contain select-none", state.tool === 'select' ? 'cursor-move' : 'cursor-auto')}
+              draggable={false}
+              style={{
+                transform: `translate(${state.maskTranslateXPct || 0}%, ${state.maskTranslateYPct || 0}%) scale(1.015)` ,
+                transformOrigin: '50% 50%',
+                pointerEvents: state.tool === 'select' ? 'auto' : 'none',
+                zIndex: 1000,
+                backfaceVisibility: 'hidden',
+              }}
+            />
           ))}
           <MarqueeOverlay />
+          {state.maskHidden ? (
+            <button
+              type="button"
+              className="absolute top-3 right-3 z-20 px-3 py-1.5 text-xs rounded-md border border-[var(--border)] bg-[var(--popover)]/80 backdrop-blur-sm text-white/80 hover:text-white"
+              onClick={(e)=>{ e.stopPropagation(); dispatch({ type: 'toggle_mask_hide' }); }}
+            >
+              Show cutout
+            </button>
+          ) : null}
         </div>
       </ContextMenuTrigger>
       <CanvasMenu />
@@ -187,8 +211,19 @@ export default function DesignerCanvas({ className }: { className?: string }) {
   );
 }
 
-function LayerView({ layer, selected, editingId, onPointerDown }: { layer: Layer; selected: boolean; editingId: string | null | undefined; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void }){
+function LayerView({ layer, selected, editingId, onPointerDown, zIndex }: { layer: Layer; selected: boolean; editingId: string | null | undefined; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void; zIndex: number }){
   const { state, dispatch } = useDesigner();
+  const baseAlpha = (()=>{
+    if (layer.type === 'text') {
+      return getColorAlpha((layer as TextLayer).color);
+    }
+    if (layer.type === 'shape') {
+      return getColorAlpha((layer as ShapeLayer).fill);
+    }
+    return 1;
+  })();
+  const resolvedGlowColor = layer.effects.glow.enabled ? multiplyColorAlpha(layer.effects.glow.color, baseAlpha || 0, '#ffffff') : '';
+  const resolvedShadowColor = layer.effects.shadow.enabled ? multiplyColorAlpha(layer.effects.shadow.color, baseAlpha || 0, '#000000') : '';
   const style: React.CSSProperties = {
     position: 'absolute',
     left: `${layer.xPct}%`,
@@ -198,7 +233,8 @@ function LayerView({ layer, selected, editingId, onPointerDown }: { layer: Layer
     width: `${layer.widthPct}%`,
     height: `${layer.heightPct}%`,
     pointerEvents: layer.locked ? 'none' : 'auto',
-    filter: `${(layer.type !== 'text' && layer.effects.glow.enabled) ? `drop-shadow(${layer.effects.glow.offsetX || 0}px ${layer.effects.glow.offsetY || 0}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${layer.effects.glow.color || '#ffffff'})` : ''}`,
+    filter: `${(layer.type !== 'text' && layer.effects.glow.enabled) ? `drop-shadow(${layer.effects.glow.offsetX || 0}px ${layer.effects.glow.offsetY || 0}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${resolvedGlowColor || layer.effects.glow.color || '#ffffff'})` : ''}`,
+    zIndex,
   };
   let rendered: React.ReactNode = null;
   if (layer.type === 'text') {
@@ -211,8 +247,8 @@ function LayerView({ layer, selected, editingId, onPointerDown }: { layer: Layer
       letterSpacing: `${t.letterSpacingEm}em`,
       lineHeight: t.lineHeightEm,
       textShadow: [
-        layer.effects.glow.enabled ? `${(layer.effects.glow.offsetX || 0)}px ${(layer.effects.glow.offsetY || 0)}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${layer.effects.glow.color || '#ffffff'}` : '',
-        layer.effects.shadow.enabled ? `${(layer.effects.shadow.offsetX || 0)}px ${(layer.effects.shadow.offsetY || 0)}px ${((layer.effects.shadow.blur || 0) + (layer.effects.shadow.size || 0))}px ${layer.effects.shadow.color || '#000000'}` : ''
+        layer.effects.glow.enabled ? `${(layer.effects.glow.offsetX || 0)}px ${(layer.effects.glow.offsetY || 0)}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${resolvedGlowColor || layer.effects.glow.color || '#ffffff'}` : '',
+        layer.effects.shadow.enabled ? `${(layer.effects.shadow.offsetX || 0)}px ${(layer.effects.shadow.offsetY || 0)}px ${((layer.effects.shadow.blur || 0) + (layer.effects.shadow.size || 0))}px ${resolvedShadowColor || layer.effects.shadow.color || '#000000'}` : ''
       ].filter(Boolean).join(', ').trim(),
       display: 'grid', alignItems: 'center', textAlign: (t.textAlign || 'center') as React.CSSProperties['textAlign'], width: '100%', height: '100%'
     };
@@ -342,7 +378,7 @@ function LayerView({ layer, selected, editingId, onPointerDown }: { layer: Layer
   return (
     <div
       data-layer-id={layer.id}
-      style={style}
+      style={{ ...style, zIndex }}
       onPointerDown={(e)=> onPointerDown(e, layer)}
       onDoubleClick={(e)=>{
         if (state.tool === 'select' && layer.type === 'text') {

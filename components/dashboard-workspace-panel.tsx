@@ -26,10 +26,11 @@ import { toast } from "sonner";
 import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
 import Designer from "@/components/designer/designer";
 import { SHOW_MANAGED_FOLDERS, isManagedRoot, isManagedPath as isManagedPathUtil } from "@/lib/workspace-visibility";
-import { ChevronLeft, List as ListIcon, LayoutGrid, MoreHorizontal, RefreshCcw } from "lucide-react";
+import { ChevronLeft, List as ListIcon, LayoutGrid, MoreHorizontal, RefreshCcw, Download } from "lucide-react";
 import dynamic from "next/dynamic";
 import carLoadAnimation from "@/public/carload.json";
 import { getViewUrl, getViewUrls } from "@/lib/view-url-client";
+import ElectricBorder from "@/components/electric-border";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
@@ -1085,7 +1086,19 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       }
       await refresh(undefined, { force: true });
       setTreeVersion(v=>v+1);
-      if (path === 'vehicles') toast.success('Saved to library folder'); else toast.success('Saved to workspace');
+      const message = path === 'vehicles' ? 'Saved to your library folder' : 'Saved to your library';
+      try {
+        toast.success(message, {
+          action: {
+            label: 'Open',
+            onClick: () => {
+              try {
+                window.open('/dashboard?view=forge&tab=workspace&path=library', '_blank');
+              } catch {}
+            },
+          },
+        });
+      } catch {}
       setDesignOpen(false);
       setDesignKey(null);
     } catch {}
@@ -1607,8 +1620,8 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={(previewVariants[activePreviewVariantIndex]?.url || preview.url)} alt={preview.name} className="max-w-full max-h-[70vh] rounded" />
             </div>
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {previewVariants.length > 1 ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -1624,8 +1637,40 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                   </DropdownMenu>
                 ) : null}
               </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={()=>{
+              <div className="grid w-full gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+                <ElectricBorder color="#ff6a00" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    disabled={upscaleBusy}
+                    onClick={async()=>{
+                      if (canonicalPlan(me?.plan) !== 'ultra') {
+                        try {
+                          window.dispatchEvent(new CustomEvent('open-pro-upsell'));
+                        } catch {}
+                        return;
+                      }
+                      if (!preview?.key) return;
+                      await doUpscale(preview.key);
+                    }}
+                  >
+                    {upscaleBusy ? 'Upscaling…' : `Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                  </Button>
+                </ElectricBorder>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  onClick={()=>{ if (!preview?.key) return; setDesignKey(preview.key); setDesignOpen(true); }}
+                >
+                  Open in Designer
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  onClick={()=>{
                   const active = previewVariants[activePreviewVariantIndex];
                   const key = (active?.key || preview.key);
                   const scopeParam = scope === 'admin' ? `&scope=admin` : '';
@@ -1641,13 +1686,13 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                   document.body.appendChild(a);
                   a.click();
                   setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 1000);
-                }}>Download</Button>
-              <Button size="sm" variant="outline" onClick={()=>{ if (!preview?.key) return; setDesignKey(preview.key); setDesignOpen(true); }}>Open in Designer</Button>
-              <Button size="sm" variant="default" onClick={async()=>{
-                if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
-                if (!preview?.key) return;
-                await doUpscale(preview.key);
-              }}>{`Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</Button>
+                  }}
+                  aria-label="Download"
+                  title="Download"
+                >
+                  <Download className="size-4" aria-hidden />
+                  <span>Download</span>
+                </Button>
               </div>
             </div>
           </div>
@@ -1665,7 +1710,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                 rembg={{ enabled: true }}
                 onClose={()=> setDesignOpen(false)}
                 onSave={saveDesignToWorkspace}
-                saveLabel={path==='vehicles' ? 'Save (choose folder)' : 'Save to workspace'}
+                saveLabel={path==='vehicles' ? 'Save (choose folder)' : 'Save'}
                 onReplaceBgKey={(newKey)=>{ try { if (newKey) { setDesignKey(newKey); } } catch {} }}
                 showAnimate={(() => { try { const name = (designKey || '').split('/').pop() || ''; return /^[0-9T\-:.]+-[a-z0-9\-]+/i.test(name); } catch { return false; } })()}
                 onAnimate={async (getBlob)=>{

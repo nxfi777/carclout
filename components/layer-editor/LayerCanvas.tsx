@@ -1,6 +1,7 @@
 "use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLayerEditor } from "@/components/layer-editor/LayerEditorProvider";
+import { getColorAlpha, multiplyColorAlpha } from "@/lib/color";
 import type { Layer } from "@/types/layer-editor";
 import { cn } from "@/lib/utils";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -231,6 +232,17 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
       seededRef.current = layer.id;
     }
   }, [isEditing, layer]);
+  const baseAlpha = (()=>{
+    if (layer.type === 'text') {
+      return getColorAlpha((layer as import("@/types/layer-editor").TextLayer).color);
+    }
+    if (layer.type === 'shape') {
+      return getColorAlpha((layer as import("@/types/layer-editor").ShapeLayer).fill);
+    }
+    return 1;
+  })();
+  const resolvedGlowColor = layer.effects.glow.enabled ? multiplyColorAlpha(layer.effects.glow.color, baseAlpha || 0, '#ffffff') : '';
+  const resolvedShadowColor = layer.effects.shadow.enabled ? multiplyColorAlpha(layer.effects.shadow.color, baseAlpha || 0, '#000000') : '';
   const style: React.CSSProperties = {
     position: 'absolute',
     left: `${layer.xPct}%`,
@@ -240,7 +252,7 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
     width: `${layer.widthPct}%`,
     height: `${layer.heightPct}%`,
     pointerEvents: layer.locked ? 'none' : 'auto',
-    filter: `${(layer.type !== 'text' && layer.effects.glow.enabled) ? `drop-shadow(${layer.effects.glow.offsetX || 0}px ${layer.effects.glow.offsetY || 0}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${layer.effects.glow.color || '#ffffff'})` : ''}`,
+    filter: `${(layer.type !== 'text' && layer.effects.glow.enabled) ? `drop-shadow(${layer.effects.glow.offsetX || 0}px ${layer.effects.glow.offsetY || 0}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${resolvedGlowColor || layer.effects.glow.color || '#ffffff'})` : ''}`,
   };
   // Add 3D perspective and rotateY tilt using a wrapper, so scale/rotateZ remain separate
   const wrapperStyle: React.CSSProperties = {
@@ -268,8 +280,8 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
       letterSpacing: `${t.letterSpacingEm}em`,
       lineHeight: t.lineHeightEm,
       textShadow: [
-        layer.effects.glow.enabled ? `${(layer.effects.glow.offsetX || 0)}px ${(layer.effects.glow.offsetY || 0)}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${layer.effects.glow.color || '#ffffff'}` : '',
-        layer.effects.shadow.enabled ? `${(layer.effects.shadow.offsetX || 0)}px ${(layer.effects.shadow.offsetY || 0)}px ${((layer.effects.shadow.blur || 0) + (layer.effects.shadow.size || 0))}px ${layer.effects.shadow.color || '#000000'}` : ''
+        layer.effects.glow.enabled ? `${(layer.effects.glow.offsetX || 0)}px ${(layer.effects.glow.offsetY || 0)}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${resolvedGlowColor || layer.effects.glow.color || '#ffffff'}` : '',
+        layer.effects.shadow.enabled ? `${(layer.effects.shadow.offsetX || 0)}px ${(layer.effects.shadow.offsetY || 0)}px ${((layer.effects.shadow.blur || 0) + (layer.effects.shadow.size || 0))}px ${resolvedShadowColor || layer.effects.shadow.color || '#000000'}` : ''
       ].filter(Boolean).join(', ').trim(),
       display: 'grid', alignItems: 'center', textAlign: (t.textAlign || 'center') as React.CSSProperties['textAlign'], width: '100%', height: '100%'
     };

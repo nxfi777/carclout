@@ -614,9 +614,6 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       ) : resultUrl ? (
         <div className="space-y-3">
           <div className="w-full grid place-items-center">
-            <div className="text-xs text-white/70 mb-1">
-              Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a>
-            </div>
             {activeUrl || resultUrl ? (
               <NextImage src={(activeUrl || resultUrl)!} alt="result" width={1024} height={768} className="rounded w-auto max-w-full sm:max-w-[32rem] max-h-[56vh] h-auto object-contain" />
             ) : null}
@@ -733,14 +730,13 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
             <AppDialogHeader>
               <AppDialogTitle className="flex items-center justify-between">
                 <span>Designer</span>
-                <span className="mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">For best results, use a car photo that matches this template&apos;s orientation</span>
+                {!busy && !resultUrl ? (
+                  <span className="hidden sm:inline mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">For best results, use a car photo that matches this template&apos;s orientation</span>
+                ) : null}
               </AppDialogTitle>
             </AppDialogHeader>
               <div className="mt-2">
                 <div className="mb-2">
-                  <div className="text-xs text-white/70 mb-1">
-                    Image auto-saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="font-mono text-white/90 underline hover:text-white">/library</a>
-                  </div>
                 </div>
                 {upscales.length ? (
                   <div className="space-y-2 mb-3">
@@ -791,13 +787,13 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                         }
                         return;
                       }
-                      try { toast.success("Saved to /library"); } catch {}
+                      try { toast.success("Saved to your library", { action: { label: "Open", onClick: () => { try { window.open('/dashboard?view=forge&tab=workspace&path=library', '_blank'); } catch {} } } }); } catch {}
                       setDesignOpen(false);
                       // Clear selections so a subsequent template use is fresh
                       setSelectedImageKeys([]);
                     } catch {}
                   }}
-                  saveLabel={"Save to workspace"}
+                  saveLabel={"Save"}
                   aspectRatio={typeof template?.aspectRatio === "number" ? Number(template.aspectRatio) : undefined}
                   onReplaceBgKey={(newKey, newUrl) => {
                     try {

@@ -2,6 +2,7 @@
 import React from "react";
 import { useDesigner } from "@/components/designer/DesignerProvider";
 import { cn } from "@/lib/utils";
+import type { MaskLayer } from "@/types/designer";
 import { Eye, EyeOff, Lock, Unlock, ChevronUp, ChevronDown, Layers } from "lucide-react";
 
 export default function LayersPanel({ className }: { className?: string }) {
@@ -10,7 +11,12 @@ export default function LayersPanel({ className }: { className?: string }) {
   const active = state.activeLayerId;
   // No boundary logic in the simplified model
   return (
-    <div className={cn("w-40 sm:w-48 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm overflow-hidden", className)}>
+    <div
+      className={cn(
+        "w-full sm:w-48 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm overflow-hidden",
+        className,
+      )}
+    >
       <div className="px-2 py-1.5 flex items-center gap-2 text-xs font-medium border-b border-[var(--border)]">
         <Layers className="size-4" />
         <span>Layers</span>
@@ -22,21 +28,13 @@ export default function LayersPanel({ className }: { className?: string }) {
           const canSendBackward = idx > 0;
           return (
             layer.type === 'mask' ? (
-              <LayerRow
+              <MaskLayerRow
                 key={layer.id}
-                layerId={layer.id}
-                name={layer.name}
+                layer={layer}
                 isActive={active === layer.id}
-              locked={true}
-                hidden={!!layer.hidden}
-              showChevrons={false}
-                canBringForward={canBringForward}
-                canSendBackward={canSendBackward}
-                onSelect={() => dispatch({ type: 'select_layer', id: layer.id })}
-                onToggleLock={() => {}}
-                onToggleHide={() => dispatch({ type: 'update_layer', id: layer.id, patch: { hidden: !layer.hidden } })}
-                onBringForward={() => dispatch({ type: 'bring_forward', id: layer.id })}
-                onSendBackward={() => dispatch({ type: 'send_backward', id: layer.id })}
+                hidden={!!state.maskHidden}
+                onSelect={()=> dispatch({ type: 'select_layer', id: layer.id })}
+                onToggleHide={()=> dispatch({ type: 'toggle_mask_hide' })}
               />
             ) : (
               <LayerRow
@@ -84,6 +82,31 @@ function LayerRow({ layerId: _layerId, name, isActive, locked, hidden, canBringF
       {locked ? null : (
         <button type="button" className="p-1 rounded hover:bg-white/10" onClick={(e)=>{ e.stopPropagation(); onToggleHide(); }} aria-label={hidden ? "Show" : "Hide"}>{hidden ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button>
       )}
+    </div>
+  );
+}
+
+function MaskLayerRow({ layer, isActive, hidden, onSelect, onToggleHide }: { layer: MaskLayer; isActive: boolean; hidden: boolean; onSelect: () => void; onToggleHide: () => void }) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1 px-2 py-1.5 text-sm cursor-pointer",
+        isActive ? "bg-primary/15 text-primary-foreground/90" : "hover:bg-white/10"
+      )}
+      onClick={onSelect}
+    >
+      <div className="flex-1 truncate">{layer.name || "Car cutout"}</div>
+      <button
+        type="button"
+        className="p-1 rounded hover:bg-white/10"
+        onClick={(e)=>{
+          e.stopPropagation();
+          onToggleHide();
+        }}
+        aria-label={hidden ? "Show" : "Hide"}
+      >
+        {hidden ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>
     </div>
   );
 }
