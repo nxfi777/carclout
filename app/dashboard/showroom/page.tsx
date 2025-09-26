@@ -30,8 +30,7 @@ type ChatMessage = {
   status?: 'sent' | 'pending' | 'failed'
 }
 
-type ForgeView = "chat" | "forge" | "livestream";
-type NonChatView = Exclude<ForgeView, "chat">;
+type ShowroomView = "showroom" | "forge" | "livestream";
 type ChannelPerms = { slug: string; name?: string; requiredReadRole?: 'user' | 'staff' | 'admin'; requiredReadPlan?: 'base' | 'premium' | 'ultra'; locked?: boolean; locked_until?: string | null };
 
 type ChatProfile = {
@@ -42,7 +41,7 @@ type ChatProfile = {
   bio?: string;
 };
 
-function DashboardChatPageInner() {
+function DashboardShowroomPageInner() {
   const [loading, setLoading] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
   const [channels, setChannels] = useState<ChannelPerms[]>([]);
@@ -53,8 +52,7 @@ function DashboardChatPageInner() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [showMembers, setShowMembers] = useState(false);
   const [showChannels, setShowChannels] = useState(false);
-  const [forgeView, setForgeView] = useState<ForgeView>("chat");
-  const [_lastNonChatView, setLastNonChatView] = useState<NonChatView>("forge");
+  const [showroomView, setShowroomView] = useState<ShowroomView>("showroom");
   const [forgeTab] = useState<"workspace" | "content">("workspace");
   const [presence, setPresence] = useState<{ email?: string; name?: string; image?: string; status: string; role?: string; plan?: string }[]>([]);
   const [dmConversations, setDmConversations] = useState<{ email: string; name?: string; image?: string }[]>([]);
@@ -187,26 +185,25 @@ function DashboardChatPageInner() {
     return () => { mounted = false; };
   }, []);
 
-  // Sync view with URL query param (defaults to chat if none)
+  // Sync view with URL query param (defaults to showroom if none)
   useEffect(() => {
-    const raw = (searchParams.get("view") || "chat");
-    const mapped = ["studio", "generative", "downloads"].includes(raw) ? "chat" : raw;
-    const v = mapped as ForgeView;
-    if (["chat", "forge", "livestream"].includes(v)) {
-      setForgeView(v);
-      if (v !== "chat") setLastNonChatView(v as NonChatView);
+    const raw = (searchParams.get("view") || "showroom");
+    const mapped = ["studio", "generative", "downloads"].includes(raw) ? "showroom" : raw;
+    const v = mapped as ShowroomView;
+    if (["showroom", "forge", "livestream"].includes(v)) {
+      setShowroomView(v);
+      // track last non-showroom view if extended tabs return in future
     }
   }, [searchParams]);
 
-  // Default to General chat; if it's not available, fall back to Hooks page
+  // Default to General showroom; if it's not available, fall back to Hooks page
   useEffect(() => {
     if (loading) return;
     try {
       const viewParam = searchParams.get("view");
       const hasGeneral = channels.some((c) => c.slug === "general");
-      if ((!viewParam || viewParam === "chat") && !hasGeneral) {
-        setForgeView("forge");
-        setLastNonChatView("forge");
+      if ((!viewParam || viewParam === "showroom") && !hasGeneral) {
+        setShowroomView("forge");
         router.replace("/dashboard/hooks");
       }
     } catch {}
@@ -386,7 +383,7 @@ function DashboardChatPageInner() {
       if (typeof minutesRaw === 'string' && /^(\d+)$/.test(minutesRaw)) minutes = Math.max(1, parseInt(minutesRaw, 10));
       try {
         setChatLoading(true);
-        const r = await fetch('/api/admin/chat/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: active, minutes }) }).then(r=>r.json());
+        const r = await fetch('/api/admin/showroom/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: active, minutes }) }).then(r=>r.json());
         if (r?.channel) {
           setChannels(prev => prev.map(c => c.slug === active ? { ...c, locked: !!r.channel.locked, locked_until: r.channel.locked_until || null } : c));
           toast.success(minutes ? `Channel locked for ${minutes} min.` : 'Channel locked.');
@@ -406,7 +403,7 @@ function DashboardChatPageInner() {
       if (activeChatType !== 'channel') { toast.error('Use /unlock in a channel.'); return true; }
       try {
         setChatLoading(true);
-        const r = await fetch('/api/admin/chat/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: active }) }).then(r=>r.json());
+        const r = await fetch('/api/admin/showroom/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: active }) }).then(r=>r.json());
         if (r?.channel) {
           setChannels(prev => prev.map(c => c.slug === active ? { ...c, locked: false, locked_until: null } : c));
           toast.success('Channel unlocked.');
@@ -506,7 +503,7 @@ function DashboardChatPageInner() {
 
   // Subscribe to live updates for active chat (channel or DM)
   useEffect(() => {
-    if (forgeView !== 'chat') return;
+    if (showroomView !== 'showroom') return;
     let es: EventSource | null = null;
     // Only fetch snapshot here if we don't already have messages for the active target
     const needSnapshot = messages.length === 0;
@@ -556,7 +553,7 @@ function DashboardChatPageInner() {
       }
     })();
     return () => { try { es?.close(); } catch {}; };
-  }, [active, activeChatType, activeDm?.email, forgeView, blocked, messages.length]);
+  }, [active, activeChatType, activeDm?.email, showroomView, blocked, messages.length]);
 
   function canAccessByRole(userRole?: 'user' | 'staff' | 'admin', required?: 'user' | 'staff' | 'admin') {
     if (!required) return true;
@@ -678,11 +675,11 @@ function DashboardChatPageInner() {
 
   // Use inline gridTemplateColumns to avoid Tailwind JIT missing dynamic arbitrary values
   const gridTemplateColumns = useMemo(() => {
-    if (forgeView !== 'chat') return '1fr';
+    if (showroomView !== 'showroom') return '1fr';
     const left = showChannels ? '280px ' : '';
     const right = (showMembers && activeChatType === 'channel') ? ' 300px' : '';
     return `${left}1fr${right}`;
-  }, [forgeView, showChannels, showMembers, activeChatType]);
+  }, [showroomView, showChannels, showMembers, activeChatType]);
 
   if (loading) {
     return (
@@ -695,14 +692,14 @@ function DashboardChatPageInner() {
   return (
     <div className={"relative grid h-[calc(100dvh-6rem)] min-h-[calc(100dvh-6rem)] min-w-0"} style={{ gridTemplateColumns }}>
         <SubscriptionGate />
-        {forgeView === 'chat' && showChannels ? (
+        {showroomView === 'showroom' && showChannels ? (
         <aside className="h-full min-h-0 border-r border-[color:var(--border)] overflow-y-auto p-2 bg-[var(--card)] md:static absolute inset-0 z-40"> 
           {/* Mobile close */}
                   <button className="md:hidden absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-full border border-[color:var(--border)]/60 bg-white/5 hover:bg-white/10 text-xs" onClick={() => setShowChannels(false)} aria-label="Close channels">
             <span className="sr-only">Close</span>
                     <Chevron direction="left" className="h-4 w-4" />
           </button>
-          <div className="text-sm font-semibold px-2 mb-2">Channels {me?.plan === 'pro' ? <span className="ml-2 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[rgba(255,106,0,0.12)] text-[#ff6a00] border border-[#ff6a00]/30">Pro</span> : null}</div>
+          <div className="text-sm font-semibold px-2 mb-2">Channels</div>
           <ul className="space-y-1">
             {channels.filter(c=>c.slug !== 'livestream').map((c)=> (
               <li key={c.slug}>
@@ -714,8 +711,8 @@ function DashboardChatPageInner() {
                   setActiveChatType('channel');
                   setActive(c.slug);
                   setActiveDm(null);
-                  setForgeView('chat');
-                  router.push('/dashboard/chat');
+                  setShowroomView('showroom');
+                  router.push('/dashboard/showroom');
                   setChatLoading(true);
                   if (c.slug === 'request-a-feature') {
                     setMessages([]);
@@ -724,7 +721,7 @@ function DashboardChatPageInner() {
                     setMessages((m.messages||[]).map((mm)=>({...mm,status:'sent'})));
                   }
                   setChatLoading(false);
-                }} className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${forgeView==='chat' && activeChatType==='channel' && active===c.slug ? `bg-white/10 ${c.slug==='pro' ? 'ring-1 ring-[#ff6a00]/40' : ''}` : `hover:bg-white/5 ${c.slug==='pro' ? 'ring-1 ring-transparent hover:ring-[#ff6a00]/30' : ''}`}`}>
+                }} className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${showroomView==='showroom' && activeChatType==='channel' && active===c.slug ? `bg-white/10 ${c.slug==='pro' ? 'ring-1 ring-[#ff6a00]/40' : ''}` : `hover:bg-white/5 ${c.slug==='pro' ? 'ring-1 ring-transparent hover:ring-[#ff6a00]/30' : ''}`}`}>
                   <span className={`${c.slug==='pro' ? 'text-[#ff6a00]' : ''}`}>#{c.slug}</span>
                   {c.slug === 'pro' && canonicalPlan(me?.plan) !== 'ultra' ? (
                     <span title="Pro required" className="ml-1 inline-flex items-center justify-center rounded-full w-4 h-4 text-[10px] bg-white/10">🔒</span>
@@ -758,7 +755,7 @@ function DashboardChatPageInner() {
                           try { (e.currentTarget as HTMLElement).click(); } catch {}
                         }
                       }}
-                      className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${forgeView==='chat' && activeChatType==='dm' && activeDm?.email===u.email? 'bg-white/10' : 'hover:bg-white/5'}`}
+                      className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${showroomView==='showroom' && activeChatType==='dm' && activeDm?.email===u.email? 'bg-white/10' : 'hover:bg-white/5'}`}
                     >
                       <Avatar className="size-5">
                         <AvatarImage src={u.image || undefined} alt={u.name || u.email} loading="lazy" decoding="async" />
@@ -770,26 +767,6 @@ function DashboardChatPageInner() {
                         ) : (isPro ? (
                           <span className="ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(255,106,0,0.12)] text-[#ff6a00] border border-[#ff6a00]/30">Pro</span>
                         ) : null)}
-                        <button
-                          title="Close conversation"
-                          aria-label="Close conversation"
-                          className="ml-2 text-xs px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-[color:var(--border)]/60"
-                          onClick={async (e)=>{
-                            e.preventDefault();
-                            e.stopPropagation();
-                            try {
-                              await fetch('/api/chat/dm/hidden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherEmail: u.email }) });
-                              setDmConversations(prev => prev.filter(c => c.email !== u.email));
-                              // If closing the active DM, switch back to last channel
-                              setActiveChatType('channel');
-                              setActive('general');
-                              setActiveDm(null);
-                              setMessages([]);
-                            } catch {}
-                          }}
-                        >
-                          ×
-                        </button>
                     </div>
                   </ContextMenuTrigger>
                   <UserContextMenu
@@ -805,8 +782,8 @@ function DashboardChatPageInner() {
                     onStartDm={async (email, name) => {
                   setActiveChatType('dm');
                       setActiveDm({ email, name, image: u.image });
-                  setForgeView('chat');
-                  router.push('/dashboard/chat');
+                  setShowroomView('showroom');
+                  router.push('/dashboard/showroom');
                   closeChannelsIfMobile();
                   setChatLoading(true);
                       const m: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
@@ -825,7 +802,7 @@ function DashboardChatPageInner() {
         </aside>
         ) : null}
         <section className="flex flex-col min-w-0 min-h-0 h-full">
-          {forgeView === 'chat' && (
+          {showroomView === 'showroom' && (
             <>
               <div className="h-12 flex items-center justify-between px-3 border-b border-[color:var(--border)]">
                 <div className="flex items-center gap-2">
@@ -890,7 +867,7 @@ function DashboardChatPageInner() {
                         setConfirmOpen(null);
                         setChatLoading(true);
                         try {
-                          await fetch('/api/admin/chat/purge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: active, limit: confirmOpen.count }) });
+                          await fetch('/api/admin/showroom/purge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: active, limit: confirmOpen.count }) });
                         } catch {}
                         try {
                           const m: { messages?: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string }[] } = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then(r=>r.json());
@@ -969,8 +946,8 @@ function DashboardChatPageInner() {
                           onStartDm={async (email, name) => {
                             setActiveChatType('dm');
                             setActiveDm({ email, name, image: undefined });
-                            setForgeView('chat');
-                            router.push('/dashboard/chat');
+                            setShowroomView('showroom');
+                            router.push('/dashboard/showroom');
                             closeChannelsIfMobile();
                             setChatLoading(true);
                             const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
@@ -1068,14 +1045,14 @@ function DashboardChatPageInner() {
               </form>
             </>
           )}
-          {forgeView === 'forge' && (
+          {showroomView === 'forge' && (
             <div className="p-3 flex-1 flex min-h-0 overflow-hidden">
               <div className="w-full h-full min-h-0">
                 {forgeTab === 'workspace' ? <DashboardWorkspacePanel /> : <ContentTabs />}
               </div>
             </div>
           )}
-          {forgeView === 'livestream' && (
+          {showroomView === 'livestream' && (
             <div className="p-3 flex-1 flex min-h-0 overflow-hidden">
               <div className="w-full h-full min-h-0">
                 <LivestreamPanel />
@@ -1083,7 +1060,7 @@ function DashboardChatPageInner() {
             </div>
           )}
         </section>
-        {showMembers && forgeView === 'chat' && activeChatType === 'channel' ? (
+        {showMembers && showroomView === 'showroom' && activeChatType === 'channel' ? (
           <aside className="h-full min-h-0 border-l border-[color:var(--border)] overflow-y-auto p-3 bg-[var(--popover)] space-y-3 md:static absolute inset-0 z-40">
             {/* Header row: left chevron, right-aligned Online count */}
             <div className="flex items-center gap-2">
@@ -1134,8 +1111,8 @@ function DashboardChatPageInner() {
                           onStartDm={async (email, name) => {
                           setActiveChatType('dm');
                             setActiveDm({ email, name, image: u.image });
-                          setForgeView('chat');
-                          router.push('/dashboard/chat');
+                          setShowroomView('showroom');
+                          router.push('/dashboard/showroom');
                           closeChannelsIfMobile();
                           setChatLoading(true);
                             const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
@@ -1183,8 +1160,8 @@ function DashboardChatPageInner() {
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
                               setActiveDm({ email, name, image: u.image });
-                              setForgeView('chat');
-                              router.push('/dashboard/chat');
+                              setShowroomView('showroom');
+                              router.push('/dashboard/showroom');
                               closeChannelsIfMobile();
                               setChatLoading(true);
                               const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
@@ -1232,8 +1209,8 @@ function DashboardChatPageInner() {
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
                               setActiveDm({ email, name, image: u.image });
-                              setForgeView('chat');
-                              router.push('/dashboard/chat');
+                              setShowroomView('showroom');
+                              router.push('/dashboard/showroom');
                               setChatLoading(true);
                               const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                               setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
@@ -1294,8 +1271,8 @@ function DashboardChatPageInner() {
                           onStartDm={async (email, name) => {
                           setActiveChatType('dm');
                             setActiveDm({ email, name, image: u.image });
-                          setForgeView('chat');
-                          router.push('/dashboard/chat');
+                          setShowroomView('showroom');
+                          router.push('/dashboard/showroom');
                           closeChannelsIfMobile();
                           setChatLoading(true);
                             const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
@@ -1343,8 +1320,8 @@ function DashboardChatPageInner() {
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
                               setActiveDm({ email, name, image: u.image });
-                              setForgeView('chat');
-                              router.push('/dashboard/chat');
+                              setShowroomView('showroom');
+                              router.push('/dashboard/showroom');
                               setChatLoading(true);
                               const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                               setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
@@ -1391,8 +1368,8 @@ function DashboardChatPageInner() {
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
                               setActiveDm({ email, name, image: u.image });
-                              setForgeView('chat');
-                              router.push('/dashboard/chat');
+                              setShowroomView('showroom');
+                              router.push('/dashboard/showroom');
                               setChatLoading(true);
                               const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                               setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
@@ -1417,6 +1394,8 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
   const [profile, setProfile] = useState<{ name?: string; image?: string; vehicles?: Array<{ make?: string; model?: string }>; photos?: string[]; bio?: string } | null>(null);
   const [previews, setPreviews] = useState<Record<string,string>>({});
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [photosLoading, setPhotosLoading] = useState(false);
+  const requestedPhotoKeysRef = useRef<Set<string>>(new Set());
   const isSelf = (meEmail || '').toLowerCase() === (email || '').toLowerCase();
   const isAdminUser = (userRole || '').toLowerCase() === 'admin';
   const isProUser = (() => { const s = (userPlan || '').toLowerCase(); return s === 'pro' || s === 'ultra'; })();
@@ -1438,13 +1417,11 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
           const fetched = await fetch(`/api/users/chat-profile?email=${encodeURIComponent(email)}`, { cache: 'no-store' }).then(r=>r.json()).catch(() => null);
           if (fetched && typeof fetched === 'object') res = fetched as ChatProfile;
         }
-        if (!cancelled) setProfile(res || null);
-        const keys = Array.isArray(res?.photos) ? (res?.photos as string[]) : [];
-        if (keys.length) {
-          try {
-            const urls = await (await import('@/lib/view-url-client')).getViewUrls(keys);
-            if (!cancelled) setPreviews(urls);
-          } catch {}
+        if (!cancelled) {
+          requestedPhotoKeysRef.current = new Set();
+          setPreviews({});
+          setPhotosLoading(false);
+          setProfile(res || null);
         }
       } catch {}
       finally {
@@ -1453,6 +1430,33 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
     })();
     return () => { cancelled = true; };
   }, [email]);
+  useEffect(() => {
+    const keys = Array.isArray(profile?.photos) ? profile.photos.slice(0, 6).filter(Boolean) : [];
+    if (!keys.length) {
+      setPhotosLoading(false);
+      return;
+    }
+    const missing = keys.filter((k) => k && !previews[k] && !requestedPhotoKeysRef.current.has(k));
+    if (!missing.length) return;
+    let cancelled = false;
+    setPhotosLoading(true);
+    missing.forEach((k) => requestedPhotoKeysRef.current.add(k));
+    (async () => {
+      try {
+        const { getViewUrls } = await import("@/lib/view-url-client");
+        const urls = await getViewUrls(missing);
+        if (!cancelled) {
+          setPreviews((prev) => ({ ...prev, ...urls }));
+        }
+      } catch {}
+      finally {
+        if (!cancelled) {
+          setPhotosLoading(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [profile?.photos, previews]);
   return (
     <ContextMenuContent className="w-72">
       <div className="flex items-center gap-3 px-2 py-1.5">
@@ -1484,23 +1488,6 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
         >
           {isSelf ? 'Open your private chat' : `Message @${profile?.name || name}`}
           </button>
-        {!isSelf ? (
-          <button
-            className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/15 border border-[color:var(--border)]/60 cursor-pointer"
-            onClick={async ()=>{
-              try {
-                await fetch('/api/chat/dm/hidden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherEmail: email }) });
-                // Optimistically remove from sidebar by dispatching a simple event for parent to refetch
-                try { window.dispatchEvent(new CustomEvent('dm-hidden-changed')); } catch {}
-                toast.success('Conversation closed');
-              } catch {}
-            }}
-            title="Close conversation"
-            aria-label="Close conversation"
-          >
-            Close
-          </button>
-        ) : null}
         {(profile?.name || name) ? (
           <button
             className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/15 border border-[color:var(--border)]/60 cursor-pointer"
@@ -1547,9 +1534,17 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
           </div>
         </div>
       ) : null}
-      {Array.isArray(profile?.photos) && profile!.photos!.length > 0 ? (
-        <div className="px-2 py-1">
-          <div className="text-xs text-white/60 mb-1">Photos</div>
+      <div className="px-2 py-1">
+        <div className="text-xs text-white/60 mb-1">Photos</div>
+        {photosLoading ? (
+          <ul className="grid grid-cols-3 gap-1">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <li key={i} className="aspect-square rounded overflow-hidden bg-black/20">
+                <Skeleton className="w-full h-full" />
+              </li>
+            ))}
+          </ul>
+        ) : Array.isArray(profile?.photos) && profile!.photos!.length > 0 ? (
           <ul className="grid grid-cols-3 gap-1">
             {profile!.photos!.slice(0,6).map((k: string) => (
               <li key={k} className="aspect-square rounded overflow-hidden bg-black/20">
@@ -1562,8 +1557,10 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
               </li>
             ))}
           </ul>
-        </div>
-      ) : null}
+        ) : (
+          <div className="text-xs text-white/50">No photos yet.</div>
+        )}
+      </div>
       <ContextMenuSeparator />
       {isAdmin && meEmail && meEmail.toLowerCase() !== email.toLowerCase() ? (
         <>
@@ -1579,22 +1576,16 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
           <ContextMenuItem onClick={async()=>{ try{ await fetch('/api/blocks',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ targetEmail: email })}); onBlockedChange(prev=>[...prev, email]); } catch {} }}>Block</ContextMenuItem>
         )
       ) : null}
-      {meEmail && meEmail.toLowerCase() !== email.toLowerCase() ? (
-        <>
-          <ContextMenuSeparator />
-          <ContextMenuItem onClick={async()=>{ try{ await fetch('/api/chat/dm/hidden',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ otherEmail: email })}); try { window.dispatchEvent(new CustomEvent('dm-hidden-changed')); } catch {}; toast.success('Conversation closed'); } catch {} }}>Close conversation</ContextMenuItem>
-        </>
-      ) : null}
     </ContextMenuContent>
   );
 }
 
 
 
-export default function DashboardChatPage() {
+export default function DashboardShowroomPage() {
   return (
     <Suspense fallback={<div className="w-full h-full" />}> 
-      <DashboardChatPageInner />
+      <DashboardShowroomPageInner />
     </Suspense>
   );
 }

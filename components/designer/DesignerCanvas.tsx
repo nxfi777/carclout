@@ -23,6 +23,18 @@ export default function DesignerCanvas({ className }: { className?: string }) {
   const lastClickRef = useRef<{ id: string; at: number } | null>(null);
   const [maskDrag, setMaskDrag] = useState<{ x: number; y: number; tx: number; ty: number } | null>(null);
 
+  const activateTextEditing = useCallback((layer: Layer | null | undefined, options?: { skipSelect?: boolean }) => {
+    if (!layer || layer.type !== 'text') {
+      return false;
+    }
+    if (!options?.skipSelect) {
+      dispatch({ type: 'select_layer', id: layer.id });
+    }
+    dispatch({ type: 'set_tool', tool: 'text' });
+    dispatch({ type: 'start_edit_text', id: layer.id });
+    return true;
+  }, [dispatch]);
+
   const onPointerDownLayer = useCallback((e: React.PointerEvent, layer: Layer) => {
     e.stopPropagation();
     if (layer.locked) return;
@@ -32,8 +44,7 @@ export default function DesignerCanvas({ className }: { className?: string }) {
     if (prev && prev.id === layer.id && (now - prev.at) < 400) {
       if (state.tool === 'select' && layer.type === 'text') {
         e.preventDefault();
-        dispatch({ type: 'set_tool', tool: 'text' });
-        dispatch({ type: 'start_edit_text', id: layer.id });
+        activateTextEditing(layer);
         lastClickRef.current = null;
         return;
       }
@@ -42,7 +53,7 @@ export default function DesignerCanvas({ className }: { className?: string }) {
     const x = e.clientX; const y = e.clientY;
     setDragStart({ x, y, lx: layer.xPct, ly: layer.yPct, id: layer.id });
     dispatch({ type: 'select_layer', id: layer.id });
-  }, [dispatch, state.tool]);
+  }, [activateTextEditing, dispatch, state.tool]);
 
   useEffect(() => {
     function onMove(ev: PointerEvent) {
@@ -123,9 +134,7 @@ export default function DesignerCanvas({ className }: { className?: string }) {
           // Mask is not editable via text tool
           return;
         }
-        if (layer && layer.type === 'text') {
-          dispatch({ type: 'set_tool', tool: 'text' });
-          dispatch({ type: 'start_edit_text', id });
+        if (layer && activateTextEditing(layer)) {
           return;
         }
       }
@@ -133,13 +142,13 @@ export default function DesignerCanvas({ className }: { className?: string }) {
       const selectedId = state.activeLayerId;
       if (selectedId) {
         const selected = state.layers.find(l => l.id === selectedId);
-        if (selected && selected.type === 'text') {
-          dispatch({ type: 'set_tool', tool: 'text' });
-          dispatch({ type: 'start_edit_text', id: selectedId });
+        if (activateTextEditing(selected, { skipSelect: true })) {
+          // Selection already matches; skip re-select dispatch.
+          return;
         }
       }
     }
-  }, [dispatch, state.tool, state.layers, state.shapeDefaults, state.shapeKind, state.activeLayerId]);
+  }, [activateTextEditing, dispatch, state.tool, state.layers, state.shapeDefaults, state.shapeKind, state.activeLayerId]);
 
   const selectionId = state.activeLayerId;
   const editingId = state.editingLayerId ?? null;
@@ -167,7 +176,15 @@ export default function DesignerCanvas({ className }: { className?: string }) {
 
           {/* Unified layer stack: render in order; special-case mask layer */}
           {orderedVisibleLayers.nonMask.map((layer, idx)=> (
-            <LayerView key={layer.id} layer={layer} selected={selectionId===layer.id} editingId={editingId} onPointerDown={onPointerDownLayer} zIndex={idx} />
+            <LayerView
+              key={layer.id}
+              layer={layer}
+              selected={selectionId===layer.id}
+              editingId={editingId}
+              onPointerDown={onPointerDownLayer}
+              zIndex={idx}
+              activateTextEditing={activateTextEditing}
+            />
           ))}
           {state.maskHidden ? null : orderedVisibleLayers.mask.map((layer)=> (
             // eslint-disable-next-line @next/next/no-img-element
@@ -211,8 +228,40 @@ export default function DesignerCanvas({ className }: { className?: string }) {
   );
 }
 
-function LayerView({ layer, selected, editingId, onPointerDown, zIndex }: { layer: Layer; selected: boolean; editingId: string | null | undefined; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void; zIndex: number }){
+function LayerView({ layer, selected, editingId, onPointerDown, zIndex, activateTextEditing }: { layer: Layer; selected: boolean; editingId: string | null | undefined; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void; zIndex: number; activateTextEditing: (layer: Layer | null | undefined, options?: { skipSelect?: boolean }) => boolean }){
   const { state, dispatch } = useDesigner();
+  const textAreaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const nextHeightPctRef = React.useRef<number | null>(null);
+  const autoResizeTextarea = React.useCallback((node: HTMLTextAreaElement | null) => {
+    if (!node) return;
+    requestAnimationFrame(() => {
+      try {
+        if (!node.isConnected) return;
+        const root = node.closest('[data-canvas-root]') as HTMLElement | null;
+        const canvasHeight = root?.getBoundingClientRect().height || 0;
+        node.style.height = 'auto';
+        node.style.minHeight = '0';
+        const contentHeight = Math.max(node.scrollHeight, 0);
+        const computed = window.getComputedStyle(node);
+        const lineHeight = Number.parseFloat(computed.lineHeight || '') || Number.parseFloat(computed.fontSize || '') || 0;
+        const targetHeight = Math.max(contentHeight, lineHeight || 0);
+        node.style.height = `${targetHeight}px`;
+        if (canvasHeight > 0) {
+          const nextPctRaw = (targetHeight / canvasHeight) * 100;
+          const nextPct = Math.max(2, Math.min(100, Number.isFinite(nextPctRaw) ? nextPctRaw : 2));
+          nextHeightPctRef.current = Number(nextPct.toFixed(3));
+        } else {
+          nextHeightPctRef.current = null;
+        }
+      } catch {}
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (editingId !== layer.id) return;
+    autoResizeTextarea(textAreaRef.current);
+  }, [editingId, layer.id, autoResizeTextarea]);
+
   const baseAlpha = (()=>{
     if (layer.type === 'text') {
       return getColorAlpha((layer as TextLayer).color);
@@ -255,51 +304,31 @@ function LayerView({ layer, selected, editingId, onPointerDown, zIndex }: { laye
     const isEditing = (editingId === layer.id);
     rendered = isEditing ? (
       <textarea
+        ref={(node)=>{
+          textAreaRef.current = node;
+          autoResizeTextarea(node);
+        }}
         defaultValue={t.text}
         autoFocus
         rows={1}
         onPointerDown={(e)=> e.stopPropagation()}
         onFocus={(e)=>{
-          try {
-            const el = e.currentTarget as HTMLTextAreaElement;
-            requestAnimationFrame(() => {
-              try {
-                const root = el.closest('[data-canvas-root]') as HTMLElement | null;
-                const ch = root?.getBoundingClientRect().height || 0;
-                if (ch > 0) {
-                  const prev = el.style.height;
-                  el.style.height = 'auto';
-                  const contentPx = el.scrollHeight;
-                  el.style.height = prev || '100%';
-                  const nextPct = Math.max(2, Math.min(100, (contentPx / ch) * 100));
-                  window.dispatchDesigner?.({ type: 'update_layer', id: layer.id, patch: { heightPct: nextPct } });
-                }
-              } catch {}
-            });
-          } catch {}
+          autoResizeTextarea(e.currentTarget);
         }}
         onInput={(e)=>{
-          try {
-            const el = e.currentTarget as HTMLTextAreaElement;
-            requestAnimationFrame(() => {
-              try {
-                const root = el.closest('[data-canvas-root]') as HTMLElement | null;
-                const ch = root?.getBoundingClientRect().height || 0;
-                if (ch > 0) {
-                  const prev = el.style.height;
-                  el.style.height = 'auto';
-                  const contentPx = el.scrollHeight;
-                  el.style.height = prev || '100%';
-                  const nextPct = Math.max(2, Math.min(100, (contentPx / ch) * 100));
-                  window.dispatchDesigner?.({ type: 'update_layer', id: layer.id, patch: { heightPct: nextPct } });
-                }
-              } catch {}
-            });
-          } catch {}
+          autoResizeTextarea(e.currentTarget);
         }}
         onKeyDown={(e)=>{ if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) { e.preventDefault(); (e.currentTarget as HTMLTextAreaElement).blur(); } }}
         onBlur={(e)=>{
           const next = e.currentTarget.value;
+          const pendingPct = nextHeightPctRef.current;
+          if (typeof pendingPct === 'number') {
+            nextHeightPctRef.current = null;
+            const currentPct = typeof layer.heightPct === 'number' ? layer.heightPct : pendingPct;
+            if (Math.abs(pendingPct - currentPct) > 0.5) {
+              dispatch({ type: 'update_layer', id: layer.id, patch: { heightPct: pendingPct } });
+            }
+          }
           if (next !== t.text) {
             window.dispatchDesigner?.({ type: 'update_layer', id: layer.id, patch: { text: next } });
           }
@@ -326,9 +355,7 @@ function LayerView({ layer, selected, editingId, onPointerDown, zIndex }: { laye
         onDoubleClick={(e)=>{
           if (state.tool === 'select') {
             e.stopPropagation();
-            dispatch({ type: 'select_layer', id: layer.id });
-            dispatch({ type: 'set_tool', tool: 'text' });
-            dispatch({ type: 'start_edit_text', id: layer.id });
+            activateTextEditing(layer);
           }
         }}
       >
@@ -381,10 +408,11 @@ function LayerView({ layer, selected, editingId, onPointerDown, zIndex }: { laye
       style={{ ...style, zIndex }}
       onPointerDown={(e)=> onPointerDown(e, layer)}
       onDoubleClick={(e)=>{
-        if (state.tool === 'select' && layer.type === 'text') {
-          e.stopPropagation();
-          dispatch({ type: 'set_tool', tool: 'text' });
-          dispatch({ type: 'start_edit_text', id: layer.id });
+        if (state.tool === 'select') {
+          if (layer.type === 'text') {
+            e.stopPropagation();
+            activateTextEditing(layer);
+          }
         }
       }}
       onContextMenu={() => { window.dispatchDesigner?.({ type: 'select_layer', id: layer.id }); }}

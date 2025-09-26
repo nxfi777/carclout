@@ -211,6 +211,19 @@ export default function TransformControls() {
     return () => { window.removeEventListener('pointermove', move as unknown as EventListener); window.removeEventListener('pointerup', up as unknown as EventListener); };
   }, [drag, layer, dispatch, snapAspectRatio, snapScaleRatio]);
 
+  const handleRotatePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (!layer) return;
+    const el = ref.current?.parentElement as HTMLElement | null;
+    const r = el?.getBoundingClientRect();
+    if (!r) return;
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * (180 / Math.PI);
+    const startRotation = layer.rotationDeg || 0;
+    setDrag({ type: 'rotate', cx, cy, startAngle, startRotation });
+  }, [layer]);
+
   if (!layer) return null;
   return (
     <div ref={ref} className="pointer-events-none absolute inset-0 z-[30]">
@@ -219,17 +232,16 @@ export default function TransformControls() {
         <div className="absolute left-1/2 top-2 -translate-x-1/2 h-5 w-px bg-white/60" />
         <div
           title="Rotate"
-          onPointerDown={(e)=>{
-            e.stopPropagation();
-            const el = ref.current?.parentElement as HTMLElement | null;
-            const r = el?.getBoundingClientRect();
-            if (!r) return;
-            const cx = r.left + r.width / 2;
-            const cy = r.top + r.height / 2;
-            const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx) * (180 / Math.PI);
-            const startRotation = (layer.rotationDeg || 0);
-            setDrag({ type: 'rotate', cx, cy, startAngle, startRotation });
-          }}
+          onPointerDown={handleRotatePointerDown}
+          className="relative z-10 size-4 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
+        />
+      </div>
+      {/* Rotate handle antenna at bottom-center */}
+      <div className="absolute left-1/2 -bottom-7 -translate-x-1/2 pointer-events-none select-none">
+        <div className="absolute left-1/2 bottom-2 -translate-x-1/2 h-5 w-px bg-white/60" />
+        <div
+          title="Rotate"
+          onPointerDown={handleRotatePointerDown}
           className="relative z-10 size-4 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
         />
       </div>

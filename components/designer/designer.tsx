@@ -157,7 +157,7 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
         key: "try-again",
         label: "Try again",
         onSelect: onTryAgain,
-        section: "leading",
+        section: "desktop-only",
         variant: "outline",
       });
     }
@@ -224,7 +224,16 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
   return (
     <div className="space-y-3">
       <DesignerActionsProvider value={{ actions }}>
-        <LayerEditorProvider initial={{ backgroundUrl: bgUrl, carMaskUrl: fgUrl, layers: (typeof defaultHeadline === 'string' && defaultHeadline.trim()) ? [{ ...createDefaultText(50, 80), text: defaultHeadline.toUpperCase() }] : [] }}>
+        <LayerEditorProvider
+          initial={{
+            backgroundUrl: bgUrl,
+            carMaskUrl: fgUrl,
+            layers: (typeof defaultHeadline === 'string' && defaultHeadline.trim())
+              ? [{ ...createDefaultText(50, 80), text: defaultHeadline.toUpperCase() }]
+              : [],
+            editingLayerId: undefined,
+          }}
+        >
           <ExposeLayerState />
           <LayerEditorShell />
           <div className="pt-2">

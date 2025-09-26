@@ -38,6 +38,7 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
         "Community access",
         "100GB storage",
         "On-demand upscales",
+        "Video generation",
         "All tools unlocked",
         "Priority updates",
         "Exclusive discounts",

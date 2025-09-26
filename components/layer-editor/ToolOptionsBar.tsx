@@ -164,7 +164,8 @@ function TextOptions() {
   })();
   const textOpacityPct = Math.round(textAlpha * 100);
   const lineHeightValue = isText && selectedTextLayers.length === 1 ? selectedTextLayers[0].lineHeightEm : 1.1;
-  const tiltValue = isText && selectedTextLayers.length === 1 ? Math.round(Number(selectedTextLayers[0].tiltYDeg || 0)) : 0;
+  const horizontalTiltValue = isText && selectedTextLayers.length === 1 ? Math.round(Number(selectedTextLayers[0].tiltYDeg || 0)) : 0;
+  const verticalTiltValue = isText && selectedTextLayers.length === 1 ? Math.round(Number(selectedTextLayers[0].tiltXDeg || 0)) : 0;
   const currentAlign: 'left' | 'center' | 'right' | 'justify' = isText && selectedTextLayers.length === 1
     ? ((selectedTextLayers[0].textAlign as 'left' | 'center' | 'right' | 'justify' | undefined) || 'center')
     : 'center';
@@ -344,25 +345,52 @@ function TextOptions() {
           </PopoverTrigger>
           <PopoverContent className="w-56 space-y-4" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
             <div className="flex items-center justify-between text-sm text-white/70">
-              <span>Depth</span>
-              <span className="text-white">{tiltValue}&deg;</span>
+              <span>Depth tilt</span>
+              <span className="text-white">{horizontalTiltValue}&deg;</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-white/60">-</span>
               <div className="relative flex-1">
                 <Slider
                   className="flex-1"
-                  min={-45}
-                  max={45}
+                  min={-75}
+                  max={75}
                   step={1}
-                  value={[tiltValue]}
+                  value={[horizontalTiltValue]}
                   onValueChange={(v)=>{
                     if (!isText) return;
                     const raw = Number(v?.[0] || 0);
-                    let next = Math.max(-45, Math.min(45, raw));
-                    if (Math.abs(next) <= 2) next = 0;
+                    let next = Math.max(-75, Math.min(75, raw));
+                    if (Math.abs(next) <= 1) next = 0;
                     for (const t of selectedTextLayers) {
                       dispatch({ type: 'update_layer', id: t.id, patch: { tiltYDeg: next } });
+                    }
+                  }}
+                />
+                <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-xs text-white/40">|</span>
+              </div>
+              <span className="text-xs text-white/60">+</span>
+            </div>
+            <div className="flex items-center justify-between text-sm text-white/70">
+              <span>Vertical tilt</span>
+              <span className="text-white">{verticalTiltValue}&deg;</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/60">-</span>
+              <div className="relative flex-1">
+                <Slider
+                  className="flex-1"
+                  min={-75}
+                  max={75}
+                  step={1}
+                  value={[verticalTiltValue]}
+                  onValueChange={(v)=>{
+                    if (!isText) return;
+                    const raw = Number(v?.[0] || 0);
+                    let next = Math.max(-75, Math.min(75, raw));
+                    if (Math.abs(next) <= 1) next = 0;
+                    for (const t of selectedTextLayers) {
+                      dispatch({ type: 'update_layer', id: t.id, patch: { tiltXDeg: next } });
                     }
                   }}
                 />

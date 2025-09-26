@@ -32,7 +32,11 @@ function reducer(state: DesignerState, action: DesignerAction): DesignerState {
       // Replace entire state (used by undo/redo). Trust caller to provide a valid snapshot.
       return { ...action.next };
     case "set_tool":
-      return { ...state, tool: action.tool, editingLayerId: action.tool === 'text' ? state.editingLayerId : null };
+      return {
+        ...state,
+        tool: action.tool,
+        editingLayerId: action.tool === 'text' ? state.editingLayerId : null,
+      };
     case "set_marquee_mode":
       return { ...state, marqueeMode: action.mode };
     case "set_shape_kind":
@@ -42,7 +46,14 @@ function reducer(state: DesignerState, action: DesignerAction): DesignerState {
     case "add_layer": {
       // Add layers normally, no special handling for mask layer
       const layers = action.atTop ? [...state.layers, action.layer] : [action.layer, ...state.layers];
-      return { ...state, layers, activeLayerId: action.layer.id, editingLayerId: action.layer.type === 'text' ? action.layer.id : state.editingLayerId };
+      return {
+        ...state,
+        layers,
+        activeLayerId: action.layer.id,
+        editingLayerId: action.layer.type === 'text'
+          ? (state.tool === 'text' ? action.layer.id : null)
+          : state.editingLayerId,
+      };
     }
     case "update_layer": {
       const layers = state.layers.map((l) => (l.id === action.id ? ({ ...l, ...action.patch } as Layer) : l));

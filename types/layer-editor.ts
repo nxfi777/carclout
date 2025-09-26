@@ -35,7 +35,8 @@ export type LayerBase = {
   widthPct: number;
   heightPct: number;
   rotationDeg: number;
-  // Horizontal depth tilt (3D-like), applied as CSS rotateY with perspective
+  // Depth tilt (3D-like). rotateX for vertical, rotateY for horizontal perspective.
+  tiltXDeg?: number;
   tiltYDeg?: number;
   scaleX: number;
   scaleY: number;
@@ -176,6 +177,7 @@ export function createDefaultText(xPct = 50, yPct = 50): TextLayer {
     widthPct: 40,
     heightPct: 12,
     rotationDeg: 0,
+    tiltXDeg: 0,
     tiltYDeg: 0,
     scaleX: 1,
     scaleY: 1,
@@ -201,6 +203,7 @@ export function createDefaultRect(xPct = 50, yPct = 50): ShapeLayer {
     widthPct: 40,
     heightPct: 20,
     rotationDeg: 0,
+    tiltXDeg: 0,
     tiltYDeg: 0,
     scaleX: 1,
     scaleY: 1,
@@ -222,6 +225,7 @@ export function createDefaultEllipse(xPct = 50, yPct = 50): ShapeLayer {
     widthPct: 36,
     heightPct: 20,
     rotationDeg: 0,
+    tiltXDeg: 0,
     tiltYDeg: 0,
     scaleX: 1,
     scaleY: 1,
@@ -240,6 +244,7 @@ export function createImageLayer(src: string, xPct = 50, yPct = 50): ImageLayer 
     widthPct: 40,
     heightPct: 30,
     rotationDeg: 0,
+    tiltXDeg: 0,
     tiltYDeg: 0,
     scaleX: 1,
     scaleY: 1,

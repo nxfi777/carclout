@@ -35,6 +35,7 @@ export type LayerBase = {
   widthPct: number; // 0..100 relative to canvas width
   heightPct: number; // 0..100 relative to canvas height
   rotationDeg: number; // -180..180
+  tiltXDeg?: number;
   scaleX: number;
   scaleY: number;
   locked?: boolean;

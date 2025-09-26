@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLayerEditor } from "@/components/layer-editor/LayerEditorProvider";
 import { getColorAlpha, multiplyColorAlpha } from "@/lib/color";
 import type { Layer } from "@/types/layer-editor";
@@ -213,8 +213,9 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
   const { state, dispatch } = useLayerEditor();
   const editableRef = React.useRef<HTMLDivElement | null>(null);
   const seededRef = React.useRef<string | null>(null);
+  const nextHeightPctRef = React.useRef<number | null>(null);
   const isEditing = state.editingLayerId === layer.id;
-  React.useEffect(()=>{
+  useLayoutEffect(()=>{
     if (!isEditing) return;
     if (layer.type !== 'text') return;
     const el = editableRef.current;
@@ -231,7 +232,61 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
       el.innerHTML = seedHtml;
       seededRef.current = layer.id;
     }
-  }, [isEditing, layer]);
+    requestAnimationFrame(() => {
+      try {
+        const root = el.closest('[data-canvas-root]') as HTMLElement | null;
+        const canvasHeight = root?.getBoundingClientRect().height || 0;
+        const contentHeight = Math.max(el.scrollHeight, 0);
+        const computed = window.getComputedStyle(el);
+        const lineHeight = Number.parseFloat(computed.lineHeight || '') || Number.parseFloat(computed.fontSize || '') || 0;
+        const targetHeight = Math.max(contentHeight, lineHeight || 0);
+        if (canvasHeight > 0) {
+          const nextPctRaw = (targetHeight / canvasHeight) * 100;
+          const nextPct = Math.max(2, Math.min(100, Number.isFinite(nextPctRaw) ? nextPctRaw : 2));
+          nextHeightPctRef.current = Number(nextPct.toFixed(3));
+        } else {
+          nextHeightPctRef.current = null;
+        }
+      } catch {}
+    });
+  }, [isEditing, layer, layer.id]);
+  useEffect(()=>{
+    if (isEditing) return;
+    if (seededRef.current === layer.id) {
+      seededRef.current = null;
+    }
+    nextHeightPctRef.current = null;
+  }, [isEditing, layer.id]);
+  useEffect(() => {
+    if (!isEditing) return;
+    if (layer.type !== 'text') return;
+    const el = editableRef.current;
+    if (!el) return;
+    const resize = () => {
+      try {
+        const root = el.closest('[data-canvas-root]') as HTMLElement | null;
+        const canvasHeight = root?.getBoundingClientRect().height || 0;
+        const contentHeight = Math.max(el.scrollHeight, 0);
+        const computed = window.getComputedStyle(el);
+        const lineHeight = Number.parseFloat(computed.lineHeight || '') || Number.parseFloat(computed.fontSize || '') || 0;
+        const targetHeight = Math.max(contentHeight, lineHeight || 0);
+        el.style.height = `${targetHeight}px`;
+        if (canvasHeight > 0) {
+          const nextPctRaw = (targetHeight / canvasHeight) * 100;
+          const nextPct = Math.max(2, Math.min(100, Number.isFinite(nextPctRaw) ? nextPctRaw : 2));
+          nextHeightPctRef.current = Number(nextPct.toFixed(3));
+        } else {
+          nextHeightPctRef.current = null;
+        }
+      } catch {}
+    };
+    resize();
+    const observer = new ResizeObserver(() => resize());
+    observer.observe(el);
+    return () => {
+      try { observer.disconnect(); } catch {}
+    };
+  }, [dispatch, isEditing, layer]);
   const baseAlpha = (()=>{
     if (layer.type === 'text') {
       return getColorAlpha((layer as import("@/types/layer-editor").TextLayer).color);
@@ -264,7 +319,7 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
   const inner3DStyle: React.CSSProperties = {
     width: '100%',
     height: '100%',
-    transform: `rotateY(${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}deg)`,
+    transform: `rotateX(${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}deg) rotateY(${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}deg)`,
     transformStyle: 'preserve-3d',
   };
   let rendered: React.ReactNode = null;
@@ -332,6 +387,14 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
           onBlur={(e)=>{
             try { (window as unknown as { __activeTextEditable?: HTMLElement | null }).__activeTextEditable = null; } catch {}
             const el = e.currentTarget as HTMLDivElement;
+            const pendingPct = nextHeightPctRef.current;
+            if (typeof pendingPct === 'number') {
+              nextHeightPctRef.current = null;
+              const currentPct = typeof layer.heightPct === 'number' ? layer.heightPct : pendingPct;
+              if (Math.abs(pendingPct - currentPct) > 0.5) {
+                dispatch({ type: 'update_layer', id: layer.id, patch: { heightPct: pendingPct } });
+              }
+            }
             const nextHtml = el.innerHTML;
             const nextText = (el.innerText || el.textContent || '').replace(/\r\n|\r/g, '\n');
             const patch: { html: string; text: string } = { html: nextHtml, text: nextText };
