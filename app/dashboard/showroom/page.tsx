@@ -56,6 +56,9 @@ type AttachmentStatus = 'pending' | 'uploading';
 const R2_PUBLIC_BASE = (process.env.NEXT_PUBLIC_R2_PUBLIC_BASE || "https://r2.ignitecdn.com").replace(/\/$/, "");
 const IMAGE_EXTENSIONS = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp|bmp|ico|tiff?|heic|heif)$/i;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const SESSION_PREVIEW_SIZES = "(min-width: 80rem) 16rem, (min-width: 64rem) 14rem, (min-width: 48rem) 12rem, 80vw";
+const LIBRARY_PREVIEW_SIZES = "(min-width: 80rem) 18rem, (min-width: 64rem) 16rem, (min-width: 48rem) 14rem, 90vw";
+const PROFILE_PREVIEW_SIZES = "(min-width: 64rem) 12rem, (min-width: 48rem) 10rem, 70vw";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object";
@@ -1969,7 +1972,7 @@ function DashboardShowroomPageInner() {
                                       alt="Uploaded preview"
                                       fill
                                       className="object-contain"
-                                      sizes="128px"
+                                      sizes={SESSION_PREVIEW_SIZES}
                                       onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
                                     />
                                   ) : (
@@ -2027,7 +2030,7 @@ function DashboardShowroomPageInner() {
                                 alt="Library"
                                 fill
                                 className="object-contain"
-                                sizes="128px"
+                                sizes={LIBRARY_PREVIEW_SIZES}
                                 onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
                               />
                             ) : (
@@ -2221,7 +2224,7 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
             {profile!.photos!.slice(0,6).map((k: string) => (
               <li key={k} className="aspect-square rounded overflow-hidden bg-black/20">
                 {previews[k] ? (
-                  <Image src={previews[k]} alt="Car" fill className="object-cover" sizes="128px" />
+                  <Image src={previews[k]} alt="Car" fill className="object-cover" sizes={PROFILE_PREVIEW_SIZES} />
                 ) : (
                   <Skeleton className="w-full h-full" />
                 )}
