@@ -1,5 +1,6 @@
 "use client";
-import { Suspense, useEffect, useState, useRef, useMemo } from "react";
+import { Suspense, useEffect, useState, useRef, useMemo, useCallback } from "react";
+import type { CSSProperties } from "react";
 // Removed Stream chat; bespoke Surreal chat implementation
 import { useRouter, useSearchParams } from "next/navigation";
 import { DashboardWorkspacePanel } from "@/components/dashboard-workspace-panel";
@@ -9,6 +10,9 @@ import ContentTabs from "@/components/ui/content-tabs";
 import Lottie from "lottie-react";
 import fireAnimation from "@/public/fire.json";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { DropZone } from "@/components/ui/drop-zone";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import FeatureRequestsPanel from "@/components/feature-requests-panel";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from "@/components/ui/context-menu";
@@ -17,8 +21,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import { confirmToast } from "@/components/ui/toast-helpers";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CarFront, SquarePen } from "lucide-react";
+import { CarFront, SquarePen, ImagePlus, Loader2, X, UploadCloud } from "lucide-react";
 import Chevron from "@/components/ui/chevron";
+import { getViewUrls } from "@/lib/view-url-client";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Image from "next/image";
+
+import { uploadFilesToChat } from "@/lib/r2-upload";
 
 type ChatMessage = {
   id?: string
@@ -28,6 +37,7 @@ type ChatMessage = {
   userEmail?: string
   created_at?: string
   status?: 'sent' | 'pending' | 'failed'
+  attachments?: string[]
 }
 
 type ShowroomView = "showroom" | "forge" | "livestream";
@@ -40,6 +50,10 @@ type ChatProfile = {
   photos?: string[];
   bio?: string;
 };
+
+const R2_PUBLIC_BASE = (process.env.NEXT_PUBLIC_R2_PUBLIC_BASE || "https://r2.ignitecdn.com").replace(/\/$/, "");
+const IMAGE_EXTENSIONS = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp|bmp|ico|tiff?|heic|heif)$/i;
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 function DashboardShowroomPageInner() {
   const [loading, setLoading] = useState(true);
@@ -61,6 +75,19 @@ function DashboardShowroomPageInner() {
   const [blocked, setBlocked] = useState<string[]>([]);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [dmTtlSeconds, setDmTtlSeconds] = useState<number>(24*60*60);
+  const [attachmentModalOpen, setAttachmentModalOpen] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<string[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [attachmentErrorShakeKey, setAttachmentErrorShakeKey] = useState(0);
+  const [attachmentPreviewMap, setAttachmentPreviewMap] = useState<Record<string, string>>({});
+  const [messageAttachmentUrls, setMessageAttachmentUrls] = useState<Record<string, string>>({});
+  const libraryLoadedRef = useRef(false);
+  const maxAttachments = 6;
+  const [selectedAttachmentTab, setSelectedAttachmentTab] = useState<'upload' | 'library'>('upload');
+  const [libraryItems, setLibraryItems] = useState<Array<{ key: string; url: string }>>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [imageDimensions, setImageDimensions] = useState<Record<string, { width: number; height: number }>>({});
   // Helper: on mobile, close channels sidebar after navigating
   const closeChannelsIfMobile = () => {
     try {
@@ -111,6 +138,21 @@ function DashboardShowroomPageInner() {
       if (u.length !== 2) return "";
       return String.fromCodePoint(u.charCodeAt(0) + base, u.charCodeAt(1) + base);
     }).filter(Boolean);
+  }, []);
+  const getAspectStyle = useCallback((key: string): CSSProperties => {
+    const dims = imageDimensions[key];
+    if (dims?.width && dims?.height) {
+      return { aspectRatio: `${dims.width} / ${dims.height}` };
+    }
+    return { aspectRatio: "1 / 1" };
+  }, [imageDimensions]);
+  const updateImageDimensions = useCallback((key: string, width: number, height: number) => {
+    if (!width || !height) return;
+    setImageDimensions((prev) => {
+      const existing = prev[key];
+      if (existing && existing.width === width && existing.height === height) return prev;
+      return { ...prev, [key]: { width, height } };
+    });
   }, []);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -459,11 +501,14 @@ function DashboardShowroomPageInner() {
     return true;
   }
 
-  async function sendMessage(text: string, temp?: string) {
+  const sendMessage = useCallback(async (text: string, temp?: string, attachments?: { key: string; url: string }[]) => {
     if (muted?.active) {
       toast.error('You are muted and cannot send messages.');
       return;
     }
+    const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+    const trimmed = text?.trim?.() ?? '';
+    const displayText = trimmed.length ? trimmed : (hasAttachments ? '\u200B' : '');
     const tid = temp || tempId();
     setMessages(prev => {
       const exists = prev.find(m => m.tempId === tid);
@@ -471,22 +516,28 @@ function DashboardShowroomPageInner() {
         return prev.map(m => m.tempId === tid ? { ...m, status: 'pending' } : m);
       }
       const display = (me?.name && !/@/.test(String(me.name))) ? me.name : (me?.email || 'You');
-      return [...prev, { tempId: tid, text, userName: display, status: 'pending', userEmail: me?.email }];
+      return [...prev, { tempId: tid, text: displayText, userName: display, status: 'pending', userEmail: me?.email, attachments: attachments?.map((a) => a.key) }];
     });
 
     try {
       if (activeChatType === 'dm' && activeDm?.email) {
-        const r = await fetch('/api/chat/dm/messages', { method:'POST', body: JSON.stringify({ targetEmail: activeDm.email, text }) }).then(r=>r.json());
-        setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, id: r.message?.id?.id?.toString?.() || r.message?.id || m.id, text: r.message?.text || text, userName: r.message?.userName || m.userName, created_at: r.message?.created_at, status: 'sent' } : m));
+        const payload: Record<string, unknown> = { targetEmail: activeDm.email };
+        if (attachments?.length) payload.attachments = attachments.map((a) => a.key);
+        if (trimmed.length) payload.text = trimmed;
+        const r = await fetch('/api/chat/dm/messages', { method:'POST', body: JSON.stringify(payload) }).then(r=>r.json());
+        setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, id: r.message?.id?.id?.toString?.() || r.message?.id || m.id, text: r.message?.text || displayText, userName: r.message?.userName || m.userName, created_at: r.message?.created_at, status: 'sent', attachments: Array.isArray(r.message?.attachments) ? r.message.attachments : m.attachments } : m));
         setDmConversations(prev => prev.some(c => c.email === activeDm.email) ? prev : [{ email: activeDm.email, name: activeDm.name || activeDm.email, image: activeDm.image }, ...prev]);
       } else {
-        const r = await fetch('/api/chat/messages', { method:'POST', body: JSON.stringify({ channel: active, text }) }).then(r=>r.json());
-        setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, id: r.message?.id?.id?.toString?.() || r.message?.id || m.id, text: r.message?.text || text, userName: r.message?.userName || m.userName, created_at: r.message?.created_at, status: 'sent' } : m));
+        const payload: Record<string, unknown> = { channel: active };
+        if (attachments?.length) payload.attachments = attachments.map((a) => a.key);
+        if (trimmed.length) payload.text = trimmed;
+        const r = await fetch('/api/chat/messages', { method:'POST', body: JSON.stringify(payload) }).then(r=>r.json());
+        setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, id: r.message?.id?.id?.toString?.() || r.message?.id || m.id, text: r.message?.text || displayText, userName: r.message?.userName || m.userName, created_at: r.message?.created_at, status: 'sent', attachments: Array.isArray(r.message?.attachments) ? r.message.attachments : m.attachments } : m));
       }
     } catch {
       setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, status: 'failed' } : m));
     }
-  }
+  }, [active, activeChatType, activeDm, me?.email, me?.name, muted?.active]);
 
   function insertEmoji(emoji: string) {
     const input = inputRef.current;
@@ -511,7 +562,7 @@ function DashboardShowroomPageInner() {
     (async () => {
       if (activeChatType === 'dm' && activeDm?.email) {
         if (needSnapshot) {
-        const m: { messages?: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(activeDm.email)}`).then(r=>r.json());
+        const m: { messages?: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(activeDm.email)}`).then(r=>r.json());
         setMessages((m.messages || []).map((mm) => ({ ...mm, status: 'sent' })));
         setChatLoading(false);
         }
@@ -520,19 +571,43 @@ function DashboardShowroomPageInner() {
           try {
             const data = JSON.parse(ev.data);
             const row = data?.result || data?.record || data;
-            const text = row?.text;
+            const rawText: string = typeof row?.text === 'string' ? row.text : '';
             let userName: string | undefined = row?.senderName;
             // Never show email as name; if email-like, mask to 'Member'
             if (!userName || /@/.test(String(userName))) userName = 'Member';
             if (row?.senderEmail && blocked.includes(row.senderEmail)) return;
-            if (!text || !userName) return;
-            setMessages(prev => [...prev, { text, userName, userEmail: row?.senderEmail, status: 'sent', created_at: row?.created_at, id: row?.id?.id?.toString?.() || row?.id }]);
+            const attachments = Array.isArray(row?.attachments)
+              ? (row.attachments as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 6)
+              : [];
+            const hasVisibleText = rawText.replace(/\u200B/g, '').trim().length > 0;
+            if (!hasVisibleText && attachments.length === 0) return;
+            const id = row?.id?.id?.toString?.() || row?.id;
+            const message = {
+              text: rawText,
+              userName,
+              userEmail: row?.senderEmail,
+              status: 'sent' as const,
+              created_at: row?.created_at,
+              id,
+              attachments,
+            };
+            setMessages((prev) => {
+              if (id) {
+                const existingIndex = prev.findIndex((m) => m.id === id);
+                if (existingIndex !== -1) {
+                  const next = [...prev];
+                  next[existingIndex] = { ...next[existingIndex], ...message };
+                  return next;
+                }
+              }
+              return [...prev, message];
+            });
           } catch {}
         };
         es.onerror = () => { try { es?.close(); } catch {}; };
       } else {
         if (needSnapshot) {
-        const m: { messages?: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string }[] } = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then(r=>r.json());
+        const m: { messages?: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then(r=>r.json());
         setMessages((m.messages || []).map((mm) => ({ ...mm, status: 'sent' })));
         setChatLoading(false);
         }
@@ -541,12 +616,36 @@ function DashboardShowroomPageInner() {
           try {
             const data = JSON.parse(ev.data);
             const row = data?.result || data?.record || data;
-            const text = row?.text;
+            const rawText: string = typeof row?.text === 'string' ? row.text : '';
             let userName: string | undefined = row?.userName;
             if (!userName || /@/.test(String(userName))) userName = 'Member';
             if (row?.userEmail && blocked.includes(row.userEmail)) return;
-            if (!text || !userName) return;
-            setMessages(prev => [...prev, { text, userName, userEmail: row?.userEmail, status: 'sent', created_at: row?.created_at, id: row?.id?.id?.toString?.() || row?.id }]);
+            const attachments = Array.isArray(row?.attachments)
+              ? (row.attachments as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 6)
+              : [];
+            const hasVisibleText = rawText.replace(/\u200B/g, '').trim().length > 0;
+            if (!hasVisibleText && attachments.length === 0) return;
+            const id = row?.id?.id?.toString?.() || row?.id;
+            const message = {
+              text: rawText,
+              userName,
+              userEmail: row?.userEmail,
+              status: 'sent' as const,
+              created_at: row?.created_at,
+              id,
+              attachments,
+            };
+            setMessages((prev) => {
+              if (id) {
+                const existingIndex = prev.findIndex((m) => m.id === id);
+                if (existingIndex !== -1) {
+                  const next = [...prev];
+                  next[existingIndex] = { ...next[existingIndex], ...message };
+                  return next;
+                }
+              }
+              return [...prev, message];
+            });
           } catch {}
         };
         es.onerror = () => { try { es?.close(); } catch {}; };
@@ -681,6 +780,116 @@ function DashboardShowroomPageInner() {
     return `${left}1fr${right}`;
   }, [showroomView, showChannels, showMembers, activeChatType]);
 
+  const compressImage = useCallback(async (file: File) => {
+    try {
+      const MAX_DIMENSION = 1920;
+      const MAX_BYTES = 500 * 1024;
+      const createImageBitmap = window.createImageBitmap;
+      if (!createImageBitmap) return file;
+      const bitmap = await createImageBitmap(file);
+      let { width, height } = bitmap;
+      const scale = Math.min(1, MAX_DIMENSION / Math.max(width, height));
+      if (scale < 1) {
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      let quality = 0.85;
+      let blob: Blob | null = null;
+      while (quality > 0.4) {
+        blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', quality));
+        if (!blob) break;
+        if (blob.size <= MAX_BYTES) break;
+        quality -= 0.1;
+      }
+      if (!blob) return file;
+      if (blob.size > MAX_BYTES) return file;
+      return new File([blob], file.name.replace(/\.[^.]+$/,'') + '.webp', { type: 'image/webp' });
+    } catch {
+      return file;
+    }
+  }, []);
+
+  const fetchLibraryPhotos = useCallback(async () => {
+    if (libraryLoadedRef.current || libraryLoading) return;
+    setLibraryLoading(true);
+    try {
+      const res = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      const files: Array<{ key?: string; type?: string }> = Array.isArray(data?.items) ? data.items : [];
+      const keys = files.filter((it) => String(it?.type) === 'file').map((it) => it.key || '').filter(Boolean);
+      const imageKeys = keys.filter((key) => {
+        const basename = key.split('?')[0]?.split('/').pop() || '';
+        return IMAGE_EXTENSIONS.test(basename);
+      });
+      if (!imageKeys.length) {
+        setLibraryItems([]);
+        libraryLoadedRef.current = true;
+        return;
+      }
+      const urls = await getViewUrls(imageKeys);
+      setLibraryItems(imageKeys.map((key) => ({ key, url: urls[key] || (`https://r2.ignitecdn.com/${key}`) })));
+      libraryLoadedRef.current = true;
+    } finally {
+      setLibraryLoading(false);
+    }
+  }, [libraryLoading]);
+
+  useEffect(() => {
+    const keys = new Set<string>();
+    for (const m of messages) {
+      if (Array.isArray(m.attachments)) {
+        for (const key of m.attachments) {
+          if (typeof key === "string" && key) keys.add(key);
+        }
+      }
+    }
+    const missing = Array.from(keys).filter((key) => !messageAttachmentUrls[key] && !attachmentPreviewMap[key]);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const urls = await getViewUrls(missing);
+        if (cancelled) return;
+        setMessageAttachmentUrls((prev) => {
+          const next = { ...prev } as Record<string, string>;
+          for (const [key, url] of Object.entries(urls)) {
+            if (key && url) next[key] = url;
+          }
+          return next;
+        });
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [messages, messageAttachmentUrls, attachmentPreviewMap]);
+
+  const handleSendAttachments = useCallback(async () => {
+    if (!pendingAttachments.length) return;
+    const input = inputRef.current;
+    const raw = input?.value ?? '';
+    const trimmed = raw.trim();
+    const hasText = trimmed.length > 0;
+    const messageText = hasText ? trimmed : '';
+    if (input) input.value = '';
+    await sendMessage(messageText, undefined, pendingAttachments.map((key) => ({ key, url: attachmentPreviewMap[key] || '' })));
+    setPendingAttachments([]);
+    setAttachmentPreviewMap((prev) => {
+      const next = { ...prev } as Record<string, string>;
+      for (const key of pendingAttachments) {
+        try { delete next[key]; } catch {}
+      }
+      return next;
+    });
+    setAttachmentModalOpen(false);
+    setAttachmentError(null);
+    setSelectedAttachmentTab('upload');
+  }, [pendingAttachments, attachmentPreviewMap, sendMessage]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100dvh-6rem)]">
@@ -717,7 +926,7 @@ function DashboardShowroomPageInner() {
                   if (c.slug === 'request-a-feature') {
                     setMessages([]);
                   } else {
-                    const m: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/messages?channel=${c.slug}`).then(r=>r.json());
+                    const m: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/messages?channel=${c.slug}`).then(r=>r.json());
                     setMessages((m.messages||[]).map((mm)=>({...mm,status:'sent'})));
                   }
                   setChatLoading(false);
@@ -786,7 +995,7 @@ function DashboardShowroomPageInner() {
                   router.push('/dashboard/showroom');
                   closeChannelsIfMobile();
                   setChatLoading(true);
-                      const m: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
+                      const m: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                   setMessages((m.messages||[]).map((mm)=>({...mm,status:'sent'})));
                   setChatLoading(false);
                       // Unhide if previously hidden
@@ -903,32 +1112,78 @@ function DashboardShowroomPageInner() {
                     const isProName = (() => { const s = (p?.plan || '').toLowerCase(); return canonicalPlan(s) === 'ultra'; })();
                     const nameColorClass = isAdminName ? 'text-[#ef4444]' : (isProName ? 'text-[#ff6a00]' : 'text-white/60');
                     const decoBase = isAdminName ? 'decoration-[#ef4444]/30 hover:decoration-[#ef4444]/60' : (isProName ? 'decoration-[#ff6a00]/30 hover:decoration-[#ff6a00]/60' : 'decoration-white/20 hover:decoration-white/60');
+                    const attachments = Array.isArray(m.attachments) ? m.attachments.filter((key) => typeof key === 'string' && key).slice(0, maxAttachments) : [];
+                    const displayText = (m.text || '').replace(/\u200B/g, '').trim();
+                    const hasText = displayText.length > 0;
+                    const hasAttachments = attachments.length > 0;
                     return (
                     <ContextMenu key={m.id || m.tempId}>
                       <ContextMenuTrigger asChild>
-                        <div className="text-sm flex items-center gap-2">
-                          {m.userEmail ? (
-                            <button
-                                className={`${nameColorClass} mr-1 underline underline-offset-2 ${decoBase} cursor-pointer`}
-                              onClick={(e)=>{
-                                e.preventDefault();
-                                e.stopPropagation();
-                                // Left-click should open the same context menu. Dispatch a synthetic contextmenu event.
-                                const ev = new MouseEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY });
-                                try { (e.currentTarget as HTMLElement).dispatchEvent(ev); } catch {}
-                              }}
-                            >
-                              {m.userName}
-                            </button>
-                          ) : (
-                            <span className="text-white/60 mr-1">{m.userName}</span>
-                          )}
-                          <span className={m.status==='pending' ? 'opacity-70' : ''}>{m.text}</span>
-                          {m.status==='failed' ? (
-                            <button className="text-xs text-red-400 underline" onClick={()=>sendMessage(m.text, m.tempId)}>Retry</button>
-                          ) : null}
-                          {m.status==='pending' ? (
-                            <svg className="animate-spin size-3 text-white/60" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a 8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                        <div className="text-sm flex flex-col gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {m.userEmail ? (
+                              <button
+                                  className={`${nameColorClass} mr-1 underline underline-offset-2 ${decoBase} cursor-pointer`}
+                                onClick={(e)=>{
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  // Left-click should open the same context menu. Dispatch a synthetic contextmenu event.
+                                  const ev = new MouseEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY });
+                                  try { (e.currentTarget as HTMLElement).dispatchEvent(ev); } catch {}
+                                }}
+                              >
+                                {m.userName}
+                              </button>
+                            ) : (
+                              <span className="text-white/60 mr-1">{m.userName}</span>
+                            )}
+                            {hasText ? (
+                              <span className={m.status==='pending' ? 'opacity-70' : ''}>{displayText}</span>
+                            ) : null}
+                            {m.status==='failed' ? (
+                              <button className="text-xs text-red-400 underline" onClick={()=>sendMessage(m.text, m.tempId)}>Retry</button>
+                            ) : null}
+                            {m.status==='pending' ? (
+                              <svg className="animate-spin size-3 text-white/60" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a 8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                            ) : null}
+                          </div>
+                          {hasAttachments ? (
+                            <ul className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
+                              {attachments.map((key) => {
+                                const resolved = messageAttachmentUrls[key] || attachmentPreviewMap[key] || `${R2_PUBLIC_BASE}/${key}`;
+                                return (
+                                  <li
+                                    key={`${m.id || m.tempId}-${key}`}
+                                    className="relative overflow-hidden rounded border border-[color:var(--border)]/60 bg-black/20"
+                                    style={getAspectStyle(key)}
+                                  >
+                                    {resolved ? (
+                                      <Image
+                                        src={resolved}
+                                        alt="Attachment"
+                                        fill
+                                        className="object-contain"
+                                        sizes="160px"
+                                        onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
+                                      />
+                                    ) : (
+                                      <div className="flex h-full w-full items-center justify-center text-white/60">
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      </div>
+                                    )}
+                                    <a
+                                      href={resolved || '#'}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="absolute inset-0"
+                                      aria-label="Open attachment"
+                                    >
+                                      <span className="sr-only">Open attachment</span>
+                                    </a>
+                                  </li>
+                                );
+                              })}
+                            </ul>
                           ) : null}
                         </div>
                       </ContextMenuTrigger>
@@ -950,7 +1205,7 @@ function DashboardShowroomPageInner() {
                             router.push('/dashboard/showroom');
                             closeChannelsIfMobile();
                             setChatLoading(true);
-                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
+                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                             setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
                             setChatLoading(false);
                             setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: undefined }, ...prev]);
@@ -970,7 +1225,8 @@ function DashboardShowroomPageInner() {
                 if (muted?.active) return;
                 inputRef.current!.value="";
                 if (active === 'request-a-feature') return; // no chat send in feature channel
-                await sendMessage(text);
+                await sendMessage(text, undefined, pendingAttachments.map((key) => ({ key, url: attachmentPreviewMap[key] || "" })));
+                setPendingAttachments([]);
               }}>
                 {active === 'request-a-feature' ? (
                   <div className="w-full">
@@ -993,6 +1249,15 @@ function DashboardShowroomPageInner() {
                 ) : (
                   <>
                     <input ref={inputRef} className="flex-1 rounded bg-white/5 px-3 py-2 text-sm disabled:opacity-60" placeholder={activeChatType==='dm' ? `Message @${activeDm?.name || activeDm?.email || 'self'}` : `Message #${active}`} disabled={lockedForMe} />
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center px-3 py-2 rounded bg-white/5 hover:bg-white/10 text-sm"
+                      onClick={()=> setAttachmentModalOpen(true)}
+                      title="Add images"
+                      aria-label="Add images"
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                    </button>
                     <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
                       <PopoverTrigger asChild>
                         <button type="button" className="hidden md:inline-flex items-center justify-center px-3 py-2 rounded bg-white/5 hover:bg-white/10 text-sm" title="Insert emoji" aria-label="Insert emoji">
@@ -1115,7 +1380,7 @@ function DashboardShowroomPageInner() {
                           router.push('/dashboard/showroom');
                           closeChannelsIfMobile();
                           setChatLoading(true);
-                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
+                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                             setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
                           setChatLoading(false);
                             setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
@@ -1164,7 +1429,7 @@ function DashboardShowroomPageInner() {
                               router.push('/dashboard/showroom');
                               closeChannelsIfMobile();
                               setChatLoading(true);
-                              const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
+                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                               setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
                               setChatLoading(false);
                               setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
@@ -1212,7 +1477,7 @@ function DashboardShowroomPageInner() {
                               setShowroomView('showroom');
                               router.push('/dashboard/showroom');
                               setChatLoading(true);
-                              const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
+                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                               setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
                               setChatLoading(false);
                               setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
@@ -1275,7 +1540,7 @@ function DashboardShowroomPageInner() {
                           router.push('/dashboard/showroom');
                           closeChannelsIfMobile();
                           setChatLoading(true);
-                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
+                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
                             setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
                           setChatLoading(false);
                             setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
@@ -1386,6 +1651,201 @@ function DashboardShowroomPageInner() {
             </ul>
           </aside>
         ) : null}
+        <Dialog open={attachmentModalOpen} onOpenChange={(open)=> { if (!open) { setAttachmentModalOpen(false); setAttachmentError(null); } }}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Add images</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col gap-4">
+              {attachmentError ? (
+                <div key={attachmentErrorShakeKey} className="rounded border border-red-500/40 bg-red-500/10 text-red-200 px-3 py-2 text-sm animate-attachment-error-shake">
+                  {attachmentError}
+                </div>
+              ) : null}
+              <Tabs value={selectedAttachmentTab} onValueChange={(v)=>{
+                const next = (v === 'library') ? 'library' : 'upload';
+                setSelectedAttachmentTab(next);
+                if (next === 'library') void fetchLibraryPhotos();
+              }} className="w-full">
+                <TabsList className="inline-flex rounded-lg border border-[color:var(--border)]/60 bg-white/5 p-0.5">
+                  <TabsTrigger value="upload" className="px-4 py-2 text-sm data-[state=active]:bg-[rgba(255,255,255,0.12)] data-[state=active]:text-white">Upload</TabsTrigger>
+                  <TabsTrigger value="library" className="px-4 py-2 text-sm data-[state=active]:bg-[rgba(255,255,255,0.12)] data-[state=active]:text-white">Browse Library</TabsTrigger>
+                </TabsList>
+                <div className="mt-4 space-y-4">
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!pendingAttachments.length}
+                      onClick={()=> { void handleSendAttachments(); }}
+                    >
+                      Send
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-medium">Selected</div>
+                      <div className="text-xs text-white/60">{pendingAttachments.length}/{maxAttachments}</div>
+                    </div>
+                    {pendingAttachments.length ? (
+                      <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {pendingAttachments.map((key) => {
+                          const preview = attachmentPreviewMap[key];
+                          return (
+                            <li key={key} className="relative group">
+                              <div
+                                className="relative overflow-hidden rounded bg-black/20"
+                                style={getAspectStyle(key)}
+                              >
+                                {preview ? (
+                                  <Image
+                                    src={preview}
+                                    alt="Preview"
+                                    fill
+                                    className="object-contain"
+                                    sizes="128px"
+                                    onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-xs text-white/50">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                className="absolute top-1 right-1 inline-flex items-center justify-center rounded-full bg-black/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                                onClick={()=> setPendingAttachments((prev) => prev.filter((existing) => existing !== key))}
+                                aria-label="Remove image"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <div className="text-xs text-white/50 border border-dashed border-[color:var(--border)]/60 rounded p-4 text-center">
+                        No images selected yet.
+                      </div>
+                    )}
+                  </div>
+
+                  <TabsContent value="upload" className="space-y-3">
+                    <DropZone
+                      accept="image/*"
+                      disabled={uploadingAttachments || pendingAttachments.length >= maxAttachments}
+                      onDrop={async (files)=>{
+                        const incoming = Array.from(files);
+                        const oversized = incoming.filter((file) => file.size > MAX_UPLOAD_BYTES);
+                        if (oversized.length) {
+                          const limitLabel = `${(MAX_UPLOAD_BYTES / (1024 * 1024)).toFixed(0)} MB`;
+                          const names = oversized.map((file) => file.name).filter(Boolean).join(', ');
+                          const errorMessage = names ? `File exceeds the ${limitLabel} limit: ${names}` : `File exceeds the ${limitLabel} limit.`;
+                          toast.error(errorMessage);
+                          setAttachmentError(errorMessage);
+                          setAttachmentErrorShakeKey((prev) => prev + 1);
+                        }
+                        const eligible = incoming.filter((file) => file.size <= MAX_UPLOAD_BYTES);
+                        if (!eligible.length) return;
+                        const compressed = await Promise.all(eligible.map((file) => compressImage(file)));
+                        try {
+                          setUploadingAttachments(true);
+                          const uploaded = await uploadFilesToChat({
+                            files: compressed,
+                            channel: activeChatType === 'channel' ? active : undefined,
+                            dmEmail: activeChatType === 'dm' ? activeDm?.email : undefined,
+                          });
+                          const keys = uploaded.map((item) => item.key).filter(Boolean) as string[];
+                          const urls = await getViewUrls(keys);
+                          setPendingAttachments((prev) => {
+                            const merged = [...prev];
+                            for (const key of keys) {
+                              if (!merged.includes(key)) merged.push(key);
+                            }
+                            return merged.slice(0, maxAttachments);
+                          });
+                          setAttachmentPreviewMap((prev) => {
+                            const next = { ...prev } as Record<string, string>;
+                            for (const key of keys) {
+                              next[key] = urls[key] || uploaded.find((item) => item.key === key)?.url || `${R2_PUBLIC_BASE}/${key}`;
+                            }
+                            return next;
+                          });
+                          setMessageAttachmentUrls((prev) => {
+                            const next = { ...prev } as Record<string, string>;
+                            for (const key of keys) {
+                              const resolved = urls[key] || uploaded.find((item) => item.key === key)?.url || `${R2_PUBLIC_BASE}/${key}`;
+                              if (resolved) next[key] = resolved;
+                            }
+                            return next;
+                          });
+                        } catch (err) {
+                          const message = err instanceof Error ? err.message : 'Failed to upload images';
+                          setAttachmentError(message);
+                        } finally {
+                          setUploadingAttachments(false);
+                        }
+                      }}
+                      className="w-full"
+                    >
+                      <div className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-white/70">
+                        <UploadCloud className="h-6 w-6" />
+                        <span>Drop images here or click to browse</span>
+                        <span className="text-xs text-white/50">Up to {maxAttachments} images</span>
+                      </div>
+                    </DropZone>
+                  </TabsContent>
+
+                  <TabsContent value="library" className="space-y-3">
+                    {libraryLoading ? (
+                      <div className="text-xs text-white/60">Loading library…</div>
+                    ) : libraryItems.length ? (
+                      <ul className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3.5">
+                        {libraryItems.map(({ key }) => (
+                              <li key={key}>
+                                <button
+                                  type="button"
+                                  className="relative block w-full overflow-hidden rounded bg-black/20"
+                                  style={getAspectStyle(key)}
+                                  onClick={()=>{
+                                    const url = attachmentPreviewMap[key] || libraryItems.find((item) => item.key === key)?.url || (`https://r2.ignitecdn.com/${key}`);
+                                    setPendingAttachments((prev) => prev.includes(key) ? prev : [...prev, key]);
+                                    setAttachmentPreviewMap((prev) => ({ ...prev, [key]: url }));
+                                  }}
+                                  disabled={pendingAttachments.length >= maxAttachments && !pendingAttachments.includes(key)}
+                                >
+                                  {(() => {
+                                    const displayUrl = attachmentPreviewMap[key] || libraryItems.find((item) => item.key === key)?.url || (`https://r2.ignitecdn.com/${key}`);
+                                    return displayUrl ? (
+                                      <Image
+                                        src={displayUrl}
+                                        alt="Library"
+                                        fill
+                                        className="object-contain"
+                                        sizes="128px"
+                                        onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
+                                      />
+                                    ) : (
+                                      <div className="flex h-full items-center justify-center text-xs text-white/50">No preview</div>
+                                    );
+                                  })()}
+                                  {pendingAttachments.includes(key) ? (
+                                    <span className="absolute top-1 right-1 rounded-full bg-black/70 px-2 py-0.5 text-[10px] text-white">Added</span>
+                                  ) : null}
+                                </button>
+                              </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-xs text-white/60 border border-dashed border-[color:var(--border)]/60 rounded p-4 text-center">No images found in your library.</div>
+                    )}
+                  </TabsContent>
+                </div>
+              </Tabs>
+            </div>
+          </DialogContent>
+        </Dialog>
     </div>
   );
 }
@@ -1549,8 +2009,7 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
             {profile!.photos!.slice(0,6).map((k: string) => (
               <li key={k} className="aspect-square rounded overflow-hidden bg-black/20">
                 {previews[k] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={previews[k]} alt="Car" className="w-full h-full object-cover" />
+                  <Image src={previews[k]} alt="Car" fill className="object-cover" sizes="128px" />
                 ) : (
                   <Skeleton className="w-full h-full" />
                 )}

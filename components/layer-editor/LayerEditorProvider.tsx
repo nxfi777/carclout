@@ -23,6 +23,103 @@ const initialState: LayerEditorState = {
   editingLayerId: null,
 };
 
+function normalizeEffects(effects: Layer["effects"]) {
+  return {
+    shadow: {
+      enabled: !!effects.shadow.enabled,
+      color: effects.shadow.color,
+      blur: Number(effects.shadow.blur || 0),
+      size: Number((effects.shadow as { size?: number }).size || 0),
+      offsetX: Number(effects.shadow.offsetX || 0),
+      offsetY: Number(effects.shadow.offsetY || 0),
+    },
+    glow: {
+      enabled: !!effects.glow.enabled,
+      color: effects.glow.color,
+      blur: Number(effects.glow.blur || 0),
+      size: Number((effects.glow as { size?: number }).size || 0),
+      offsetX: Number(effects.glow.offsetX || 0),
+      offsetY: Number(effects.glow.offsetY || 0),
+    },
+  } as const;
+}
+
+function serializeLayer(layer: Layer) {
+  const base = {
+    type: layer.type,
+    id: layer.id,
+    name: layer.name,
+    xPct: Number(layer.xPct),
+    yPct: Number(layer.yPct),
+    widthPct: Number(layer.widthPct),
+    heightPct: Number(layer.heightPct),
+    rotationDeg: Number(layer.rotationDeg || 0),
+    tiltXDeg: Number((layer as { tiltXDeg?: number }).tiltXDeg || 0),
+    tiltYDeg: Number((layer as { tiltYDeg?: number }).tiltYDeg || 0),
+    scaleX: Number(layer.scaleX || 1),
+    scaleY: Number(layer.scaleY || 1),
+    locked: !!layer.locked,
+    hidden: !!layer.hidden,
+    aboveMask: !!layer.aboveMask,
+    effects: normalizeEffects(layer.effects),
+  } as const;
+
+  if (layer.type === 'text') {
+    const textLayer = layer as import("@/types/layer-editor").TextLayer;
+    return {
+      ...base,
+      text: textLayer.text,
+      html: textLayer.html ?? null,
+      italic: !!textLayer.italic,
+      underline: !!textLayer.underline,
+      textAlign: textLayer.textAlign || 'center',
+      color: textLayer.color,
+      fontFamily: textLayer.fontFamily,
+      fontWeight: Number(textLayer.fontWeight || 400),
+      fontSizeEm: textLayer.fontSizeEm ?? null,
+      letterSpacingEm: Number(textLayer.letterSpacingEm || 0),
+      lineHeightEm: Number(textLayer.lineHeightEm || 1),
+    } as const;
+  }
+  if (layer.type === 'shape') {
+    const shapeLayer = layer as import("@/types/layer-editor").ShapeLayer;
+    return {
+      ...base,
+      shape: shapeLayer.shape,
+      fill: shapeLayer.fill,
+      stroke: shapeLayer.stroke ?? null,
+      strokeWidth: Number(shapeLayer.strokeWidth ?? 0),
+      radiusPct: Number(shapeLayer.radiusPct ?? 0),
+    } as const;
+  }
+  if (layer.type === 'image') {
+    const imageLayer = layer as import("@/types/layer-editor").ImageLayer;
+    return {
+      ...base,
+      src: imageLayer.src,
+      naturalWidth: Number(imageLayer.naturalWidth ?? 0),
+      naturalHeight: Number(imageLayer.naturalHeight ?? 0),
+    } as const;
+  }
+  const maskLayer = layer as import("@/types/layer-editor").MaskLayer;
+  return {
+    ...base,
+    src: maskLayer.src,
+  } as const;
+}
+
+function createDocSignature(state: LayerEditorState): string {
+  const doc = {
+    backgroundUrl: state.backgroundUrl ?? null,
+    carMaskUrl: state.carMaskUrl ?? null,
+    maskTranslateXPct: Number(state.maskTranslateXPct ?? 0),
+    maskTranslateYPct: Number(state.maskTranslateYPct ?? 0),
+    maskHidden: !!state.maskHidden,
+    layers: state.layers.map(serializeLayer),
+  };
+  return JSON.stringify(doc);
+}
+
 function reducer(state: LayerEditorState, action: LayerEditorAction): LayerEditorState {
   switch (action.type) {
     case "replace_state":
@@ -165,15 +262,37 @@ type Ctx = {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  isDirty: boolean;
+  commitBaseline: () => void;
 };
 
 const CtxObj = createContext<Ctx | null>(null);
 
-export function LayerEditorProvider({ children, initial }: { children: React.ReactNode; initial?: Partial<LayerEditorState> }) {
+type LayerEditorProviderProps = {
+  children: React.ReactNode;
+  initial?: Partial<LayerEditorState>;
+  onDirtyChange?: (dirty: boolean, commit: () => void) => void;
+};
+
+export function LayerEditorProvider({ children, initial, onDirtyChange }: LayerEditorProviderProps) {
   const [state, dispatch] = useReducer(reducer, { ...initialState, ...(initial || {}) });
 
   const historyRef = React.useRef<{ past: LayerEditorState[]; future: LayerEditorState[] }>({ past: [], future: [] });
   const MAX_HISTORY = 200;
+
+  const initialSignatureRef = React.useRef<string | null>(null);
+  const currentSignature = React.useMemo(() => createDocSignature(state), [state]);
+  if (initialSignatureRef.current === null) {
+    initialSignatureRef.current = currentSignature;
+  }
+  const isDirty = React.useMemo(() => {
+    if (initialSignatureRef.current === null) return false;
+    return currentSignature !== initialSignatureRef.current;
+  }, [currentSignature]);
+
+  const commitBaseline = React.useCallback(() => {
+    initialSignatureRef.current = currentSignature;
+  }, [currentSignature]);
 
   const recordSnapshot = React.useCallback((current: LayerEditorState) => {
     const { past } = historyRef.current;
@@ -233,7 +352,7 @@ export function LayerEditorProvider({ children, initial }: { children: React.Rea
   const canUndo = historyRef.current.past.length > 0;
   const canRedo = historyRef.current.future.length > 0;
 
-  const value = useMemo(() => ({ state, dispatch: dispatchWithHistory, undo, redo, canUndo, canRedo }), [state, dispatchWithHistory, undo, redo, canUndo, canRedo]);
+  const value = useMemo(() => ({ state, dispatch: dispatchWithHistory, undo, redo, canUndo, canRedo, isDirty, commitBaseline }), [state, dispatchWithHistory, undo, redo, canUndo, canRedo, isDirty, commitBaseline]);
   React.useEffect(()=>{
     try { (window as unknown as { dispatchLayerEditor?: React.Dispatch<LayerEditorAction> }).dispatchLayerEditor = dispatchWithHistory; } catch {}
     return ()=>{ try { (window as unknown as { dispatchLayerEditor?: React.Dispatch<LayerEditorAction> }).dispatchLayerEditor = undefined; } catch {} };
@@ -271,6 +390,12 @@ export function LayerEditorProvider({ children, initial }: { children: React.Rea
     window.addEventListener('keydown', onKey);
     return ()=> window.removeEventListener('keydown', onKey);
   }, [dispatchWithHistory, state.activeLayerId, state.layers, state.editingLayerId, undo, redo]);
+
+  React.useEffect(() => {
+    if (typeof onDirtyChange === 'function') {
+      onDirtyChange(isDirty, commitBaseline);
+    }
+  }, [isDirty, onDirtyChange, commitBaseline]);
   return <CtxObj.Provider value={value}>{children}</CtxObj.Provider>;
 }
 

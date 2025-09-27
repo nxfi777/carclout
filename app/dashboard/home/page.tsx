@@ -88,14 +88,14 @@ function DashboardHomePageInner() {
       try {
         const res = await fetch('/api/templates?limit=200', { cache: 'no-store' });
         const data = await res.json().catch(()=>({}));
-        const all = Array.isArray(data?.templates) ? data.templates as Array<{ id?: string; name?: string; description?: string; slug?: string; thumbnailKey?: string; created_at?: string }> : [];
+        const all = Array.isArray(data?.templates) ? data.templates as Array<{ id?: string; name?: string; description?: string; slug?: string; thumbnailKey?: string; created_at?: string; proOnly?: boolean }> : [];
         // Resolve up to 4 random items with thumbnails
         const pool = [...all];
         for (let i = pool.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [pool[i], pool[j]] = [pool[j]!, pool[i]!];
         }
-        const pick = pool.slice(0, 8); // over-pick to handle missing thumbs
+        const pick = pool.slice(0, 12); // over-pick to handle missing thumbs
         const resolved = await Promise.all(pick.map(async (t)=>{
           const name = String(t?.name || 'Template');
           const slug = typeof t?.slug === 'string' ? t.slug : undefined;
@@ -110,9 +110,9 @@ function DashboardHomePageInner() {
               if (typeof url === 'string') thumbUrl = url as string;
             } catch {}
           }
-          return { id: typeof t?.id === 'string' ? t.id : undefined, name, description, slug, thumbnailKey: keyRaw, thumbUrl, createdAt };
+          return { id: typeof t?.id === 'string' ? t.id : undefined, name, description, slug, thumbnailKey: keyRaw, thumbUrl, createdAt, proOnly: !!t?.proOnly };
         }));
-        const filtered = resolved.filter((t)=> !!t.thumbUrl).slice(0,4);
+        const filtered = resolved.filter((t)=> !!t.thumbUrl).slice(0,5);
         if (mounted) setSuggestions(filtered);
       } catch {}
     })();
@@ -275,7 +275,7 @@ function DashboardHomePageInner() {
       <section className="rounded-2xl border border-[color:var(--border)] bg-[var(--card)] p-5 md:p-6">
         <div className="text-lg font-semibold mb-3">Suggestions for you</div>
         {suggestions.length ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {suggestions.map((t, i)=> (
               <Link key={t.id || t.slug || i} href={t.slug ? `/dashboard/templates?slug=${encodeURIComponent(t.slug)}` : '/dashboard/templates'} className="block">
                 <TemplateCard
@@ -283,6 +283,7 @@ function DashboardHomePageInner() {
                   showNewBadge={true}
                   showLike={false}
                   showFavoriteCount={false}
+                  className="h-full"
                 />
               </Link>
             ))}

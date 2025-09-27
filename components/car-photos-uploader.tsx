@@ -11,6 +11,8 @@ import { Loader2Icon, UploadIcon, XIcon, ArrowLeftIcon, ArrowRightIcon, StarIcon
 interface CarPhotosUploaderProps {
   value: string[];
   onChange: (next: string[]) => void;
+  pendingDeletes?: string[];
+  onPendingDeletesChange?: (next: string[]) => void;
   vehicles?: Vehicle[];
   onVehiclesChange?: (next: Vehicle[]) => void;
   initialVehicleIndex?: number;
@@ -23,13 +25,15 @@ interface CarPhotosUploaderProps {
 
 // Removed unused type alias per lint
 
-export default function CarPhotosUploader({ value, onChange, vehicles = [], onVehiclesChange, initialVehicleIndex = 0, max = 30, className, chatSelected, onChatSelectedChange, chatMax = 6 }: CarPhotosUploaderProps) {
+export default function CarPhotosUploader({ value, onChange, pendingDeletes, vehicles = [], onVehiclesChange, initialVehicleIndex = 0, max = 30, className, chatSelected, onChatSelectedChange, chatMax = 6 }: CarPhotosUploaderProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [uploadErrors, setUploadErrors] = useState<string | null>(null);
   const [selectedVehicleIndex, setSelectedVehicleIndex] = useState<number>(Math.min(Math.max(0, initialVehicleIndex), Math.max(0, (vehicles?.length || 1) - 1)));
+
+  const effectivePendingDeletes = useMemo(() => Array.from(new Set((pendingDeletes ?? []).filter((k) => typeof k === "string" && k.length > 0))), [pendingDeletes]);
 
   function baseSlug(v: Vehicle | undefined): string {
     if (!v) return "";
@@ -53,45 +57,54 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
   const selectedSlug = vehicles.length ? uniqueSlugForIndex(vehicles, selectedVehicleIndex) : baseSlug(selectedVehicle);
   const chatSelectedSet = useMemo(() => new Set(chatSelected || []), [chatSelected]);
 
-  const flattenVehiclePhotos = useCallback((list: Vehicle[] | undefined): string[] => {
-    if (!Array.isArray(list)) return value || [];
+  const flattenVehiclePhotos = useCallback((list: Vehicle[] | undefined, source: string[]): string[] => {
+    if (!Array.isArray(list)) return source;
     const out: string[] = [];
     for (const v of list) {
-      const arr = (v as unknown as { photos?: string[] })?.photos;
+      const arr = (v as { photos?: string[] } | undefined)?.photos;
       if (Array.isArray(arr)) {
         for (const k of arr) if (typeof k === 'string') out.push(k);
       }
     }
     return out;
-  }, [value]);
+  }, []);
 
   // Determine keys for selected vehicle from per-vehicle photos when available; fallback by filtering global list
-  const keysForSelected = useMemo(() => {
-    if (selectedVehicle?.photos && Array.isArray(selectedVehicle.photos)) return selectedVehicle.photos.filter(Boolean) as string[];
-    if (!vehicles.length || !selectedSlug) return value || [];
-    const prefix = `/vehicles/${selectedSlug}/`;
-    return (value || []).filter((k) => {
-      const idx = (k || "").indexOf("/vehicles/");
+  function filterKeysForSlug(keys: string[] | undefined, slug: string): string[] {
+    if (!Array.isArray(keys) || !slug) return [];
+    const prefix = `/vehicles/${slug}/`;
+    return keys.filter((k) => {
+      const candidate = typeof k === "string" ? k : "";
+      const idx = candidate.indexOf("/vehicles/");
       if (idx === -1) return false;
-      const sub = (k || "").slice(idx);
+      const sub = candidate.slice(idx);
       return sub.startsWith(prefix);
     });
+  }
+
+  const keysForSelected = useMemo(() => {
+    if (selectedVehicle?.photos && Array.isArray(selectedVehicle.photos)) return selectedVehicle.photos.filter((k): k is string => typeof k === "string" && k.length > 0);
+    if (!vehicles.length || !selectedSlug) return value || [];
+    return filterKeysForSlug(value || [], selectedSlug);
   }, [value, vehicles, selectedVehicle, selectedSlug]);
 
-  const canAddCount = Math.max(0, max - (keysForSelected?.length || 0));
-
-  function belongsToSelectedFolder(k: string): boolean {
+  const belongsToSelectedFolder = useCallback((k: string): boolean => {
     const idx = (k || "").indexOf('/vehicles/');
     if (idx === -1) return false;
     const sub = (k || "").slice(idx);
     return sub.startsWith(`/vehicles/${selectedSlug}/`);
-  }
+  }, [selectedSlug]);
+
+  const pendingForSelectedCount = useMemo(() => effectivePendingDeletes.filter((k) => belongsToSelectedFolder(k)).length, [belongsToSelectedFolder, effectivePendingDeletes]);
+  const canAddCount = Math.max(0, max - ((keysForSelected?.length || 0) - pendingForSelectedCount));
+
+  
 
   function applyReorderForSelected(newOrder: string[]) {
     if (vehicles.length && onVehiclesChange) {
       const nextVehicles = (vehicles || []).map((v, i) => (i === selectedVehicleIndex ? ({ ...v, photos: [...newOrder] } as Vehicle) : v));
       onVehiclesChange(nextVehicles);
-      const flat = flattenVehiclePhotos(nextVehicles);
+      const flat = flattenVehiclePhotos(nextVehicles, value || []);
       onChange(flat);
     } else {
       // Rebuild global value preserving non-folder keys' relative order
@@ -120,7 +133,7 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
   // Removed A–Z and Reverse batch sorting per UX request
 
   const keysNeedingPreview = useMemo(() => {
-    const all = flattenVehiclePhotos(vehicles);
+    const all = flattenVehiclePhotos(vehicles, value || []);
     const src = all.length ? all : (value || []);
     return src.filter((k) => !previews[k]);
   }, [value, previews, vehicles, flattenVehiclePhotos]);
@@ -155,7 +168,7 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
   const uploadFiles = useCallback(async (files: File[]) => {
     setUploadErrors(null);
     if (!files.length) return;
-    const allowed = Math.max(0, max - (keysForSelected?.length || 0));
+    const allowed = Math.max(0, max - ((keysForSelected?.length || 0) - pendingForSelectedCount));
     const take = files.filter((f) => (f.type || "").startsWith("image/")).slice(0, allowed);
     if (take.length === 0) {
       setUploadErrors(allowed === 0 ? `You already have ${max} photos.` : "No valid images selected.");
@@ -202,7 +215,7 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
             return { ...v, photos: [...existing, ...nextKeys] } as Vehicle;
           });
           onVehiclesChange(nextVehicles);
-          const flat = flattenVehiclePhotos(nextVehicles);
+          const flat = flattenVehiclePhotos(nextVehicles, value || []);
           onChange(flat);
         } else {
           const current = value || [];
@@ -212,7 +225,7 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
     } finally {
       setIsUploading(false);
     }
-  }, [value, vehicles, onVehiclesChange, selectedVehicleIndex, selectedSlug, keysForSelected?.length, max, onChange, flattenVehiclePhotos]);
+  }, [value, vehicles, onVehiclesChange, selectedVehicleIndex, selectedSlug, keysForSelected?.length, max, onChange, flattenVehiclePhotos, pendingForSelectedCount]);
 
   const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -239,19 +252,26 @@ export default function CarPhotosUploader({ value, onChange, vehicles = [], onVe
     try {
       await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key, isFolder: false }) });
     } catch {}
+    const nextGlobal = (value || []).filter((k) => k !== key);
     if (vehicles.length && onVehiclesChange) {
       const nextVehicles = (vehicles || []).map((v, i) => {
-        if (i !== selectedVehicleIndex) return v;
-        const existing = Array.isArray(v.photos) ? v.photos : [];
-        return { ...v, photos: existing.filter((k) => k !== key) } as Vehicle;
+        const fromProp = Array.isArray(v.photos) ? v.photos.filter((existingKey) => typeof existingKey === "string" && existingKey !== key) : [];
+        const slug = uniqueSlugForIndex(vehicles, i);
+        const fromGlobal = slug ? filterKeysForSlug(nextGlobal, slug) : [];
+        const resolved = fromProp.length > 0 ? fromProp : fromGlobal;
+        return { ...v, photos: resolved } as Vehicle;
       });
       onVehiclesChange(nextVehicles);
-      const flat = flattenVehiclePhotos(nextVehicles);
-      onChange(flat);
+      onChange(nextGlobal);
     } else {
-      const next = (value || []).filter((k) => k !== key);
-      onChange(next);
+      onChange(nextGlobal);
     }
+    setPreviews((prev) => {
+      if (!prev || !prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   }
 
   return (

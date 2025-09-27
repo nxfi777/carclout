@@ -83,7 +83,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.5.2",
     "@types/nodemailer": "^7.0.1",
-    "@types/react": "^19.1.13",
+    "@types/react": "^19.1.14",
     "@types/react-dom": "^19.1.9",
     "@types/ws": "^8.18.1",
     "eslint": "^9.36.0",

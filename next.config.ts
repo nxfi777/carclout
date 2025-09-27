@@ -19,6 +19,11 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "r2.cloudflarestorage.com",
       },
+      // Public CDN domain serving signed previews (NEXT_PUBLIC_R2_PUBLIC_BASE)
+      {
+        protocol: "https",
+        hostname: "r2.ignitecdn.com",
+      },
     ],
   },
 };

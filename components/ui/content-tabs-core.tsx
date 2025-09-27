@@ -730,6 +730,7 @@ export function TemplatesTabContent(){
             allowedImageSources: Array.isArray(t.allowedImageSources) ? (t.allowedImageSources as Array<'vehicle'|'user'>) : ['vehicle','user'],
             favoriteCount: Number((t as Record<string, unknown>).favoriteCount || 0),
             isFavorited: Boolean((t as Record<string, unknown>).isFavorited),
+    proOnly: Boolean((t as Record<string, unknown>).proOnly),
             // deprecated field ignored
             autoOpenDesigner: Boolean((t as Record<string, unknown>).autoOpenDesigner),
             createdAt: typeof (t as { created_at?: unknown })?.created_at === 'string' ? String((t as { created_at?: unknown }).created_at) : undefined,
@@ -919,13 +920,20 @@ export function TemplatesTabContent(){
       {items.map((it, idx)=> (
         <div key={idx} className="h-full">
           <TemplateCard
-            data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })() }}
+            data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })(), proOnly: Boolean((it as Record<string, unknown>).proOnly) }}
             className="h-full"
             showNewBadge={true}
             showLike={true}
             showFavoriteCount={true}
             onLikeToggle={()=> toggleFavorite(it.id, it.slug)}
-            onClick={()=>{ setActive({ id: it.id, name: it.name, slug: it.slug }); setOpen(true); }}
+            onClick={()=>{
+              if (Boolean((it as Record<string, unknown>).proOnly) && canonicalPlan(me?.plan) !== 'ultra') {
+                try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
+                return;
+              }
+              setActive({ id: it.id, name: it.name, slug: it.slug });
+              setOpen(true);
+            }}
           />
         </div>
       ))}
@@ -1465,7 +1473,6 @@ export function TemplatesTabContent(){
                   <Designer
                     bgKey={String((activeKey || resultKey) || '')}
                     rembg={{ enabled: true }}
-                    defaultHeadline={(findVehicleForSelected()?.make || '').toUpperCase()}
                     onClose={handleDesignerClose}
                     onTryAgain={handleDesignerTryAgain}
                     onSave={saveDesignToGenerations}

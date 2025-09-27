@@ -9,7 +9,6 @@ import { LayerEditorProvider } from "@/components/layer-editor/LayerEditorProvid
 import LayerEditorShell from "@/components/layer-editor/LayerEditorShell";
 import { DesignerActionsProvider } from "@/components/designer/DesignerActionsContext";
 import { composeLayersToBlob } from "@/lib/layer-export";
-import { createDefaultText } from "@/types/layer-editor";
 import { getViewUrl } from "@/lib/view-url-client";
 
 type RembgConfig = {
@@ -23,10 +22,9 @@ type RembgConfig = {
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate }: {
+function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate }: {
   bgKey: string;
   rembg?: RembgConfig;
-  defaultHeadline?: string;
   onClose?: () => void;
   onSave?: (blob: Blob) => Promise<void> | void;
   saveLabel?: string;
@@ -42,6 +40,8 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const dirtyCommitRef = React.useRef<(() => void) | null>(null);
   void aspectRatio; void onClose; // accepted for API compatibility
 
   useEffect(()=>{
@@ -184,12 +184,21 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
         electric: true,
       });
     }
-    if (onSave) {
+    if (onSave && (dirty || saving)) {
       list.push({
         key: "save",
         label: saving ? "Saving…" : (saveLabel || "Save"),
-        onSelect: saveComposite,
-        disabled: saving,
+        onSelect: async()=>{
+          try {
+            await saveComposite();
+            if (dirtyCommitRef.current) {
+              dirtyCommitRef.current();
+            }
+          } catch {
+            // no-op: keep dirty state so user can retry
+          }
+        },
+        disabled: saving || !dirty,
         loading: saving,
       });
     }
@@ -203,7 +212,7 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
       srLabel: "Download design",
     });
     return list;
-  }, [onTryAgain, onSave, saveLabel, showAnimate, onAnimate, downloading, saving, upscaling, downloadComposite, exportCompositeBlob, saveComposite, upscaleBackground]);
+  }, [onTryAgain, onSave, saveLabel, showAnimate, onAnimate, downloading, saving, upscaling, downloadComposite, exportCompositeBlob, saveComposite, upscaleBackground, dirty]);
 
   if (busy) {
     return (
@@ -228,10 +237,12 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
           initial={{
             backgroundUrl: bgUrl,
             carMaskUrl: fgUrl,
-            layers: (typeof defaultHeadline === 'string' && defaultHeadline.trim())
-              ? [{ ...createDefaultText(50, 80), text: defaultHeadline.toUpperCase() }]
-              : [],
+            layers: [],
             editingLayerId: undefined,
+          }}
+          onDirtyChange={(next, commit) => {
+            dirtyCommitRef.current = commit;
+            setDirty(next);
           }}
         >
           <ExposeLayerState />
@@ -261,8 +272,13 @@ function DesignerComponent({ bgKey, rembg, defaultHeadline, onClose, onSave, sav
                     {upscaling ? 'Upscaling…' : 'Upscale'}
                   </Button>
                 </ElectricBorder>
-                {onSave ? (
-                  <Button type="button" className="w-full sm:w-auto" disabled={saving} onClick={saveComposite}>{saveLabel || 'Save'}</Button>
+                {onSave && (dirty || saving) ? (
+                  <Button type="button" className="w-full sm:w-auto" disabled={saving || !dirty} onClick={async()=>{
+                    await saveComposite();
+                    if (dirtyCommitRef.current) {
+                      dirtyCommitRef.current();
+                    }
+                  }}>{saveLabel || 'Save'}</Button>
                 ) : null}
                 <Button
                   type="button"
@@ -293,7 +309,6 @@ export const Designer = React.memo(DesignerComponent, (prevProps, nextProps) => 
   return (
     prevProps.bgKey === nextProps.bgKey &&
     JSON.stringify(prevProps.rembg) === JSON.stringify(nextProps.rembg) &&
-    prevProps.defaultHeadline === nextProps.defaultHeadline &&
     prevProps.onClose === nextProps.onClose &&
     prevProps.onSave === nextProps.onSave &&
     prevProps.saveLabel === nextProps.saveLabel &&

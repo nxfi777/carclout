@@ -767,7 +767,6 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                 <Designer
                   bgKey={String((activeKey || resultKey) || "")}
                   rembg={{ enabled: true }}
-                  defaultHeadline={(findVehicleForSelected()?.make || "").toUpperCase()}
                   onClose={() => { setDesignOpen(false); setSelectedImageKeys([]); }}
                   onTryAgain={() => { try { setDesignOpen(false); setResultUrl(null); } catch {} }}
                   onSave={async (blob) => {

@@ -13,7 +13,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/",
     "/contact",
     "/live",
-    "/car-news",
     "/scheduler",
     "/auth/signin",
     "/auth/signup",

@@ -6,6 +6,16 @@ import VehiclesEditor, { type Vehicle } from "@/components/vehicles-editor";
 import CarPhotosUploader from "@/components/car-photos-uploader";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
 function sanitizeInstagramHandle(input: string): string {
@@ -22,6 +32,14 @@ function OnboardingPageInner() {
   const [displayName, setDisplayName] = useState("");
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [carPhotos, setCarPhotos] = useState<string[]>([]);
+  const [confirmSkipVehiclesOpen, setConfirmSkipVehiclesOpen] = useState(false);
+  const missingVehicle = vehicles.length === 0;
+  const missingPhotos = carPhotos.length === 0;
+  const skipWarning = missingVehicle && missingPhotos
+    ? "Your profile has no vehicles or car photos yet. Continuing means your account will look empty until you add them later."
+    : missingVehicle
+      ? "You haven’t added a vehicle yet. People won’t know what you drive until you add one."
+      : "You’ve added a vehicle but no photos. Upload at least one so your build stands out.";
 
   useEffect(() => {
     let mounted = true;
@@ -68,13 +86,14 @@ function OnboardingPageInner() {
     [vehicles, carPhotos],
   );
 
-  async function continueToPlan() {
+  async function continueToPlan(options?: { allowVehicleSkip?: boolean }) {
+    const allowVehicleSkip = options?.allowVehicleSkip ?? false;
     if (!username) {
       toast.error("Add your Instagram username.");
       return;
     }
-    if (!hasMinimum) {
-      toast.error("Add at least one vehicle and one photo.");
+    if (!allowVehicleSkip && !hasMinimum) {
+      setConfirmSkipVehiclesOpen(true);
       return;
     }
     setLoading(true);
@@ -163,12 +182,31 @@ function OnboardingPageInner() {
           )}
         </div>
         <div className="flex">
-          <Button className="w-full" onClick={continueToPlan} disabled={loading}>
+          <Button className="w-full" onClick={() => continueToPlan()} disabled={loading}>
             Continue
           </Button>
         </div>
-        <div className="text-xs text-white/60 text-center">You must add at least one vehicle and one photo to continue.</div>
+        <div className="text-xs text-white/60 text-center">Adding a vehicle and photos helps your profile shine, but you can skip for now.</div>
       </section>
+      <AlertDialog open={confirmSkipVehiclesOpen} onOpenChange={setConfirmSkipVehiclesOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Continue without a vehicle?</AlertDialogTitle>
+            <AlertDialogDescription>{skipWarning}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmSkipVehiclesOpen(false)}>Go back</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmSkipVehiclesOpen(false);
+                void continueToPlan({ allowVehicleSkip: true });
+              }}
+            >
+              Continue without vehicle
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

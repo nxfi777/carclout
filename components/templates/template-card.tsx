@@ -15,6 +15,7 @@ export type TemplateCardData = {
   createdAt?: string | Date;
   favoriteCount?: number;
   isFavorited?: boolean;
+  proOnly?: boolean;
 };
 
 type TemplateCardProps = {
@@ -60,6 +61,13 @@ export function TemplateCard(props: TemplateCardProps) {
       onMouseLeave={()=> setHover(false)}
       className={`relative text-left w-full h-full rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer flex flex-col justify-between ${className || ""}`}
     >
+      {data?.proOnly ? (
+        <span className="absolute top-[0.5rem] right-[0.5rem] z-10 inline-flex items-center gap-1 rounded-full bg-black/60 px-[0.6rem] py-[0.35rem] text-[0.625rem] uppercase tracking-wide text-[#ff6a00] border border-[#ff6a00]/40">
+          <span className="text-[0.75rem]">🔒</span>
+          <span>Pro</span>
+        </span>
+      ) : null}
+
       {isNew ? (
         <span className="absolute top-[0.5rem] left-[0.5rem] z-10 text-[0.625rem] px-[0.5em] py-[0.25em] rounded-full border shadow badge-new">
           <span className="shiny-text">NEW</span>

@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { getSurreal } from "@/lib/surrealdb";
 import type { Uuid } from "surrealdb";
+import { verifyAdminLiveToken } from "@/lib/admin-live-token";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const session = await auth();
-  const role = session?.user?.role || session?.user?.plan || null;
-  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
   const { searchParams } = new URL(request.url);
+  const token = String(searchParams.get("token") || "");
+  const payload = verifyAdminLiveToken(token);
+  if (!payload) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const q = String(searchParams.get("q") || "").trim();
   const limit = Math.max(1, Math.min(50, parseInt(String(searchParams.get("limit") || "50"))));
 

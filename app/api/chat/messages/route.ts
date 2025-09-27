@@ -2,7 +2,39 @@ import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
 import { auth } from "@/lib/auth";
 import { checkChannelRead, checkChannelWrite, getSessionLite, type ChannelLike, type Role, type Plan } from "@/lib/chatPerms";
+import { sanitizeUserId } from "@/lib/user";
 import { RecordId } from "surrealdb";
+
+const ALLOWED_ATTACHMENT_ROOTS = new Set(["chat-uploads", "car-photos", "vehicles", "library"]);
+
+function normalizeAttachmentKey(raw: unknown, email: string): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const cleaned = trimmed.replace(/^\/+/u, "");
+  if (!cleaned || cleaned.includes("..")) return null;
+  const safeUser = sanitizeUserId(email);
+  const prefix = `users/${safeUser}/`;
+  if (!cleaned.startsWith(prefix)) return null;
+  const remainder = cleaned.slice(prefix.length);
+  const topFolder = remainder.split("/")[0] || "";
+  if (!ALLOWED_ATTACHMENT_ROOTS.has(topFolder)) return null;
+  return cleaned;
+}
+
+function normalizeAttachmentKeys(raw: unknown, email: string): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const key = normalizeAttachmentKey(item, email);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
 
 let indexesEnsured = false;
 async function ensureIndexes() {
@@ -36,7 +68,7 @@ export async function GET(request: Request) {
     }
   } catch {}
   const res = await db.query(
-    `SELECT id, text, channel, created_at, userEmail, userName, user
+    `SELECT id, text, channel, created_at, userEmail, userName, user, attachments
      FROM message
      WHERE channel = $c
        AND ($me IS NONE OR userEmail NOT IN (SELECT targetEmail FROM block WHERE userEmail = $me))
@@ -86,6 +118,9 @@ export async function GET(request: Request) {
     const looksEmail = typeof nm === 'string' && /@/.test(nm);
     const fromMap = nameMap.get(ridStr);
     const safeName = fromMap || ((!nm || looksEmail) ? 'Member' : nm);
+    const attachmentsRaw = Array.isArray((row as { attachments?: unknown } | undefined)?.attachments)
+      ? ((row as { attachments?: unknown }).attachments as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0)
+      : [];
     return {
       id: (row as { id?: { id?: unknown; toString?: () => string } | string } | undefined)?.id && typeof (row as { id?: { id?: unknown; toString?: () => string } | string }).id !== 'string' && typeof ((row as { id: { toString?: () => string } }).id as { toString?: () => string } | undefined)?.toString === 'function'
         ? ((row as { id: { toString: () => string } }).id.toString())
@@ -95,6 +130,7 @@ export async function GET(request: Request) {
       created_at: (row as { created_at?: unknown } | undefined)?.created_at,
       userEmail: (row as { userEmail?: unknown } | undefined)?.userEmail,
       userName: safeName,
+      attachments: attachmentsRaw.slice(0, 6),
     };
   });
   // Return oldest->newest order for UI
@@ -109,7 +145,8 @@ export async function POST(request: Request) {
   const channel: string = (body as { channel?: string } | undefined)?.channel || "general";
   const rawText: string = (body as { text?: string } | undefined)?.text || "";
   const text = String(rawText).trim();
-  if (!text) return NextResponse.json({ error: "Empty" }, { status: 400 });
+  const attachments = normalizeAttachmentKeys((body as { attachments?: unknown } | undefined)?.attachments, session.user.email);
+  if (!text && attachments.length === 0) return NextResponse.json({ error: "Empty" }, { status: 400 });
   if (text.length > 2000) return NextResponse.json({ error: "Too long" }, { status: 400 });
   const db = await getSurreal();
   await ensureIndexes();
@@ -188,7 +225,7 @@ export async function POST(request: Request) {
 
   // Duplicate check per-channel within 30s
   const dupRes = await db.query(
-    "SELECT text, created_at FROM message WHERE channel = $channel AND userEmail = $email ORDER BY created_at DESC LIMIT 1;",
+    "SELECT text, created_at, attachments FROM message WHERE channel = $channel AND userEmail = $email ORDER BY created_at DESC LIMIT 1;",
     { channel, email: session.user.email }
   );
   const last = Array.isArray(dupRes) && Array.isArray(dupRes[0]) ? (dupRes[0][0] as Record<string, unknown>) : null;
@@ -196,7 +233,11 @@ export async function POST(request: Request) {
     const same = last.text.trim() === text;
     const lastCreatedAt = typeof (last as { created_at?: unknown }).created_at === "string" ? (last as { created_at: string }).created_at : "";
     const lastTs = Date.parse(lastCreatedAt);
-    if (same && isFinite(lastTs) && Date.now() - lastTs < 30_000) {
+    const lastAttachments = Array.isArray((last as { attachments?: unknown[] })?.attachments)
+      ? ((last as { attachments?: unknown[] }).attachments as unknown[]).filter((x): x is string => typeof x === "string")
+      : [];
+    const sameAttachments = lastAttachments.length === attachments.length && lastAttachments.every((key, i) => key === attachments[i]);
+    if (same && sameAttachments && isFinite(lastTs) && Date.now() - lastTs < 30_000) {
       return NextResponse.json({ error: "Duplicate message" }, { status: 409 });
     }
   }
@@ -226,6 +267,7 @@ export async function POST(request: Request) {
     userEmail: session.user.email,
     userName,
     created_at: new Date().toISOString(),
+    attachments,
   });
   const row = Array.isArray(created) ? created[0] : created;
   try {

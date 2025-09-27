@@ -1,7 +1,39 @@
 import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
 import { auth } from "@/lib/auth";
+import { sanitizeUserId } from "@/lib/user";
 import { RecordId } from "surrealdb";
+
+const ALLOWED_ATTACHMENT_ROOTS = new Set(["chat-uploads", "car-photos", "vehicles", "library"]);
+
+function normalizeAttachmentKey(raw: unknown, email: string): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const cleaned = trimmed.replace(/^\/+/u, "");
+  if (!cleaned || cleaned.includes("..")) return null;
+  const safeUser = sanitizeUserId(email);
+  const prefix = `users/${safeUser}/`;
+  if (!cleaned.startsWith(prefix)) return null;
+  const remainder = cleaned.slice(prefix.length);
+  const topFolder = remainder.split("/")[0] || "";
+  if (!ALLOWED_ATTACHMENT_ROOTS.has(topFolder)) return null;
+  return cleaned;
+}
+
+function normalizeAttachmentKeys(raw: unknown, email: string): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const key = normalizeAttachmentKey(item, email);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
 
 let dmIndexesEnsured = false;
 async function ensureDmIndexes() {
@@ -83,7 +115,7 @@ export async function GET(request: Request) {
   }
 
   const res = await db.query(
-    `SELECT id, dmKey, text, created_at, senderEmail, senderName, recipientEmail, sender
+    `SELECT id, dmKey, text, created_at, senderEmail, senderName, recipientEmail, sender, attachments
      FROM dm_message
      WHERE dmKey = $key
        AND senderEmail NOT IN (SELECT targetEmail FROM block WHERE userEmail = $me)
@@ -132,6 +164,9 @@ export async function GET(request: Request) {
     const looksEmail = typeof nm === 'string' && /@/.test(nm);
     const fromMap = nameMap.get(ridStr);
     const safeName = fromMap || ((!nm || looksEmail) ? 'Member' : nm);
+    const attachmentsRaw = Array.isArray((row as { attachments?: unknown })?.attachments)
+      ? ((row as { attachments?: unknown }).attachments as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0)
+      : [];
     return {
       id: (row as { id?: { id?: { toString?: () => string }; toString?: () => string } | string })?.id && typeof (row as { id?: unknown })?.id === 'object'
         ? ((row as { id?: { id?: { toString?: () => string }; toString?: () => string } }).id!.id?.toString?.() || (row as { id?: { toString?: () => string } }).id!.toString?.())
@@ -140,6 +175,7 @@ export async function GET(request: Request) {
       userName: safeName,
       userEmail: (row as { senderEmail?: string }).senderEmail,
       created_at: (row as { created_at?: string }).created_at,
+      attachments: attachmentsRaw.slice(0, 6),
     };
   });
   const messages = messagesDesc.slice().reverse();
@@ -153,12 +189,12 @@ export async function POST(request: Request) {
   const targetEmail: string = body?.targetEmail || "";
   const textRaw: string = body?.text || "";
   const text = String(textRaw).trim();
+  const meEmail = session.user.email;
+  const attachments = normalizeAttachmentKeys(body?.attachments, meEmail);
   if (!targetEmail) return NextResponse.json({ error: "Missing targetEmail" }, { status: 400 });
-  if (!text) return NextResponse.json({ error: "Empty" }, { status: 400 });
+  if (!text && attachments.length === 0) return NextResponse.json({ error: "Empty" }, { status: 400 });
   if (text.length > 2000) return NextResponse.json({ error: "Too long" }, { status: 400 });
   if (longestRunLength(text) > 20) return NextResponse.json({ error: "Looks spammy" }, { status: 400 });
-
-  const meEmail = session.user.email;
   const key = makeDmKey(meEmail, targetEmail);
 
   const db = await getSurreal();
@@ -177,14 +213,18 @@ export async function POST(request: Request) {
 
   // Duplicate message check: reject if last message in this DM is identical within 30s
   const dupRes = await db.query(
-    "SELECT text, created_at FROM dm_message WHERE dmKey = $key AND senderEmail = $email ORDER BY created_at DESC LIMIT 1;",
+    "SELECT text, created_at, attachments FROM dm_message WHERE dmKey = $key AND senderEmail = $email ORDER BY created_at DESC LIMIT 1;",
     { key, email: meEmail }
   );
-  const last = Array.isArray(dupRes) && Array.isArray(dupRes[0]) ? (dupRes[0][0] as { text?: string; created_at?: string } | null) : null;
+  const last = Array.isArray(dupRes) && Array.isArray(dupRes[0]) ? (dupRes[0][0] as { text?: string; created_at?: string; attachments?: unknown[] } | null) : null;
   if (last && typeof last.text === "string") {
     const same = last.text.trim() === text;
     const lastTs = Date.parse(last.created_at || "");
-    if (same && isFinite(lastTs) && Date.now() - lastTs < 30_000) {
+    const lastAttachments = Array.isArray(last?.attachments)
+      ? (last.attachments as unknown[]).filter((x): x is string => typeof x === "string")
+      : [];
+    const sameAttachments = lastAttachments.length === attachments.length && lastAttachments.every((keyVal, i) => keyVal === attachments[i]);
+    if (same && sameAttachments && isFinite(lastTs) && Date.now() - lastTs < 30_000) {
       return NextResponse.json({ error: "Duplicate message" }, { status: 409 });
     }
   }
@@ -215,6 +255,7 @@ export async function POST(request: Request) {
     senderName,
     recipientEmail: targetEmail,
     created_at: new Date().toISOString(),
+    attachments,
   });
   const row = Array.isArray(created) ? created[0] : created;
   return NextResponse.json({ message: { ...row, userName: senderName } });

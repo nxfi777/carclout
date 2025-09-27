@@ -16,6 +16,7 @@ type TemplateDoc = {
   fixedAspectRatio?: boolean;
   aspectRatio?: number;
   allowedImageSources?: Array<'vehicle' | 'user'>; // 'user' covers upload + workspace
+  proOnly?: boolean;
   // Maximum number of user images allowed per upload action in the Use Template UI
   maxUploadImages?: number;
   variables?: Array<{ key: string; label?: string; type?: string; required?: boolean; defaultValue?: string | number | boolean }>;
@@ -28,6 +29,9 @@ type TemplateDoc = {
     output_format?: 'png' | 'webp';
     refine_foreground?: boolean;
     output_mask?: boolean;
+  } | null;
+  designerDefaults?: {
+    headline?: string | null;
   } | null;
   // Video generation config (Seedance image-to-video)
   video?: {
@@ -187,6 +191,7 @@ export async function POST(req: Request) {
           .filter((s) => s === 'vehicle' || s === 'user')
           .filter((v, i, a) => a.indexOf(v) === i)
       : ['vehicle', 'user'],
+    proOnly: !!(body as { proOnly?: unknown })?.proOnly,
     maxUploadImages: ((): number | undefined => {
       try {
         const raw = (body as { maxUploadImages?: unknown })?.maxUploadImages;
@@ -203,6 +208,18 @@ export async function POST(req: Request) {
           .filter((s) => s.length > 0)
           .slice(0, 20)
       : [],
+    designerDefaults: ((): TemplateDoc['designerDefaults'] => {
+      try {
+        const cfg = (body as { designerDefaults?: { headline?: unknown } | null })?.designerDefaults;
+        if (!cfg || typeof cfg !== 'object') return null;
+        const headlineRaw = (cfg as { headline?: unknown }).headline;
+        if (typeof headlineRaw !== 'string') return null;
+        const trimmed = headlineRaw.trim().slice(0, 280);
+        return trimmed ? { headline: trimmed } : null;
+      } catch {
+        return null;
+      }
+    })(),
     rembg: ((): TemplateDoc['rembg'] => {
       try {
         const incoming = (body as { rembg?: TemplateDoc['rembg'] })?.rembg as TemplateDoc['rembg'];
@@ -291,6 +308,7 @@ export async function POST(req: Request) {
     fixedAspectRatio = $fixedAspectRatio,
     aspectRatio = $aspectRatio,
     allowedImageSources = $allowedImageSources,
+    proOnly = $proOnly,
     maxUploadImages = $maxUploadImages,
     variables = $variables,
     categories = $categories,
@@ -351,9 +369,11 @@ export async function PATCH(req: Request) {
     'fixedAspectRatio',
     'aspectRatio',
     'allowedImageSources',
+    'proOnly',
     'maxUploadImages',
     'variables',
     'categories',
+    'designerDefaults',
     'rembg',
     'video',
   ];
@@ -375,6 +395,18 @@ export async function PATCH(req: Request) {
         } : def;
         sets.push(`${f} = $${f}`);
         params[f] = next as unknown as Record<string, unknown>;
+      } else if (f === 'designerDefaults') {
+        const incoming = (body as { designerDefaults?: TemplateDoc['designerDefaults'] }).designerDefaults;
+        let next: TemplateDoc['designerDefaults'] | null = null;
+        try {
+          const raw = incoming && typeof incoming === 'object' ? (incoming as { headline?: unknown }).headline : undefined;
+          if (typeof raw === 'string') {
+            const trimmed = raw.trim().slice(0, 280);
+            next = trimmed ? { headline: trimmed } : null;
+          }
+        } catch {}
+        sets.push(`${f} = $${f}`);
+        params[f] = next;
       } else {
         sets.push(`${f} = $${f}`);
         params[f] = (body as Record<string, unknown>)[f as keyof typeof body] as unknown;

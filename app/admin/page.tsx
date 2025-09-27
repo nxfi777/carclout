@@ -50,6 +50,7 @@ type TemplateDisplay = {
   fixedAspectRatio?: boolean;
   aspectRatio?: number;
   allowedImageSources?: Array<'vehicle' | 'user'>;
+  proOnly?: boolean;
   maxUploadImages?: number;
   imageSize?: { width: number; height: number } | null;
   favoriteCount?: number;
@@ -76,6 +77,9 @@ type TemplateDisplay = {
     fps?: number;
     previewKey?: string | null;
   } | null;
+  designerDefaults?: {
+    headline?: string | null;
+  } | null;
 };
 
 //
@@ -91,6 +95,7 @@ type CreateTemplatePayload = {
   fixedAspectRatio: boolean;
   aspectRatio?: number;
   allowedImageSources: Array<'vehicle' | 'user'>;
+  proOnly?: boolean;
   maxUploadImages?: number;
   autoOpenDesigner?: boolean;
   variables: Array<{
@@ -112,6 +117,9 @@ type CreateTemplatePayload = {
     seed?: number | null;
     fps?: number;
     previewKey?: string | null;
+  } | null;
+  designerDefaults?: {
+    headline?: string | null;
   } | null;
 };
 
@@ -663,10 +671,11 @@ function NewTemplateButton(){
   const builtIn = useMemo(() => new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]), []);
   const [tokenConfigs, setTokenConfigs] = useState<Record<string, { kind: 'input' | 'select' | 'color'; options: string[]; defaultValue?: string }>>({});
   const [selectedThumbAdminIndex, setSelectedThumbAdminIndex] = useState<number | null>(null);
-  const [fixedAspect, setFixedAspect] = useState<boolean>(true);
+  const [templateFixedAspect, setTemplateFixedAspect] = useState<boolean>(true);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [allowVehicle, setAllowVehicle] = useState<boolean>(true);
   const [allowUser, setAllowUser] = useState<boolean>(true);
+  const [proOnly, setProOnly] = useState<boolean>(false);
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>('');
   const [busy, setBusy] = useState(false);
   const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>({ enabled: false, prompt: '', duration: '5', resolution: '1080p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, previewKey: null });
@@ -709,7 +718,7 @@ function NewTemplateButton(){
   useEffect(()=>{
     let cancelled=false;
     (async()=>{
-      if (!fixedAspect) { setAspectRatio(null); return; }
+      if (!templateFixedAspect) { setAspectRatio(null); return; }
       const f = adminImageFiles[0];
       if (!f) { setAspectRatio(null); return; }
       try {
@@ -721,7 +730,7 @@ function NewTemplateButton(){
       } catch { if (!cancelled) setAspectRatio(null); }
     })();
     return ()=>{ cancelled=true };
-  }, [fixedAspect, adminImageFiles]);
+  }, [templateFixedAspect, adminImageFiles]);
 
   // Default image size from first admin image, clamped to 1024..4096 and scaled retaining AR
   useEffect(()=>{
@@ -798,13 +807,38 @@ function NewTemplateButton(){
         const key = await uploadAdmin(thumbnailFile, 'thumbnails');
         if (key) thumbnailKey = key.replace(/^admin\//,'');
       }
-      const unknownVarDefs: Array<{ key: string; label: string; required: boolean; type: 'select'|'color'|'text'; options?: string[]; defaultValue?: string; }> = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: (cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text')) as 'select'|'color'|'text', options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: (cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string') ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
+      const unknownVarDefs: Array<{ key: string; label: string; required: boolean; type: 'select'|'color'|'text'; options?: string[]; defaultValue?: string; }> = Object.entries(tokenConfigs).map(([key, cfg])=> ({
+        key,
+        label: key,
+        required: false,
+        type: (cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text')) as 'select'|'color'|'text',
+        options: cfg.kind === 'select' ? cfg.options : undefined,
+        defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' ? (cfg as { defaultValue?: string }).defaultValue : undefined,
+      }));
       const allowedImageSources = ([allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean) as Array<'vehicle'|'user'>);
-      const payload: CreateTemplatePayload = { name, description, prompt, falModelSlug, thumbnailKey: thumbnailKey || undefined, adminImageKeys, fixedAspectRatio: fixedAspect, aspectRatio: aspectRatio || undefined, variables: unknownVarDefs, allowedImageSources, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined; })(), video: (videoCfg || undefined) } as unknown as CreateTemplatePayload;
+      const payload: CreateTemplatePayload = {
+        name,
+        description,
+        prompt,
+        falModelSlug,
+        thumbnailKey: thumbnailKey || undefined,
+        adminImageKeys,
+        fixedAspectRatio: templateFixedAspect,
+        aspectRatio: templateFixedAspect ? aspectRatio || undefined : undefined,
+        variables: unknownVarDefs,
+        allowedImageSources,
+        maxUploadImages: ((): number | undefined => {
+          const n = Number(maxUploadImages);
+          return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined;
+        })(),
+        video: (videoCfg || undefined),
+      } as unknown as CreateTemplatePayload;
+      if (proOnly) payload.proOnly = true;
       if (/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug)) payload.imageSize = { width: imageWidth, height: imageHeight };
       const res = await fetch('/api/templates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!res.ok) { const data = await res.json().catch(()=>({})); toast.error(data?.error || 'Failed to create template'); return; }
       setOpen(false); setName(""); setDescription(""); setPrompt(""); setFalModelSlug("fal-ai/gemini-25-flash-image/edit"); setThumbnailFile(null); setAdminImageFiles([]); setAllowVehicle(true); setAllowUser(true); setImageWidth(1280); setImageHeight(1280); setImageSizeEdited(false); setMaxUploadImages('');
+      setProOnly(false);
       try { const ev = new CustomEvent('admin:templates:created'); window.dispatchEvent(ev); } catch {}
     } finally { setBusy(false); }
   }
@@ -838,8 +872,8 @@ function NewTemplateButton(){
                 <div className="text-xs text-white/60">If enabled, we use the first admin image to set the aspect ratio. New images must be cropped to fit.</div>
               </div>
               <div className="flex items-center gap-2">
-                {fixedAspect && aspectRatio ? (<div className="text-xs text-white/60">AR: {aspectRatio.toFixed(3)}</div>) : null}
-                <Switch checked={fixedAspect} onCheckedChange={(v)=> setFixedAspect(!!v)} />
+                {templateFixedAspect && aspectRatio ? (<div className="text-xs text-white/60">AR: {aspectRatio.toFixed(3)}</div>) : null}
+                <Switch checked={templateFixedAspect} onCheckedChange={(v)=> setTemplateFixedAspect(!!v)} />
               </div>
             </div>
             {/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug) ? (
@@ -860,9 +894,10 @@ function NewTemplateButton(){
                 <div className="text-sm font-medium">Allowed sources</div>
                 <div className="text-xs text-white/60">Enable car images and/or user images (upload or workspace).</div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2"><span className="text-xs text-white/70">Car</span><Switch checked={allowVehicle} onCheckedChange={(v)=> setAllowVehicle(!!v)} /></div>
                 <div className="flex items-center gap-2"><span className="text-xs text-white/70">User</span><Switch checked={allowUser} onCheckedChange={(v)=> setAllowUser(!!v)} /></div>
+                <div className="flex items-center gap-2"><span className="text-xs text-white/70">Pro only</span><Switch checked={proOnly} onCheckedChange={(v)=> setProOnly(!!v)} /></div>
               </div>
             </div>
             {Object.keys(tokenConfigs).length ? (
@@ -1011,6 +1046,7 @@ function TemplatesTab() {
           falModelSlug: String(t?.falModelSlug || 'fal-ai/bytedance/seedream/v4/edit'),
           fixedAspectRatio: !!t?.fixedAspectRatio,
           aspectRatio: typeof t?.aspectRatio === 'number' ? Number(t?.aspectRatio) : undefined,
+          proOnly: !!(t as unknown as { proOnly?: boolean })?.proOnly,
           rembg: t?.rembg || null,
           allowedImageSources: Array.isArray(t?.allowedImageSources) ? t.allowedImageSources : ['vehicle','user'],
           maxUploadImages: typeof (t as { maxUploadImages?: unknown })?.maxUploadImages === 'number' ? Number((t as { maxUploadImages?: number }).maxUploadImages) : undefined,
@@ -1097,7 +1133,7 @@ function TemplatesTab() {
               <ContextMenuTrigger asChild>
                 <div>
                   <TemplateCard
-                    data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount }}
+                    data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount, proOnly: !!t.proOnly }}
                     showNewBadge={true}
                     showLike={false}
                     showFavoriteCount={true}
@@ -1165,20 +1201,6 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
   const [_designBgUrl, _setDesignBgUrl] = useState<string | null>(null);
   const [_designFgUrl, _setDesignFgUrl] = useState<string | null>(null);
   const [_designMaskUrl, _setDesignMaskUrl] = useState<string | null>(null);
-  const [designText, setDesignText] = useState<string>('');
-  const [_designFontSize, _setDesignFontSize] = useState<number>(64);
-  const [_designFontColor, _setDesignFontColor] = useState<string>('#ffffff');
-  const [_designFontWeight, _setDesignFontWeight] = useState<number>(800);
-  const [_designX, _setDesignX] = useState<number>(50);
-  const [_designY, _setDesignY] = useState<number>(80);
-  const [_designGlow, _setDesignGlow] = useState<boolean>(true);
-  const [_designGlowColor, _setDesignGlowColor] = useState<string>('#ffffff');
-  const [_designGlowBlur, _setDesignGlowBlur] = useState<number>(18);
-  const [_designShadow, _setDesignShadow] = useState<boolean>(true);
-  const [_designShadowColor, _setDesignShadowColor] = useState<string>('#000000');
-  const [_designShadowBlur, _setDesignShadowBlur] = useState<number>(10);
-  const [_designShadowX, _setDesignShadowX] = useState<number>(0);
-  const [_designShadowY, _setDesignShadowY] = useState<number>(8);
 
   useEffect(()=>{
     (async()=>{
@@ -1255,21 +1277,6 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
     }
   }, [template?.id, template?.slug, source, template?.allowedImageSources]);
 
-  // Set default headline to vehicle brand in ALL CAPS when available
-  useEffect(()=>{
-    try {
-      const v = ((): Vehicle | null => {
-        if (source === 'vehicle') {
-          return findVehicleForSelected();
-        }
-        // If source is not vehicle, attempt to infer from prompt variables if present
-        return null;
-      })();
-      const brand = v?.make ? String(v.make) : '';
-      if (!designText && brand) setDesignText(brand.toUpperCase());
-    } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, selectedVehicleKey, JSON.stringify(profileVehicles)]);
 
   function baseSlug(v: Vehicle): string { if (!v) return ''; const name = `${v.make||''} ${v.model||''}`.trim().toLowerCase(); return name.replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
   function uniqueSlugForIndex(list: Vehicle[], index:number): string { const v = list[index]; if (!v) return ''; const base = baseSlug(v); let prior=0; for (let i=0;i<index;i++){ const u=list[i]; if (u&&u.make===v.make&&u.model===v.model&&u.type===v.type) prior++; } const suf = prior>0?`-${prior}`:''; return `${base}${suf}`; }
@@ -1429,7 +1436,6 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
           <Designer
             bgKey={(activeKey || resultKey) as string}
             rembg={{ enabled: true, model: (template?.rembg?.model as 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait') || 'General Use (Heavy)', operating_resolution: (template?.rembg?.operating_resolution as '1024x1024'|'2048x2048') || '2048x2048', output_format: (template?.rembg?.output_format as 'png'|'webp') || 'png', refine_foreground: typeof template?.rembg?.refine_foreground === 'boolean' ? !!template.rembg.refine_foreground : true, output_mask: !!template?.rembg?.output_mask }}
-            defaultHeadline={(findVehicleForSelected()?.make || '').toUpperCase()}
             onClose={()=> setDesigning(false)}
             onSave={async(blob)=>{
               try {
@@ -1600,7 +1606,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   const [busy, setBusy] = useState(false);
   const builtIn = useMemo(() => new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]), []);
   const [tokenConfigs, setTokenConfigs] = useState<Record<string, { kind: 'input' | 'select' | 'color'; options: string[]; defaultValue?: string }>>({});
-  const [fixedAspect, setFixedAspect] = useState<boolean>(!!template?.fixedAspectRatio);
+  const [editorFixedAspect, setEditorFixedAspect] = useState<boolean>(!!template?.fixedAspectRatio);
   const [aspectRatio, setAspectRatio] = useState<number | undefined>(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : undefined);
   const [imageWidth, setImageWidth] = useState<number>(()=>{ try{ const w = Number((template?.imageSize?.width) || 1280); return Math.max(1024, Math.min(4096, Math.round(w))); } catch { return 1280; } });
   const [imageHeight, setImageHeight] = useState<number>(()=>{ try{ const h = Number((template?.imageSize?.height) || 1280); return Math.max(1024, Math.min(4096, Math.round(h))); } catch { return 1280; } });
@@ -1610,6 +1616,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   const [allowUser, setAllowUser] = useState<boolean>(() => {
     try { const a = Array.isArray(template?.allowedImageSources) ? template.allowedImageSources : ['vehicle','user']; return a.includes('user'); } catch { return true; }
   });
+  const [proOnly, setProOnly] = useState<boolean>(!!template?.proOnly);
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>(()=>{ try { const n = Number(template?.maxUploadImages || 0); return Number.isFinite(n) && n>0 ? n : ''; } catch { return ''; } });
   
   const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>(template?.video as unknown as AdminVideoConfig || null);
@@ -1744,7 +1751,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     setFalModelSlug(String(template?.falModelSlug || 'fal-ai/gemini-25-flash-image/edit'));
     setDescription(String(template?.description || ''));
     setPrompt(String(template?.prompt || ''));
-    setFixedAspect(!!template?.fixedAspectRatio);
+    setEditorFixedAspect(!!template?.fixedAspectRatio);
     setAspectRatio(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : undefined);
     try { const w = Number((template?.imageSize?.width) || 1280); setImageWidth(Math.max(1024, Math.min(4096, Math.round(w)))); } catch {}
     try { const h = Number((template?.imageSize?.height) || 1280); setImageHeight(Math.max(1024, Math.min(4096, Math.round(h)))); } catch {}
@@ -1753,6 +1760,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       setAllowVehicle(srcs.includes('vehicle'));
       setAllowUser(srcs.includes('user'));
     } catch {}
+    setProOnly(!!template?.proOnly);
     try { const n = Number(template?.maxUploadImages || 0); setMaxUploadImages(Number.isFinite(n) && n>0 ? n : ''); } catch {}
     try { setVideoCfg(template?.video as unknown as AdminVideoConfig || null); } catch {}
   }, [template]);
@@ -1846,9 +1854,33 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
         if (up) nextThumbKey = up.replace(/^admin\//,''); else nextThumbKey = undefined;
       }
 
-      const unknownVarDefs = Object.entries(tokenConfigs).map(([key, cfg])=> ({ key, label: key, required: false, type: cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text'), options: cfg.kind === 'select' ? cfg.options : undefined, defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' && (cfg as { defaultValue?: unknown }).defaultValue ? (cfg as { defaultValue?: string }).defaultValue : undefined }));
+      const unknownVarDefs = Object.entries(tokenConfigs).map(([key, cfg])=> ({
+        key,
+        label: key,
+        required: false,
+        type: cfg.kind === 'select' ? 'select' : (cfg.kind === 'color' ? 'color' : 'text'),
+        options: cfg.kind === 'select' ? cfg.options : undefined,
+        defaultValue: cfg.kind === 'color' && typeof (cfg as { defaultValue?: unknown }).defaultValue === 'string' ? (cfg as { defaultValue?: string }).defaultValue : undefined,
+      }));
       const allowedImageSources = [allowVehicle ? 'vehicle' : null, allowUser ? 'user' : null].filter(Boolean);
-      const body: Record<string, unknown> = { id, name: name.trim(), description: description || '', prompt: prompt.trim(), falModelSlug: falModelSlug || undefined, variables: unknownVarDefs, imageSize: { width: imageWidth, height: imageHeight }, fixedAspectRatio: !!fixedAspect, aspectRatio: fixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined, allowedImageSources, maxUploadImages: ((): number | undefined => { const n = Number(maxUploadImages); return Number.isFinite(n) && n>0 ? Math.min(25, Math.round(n)) : undefined; })(), video: (videoCfg as unknown) };
+      const body: Record<string, unknown> = {
+        id,
+        name: name.trim(),
+        description: description || '',
+        prompt: prompt.trim(),
+        falModelSlug: falModelSlug || undefined,
+        variables: unknownVarDefs,
+        imageSize: { width: imageWidth, height: imageHeight },
+        fixedAspectRatio: editorFixedAspect,
+        aspectRatio: editorFixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined,
+        allowedImageSources,
+        proOnly: !!proOnly,
+        maxUploadImages: ((): number | undefined => {
+          const n = Number(maxUploadImages);
+          return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined;
+        })(),
+        video: (videoCfg as unknown),
+      };
       // Include admin images update
       body.adminImageKeys = nextAdminKeys;
       // Include thumbnail update only if changed/explicitly set
@@ -1910,8 +1942,8 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
           <div className="text-xs text-white/60">If enabled, users must crop uploads to the template&apos;s aspect ratio.</div>
         </div>
         <div className="flex items-center gap-2">
-          {fixedAspect && typeof aspectRatio === 'number' ? (<div className="text-xs text-white/60">AR: {Number(aspectRatio).toFixed(3)}</div>) : null}
-          <Switch checked={fixedAspect} onCheckedChange={(v)=> setFixedAspect(!!v)} />
+          {editorFixedAspect && typeof aspectRatio === 'number' ? (<div className="text-xs text-white/60">AR: {Number(aspectRatio).toFixed(3)}</div>) : null}
+          <Switch checked={editorFixedAspect} onCheckedChange={(v)=> setEditorFixedAspect(!!v)} />
         </div>
       </div>
       {/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug) ? (
@@ -1932,9 +1964,10 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
           <div className="text-sm font-medium">Allowed sources</div>
           <div className="text-xs text-white/60">Enable car images and/or user images (upload or workspace).</div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2"><span className="text-xs text-white/70">Car</span><Switch checked={allowVehicle} onCheckedChange={(v)=> setAllowVehicle(!!v)} /></div>
           <div className="flex items-center gap-2"><span className="text-xs text-white/70">User</span><Switch checked={allowUser} onCheckedChange={(v)=> setAllowUser(!!v)} /></div>
+          <div className="flex items-center gap-2"><span className="text-xs text-white/70">Pro only</span><Switch checked={proOnly} onCheckedChange={(v)=> setProOnly(!!v)} /></div>
         </div>
       </div>
 

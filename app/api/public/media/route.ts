@@ -3,9 +3,18 @@ import crypto from "node:crypto";
 import { r2, bucket } from "@/lib/r2";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 
-function hmac(input: string): string {
-  const secret = process.env.MEDIA_LINK_SECRET || process.env.NEXTAUTH_SECRET || process.env.FAL_KEY || "dev-secret";
-  return crypto.createHmac('sha256', secret).update(input).digest('hex');
+const MEDIA_LINK_SECRET = process.env.MEDIA_LINK_SECRET;
+if (!MEDIA_LINK_SECRET) {
+  throw new Error("MEDIA_LINK_SECRET must be set to serve signed media.");
+}
+
+function resolveSecret(): crypto.BinaryLike | crypto.KeyObject {
+  const secret = process.env.MEDIA_LINK_SECRET;
+  if (typeof secret === 'string') return secret;
+  if (secret && typeof secret === 'object' && 'byteLength' in secret) {
+    return Buffer.from(secret as ArrayBufferLike);
+  }
+  return Buffer.from(String(secret ?? ""));
 }
 
 export async function GET(req: Request) {
@@ -22,7 +31,7 @@ export async function GET(req: Request) {
     if (Math.floor(Date.now() / 1000) > exp) {
       return new NextResponse('link expired', { status: 410 });
     }
-    const expected = hmac(`${key}|${scope}|${exp}`);
+    const expected = crypto.createHmac('sha256', resolveSecret()).update(`${key}|${scope}|${exp}`).digest('hex');
     if (expected !== sig) {
       return new NextResponse('invalid signature', { status: 403 });
     }

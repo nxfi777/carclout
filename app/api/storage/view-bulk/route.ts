@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { createViewUrl } from "@/lib/r2";
 
-const ALLOWED_SHARED_USER_FOLDERS = new Set(["vehicles", "car-photos", "chat-profile"]);
+const ALLOWED_SHARED_USER_FOLDERS = new Set(["vehicles", "car-photos", "chat-profile", "chat-uploads"]);
 
 function normalizeKey(input: unknown): string {
   return String(input || "").replace(/^\/+/u, "");

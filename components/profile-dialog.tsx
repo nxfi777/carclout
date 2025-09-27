@@ -8,7 +8,16 @@ import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
 
 import VehiclesEditor, { type Vehicle } from "@/components/vehicles-editor";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2Icon } from "lucide-react";
 import CarPhotosUploader from "@/components/car-photos-uploader";
@@ -38,6 +47,7 @@ export default function ProfileDialog() {
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [pendingDeleteVehicle, setPendingDeleteVehicle] = useState<Vehicle | null>(null);
+  const [confirmSkipVehiclesOpen, setConfirmSkipVehiclesOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -107,21 +117,27 @@ export default function ProfileDialog() {
     return true;
   }
 
-  async function save() {
-    setIsSaving(true);
-    try {
-      // Enforce at least one vehicle and one car photo
-      const hasVehicle = Array.isArray(vehicles) && vehicles.length > 0;
-      const hasPhoto = Array.isArray(carPhotos) && carPhotos.length > 0;
-      if (!hasVehicle || !hasPhoto) {
+  async function save(options?: { allowVehicleSkip?: boolean }) {
+    const allowVehicleSkip = options?.allowVehicleSkip ?? false;
+    // Enforce at least one vehicle and one car photo unless explicitly skipped
+    const hasVehicle = Array.isArray(vehicles) && vehicles.length > 0;
+    const hasPhoto = Array.isArray(carPhotos) && carPhotos.length > 0;
+    const mustEnforceVehicle = isRequired && requiredFields.includes('vehicle');
+    if (!allowVehicleSkip && (!hasVehicle || !hasPhoto)) {
+      if (mustEnforceVehicle) {
         toast.error(!hasVehicle ? 'Add at least one vehicle.' : 'Add at least one car photo.');
         return;
       }
-      // Block save if other required fields are missing (when forced-open)
-      if (!areRequiredFieldsSatisfied()) {
-        toast.error('Please fill the required fields before continuing.');
-        return;
-      }
+      setConfirmSkipVehiclesOpen(true);
+      return;
+    }
+    // Block save if other required fields are missing (when forced-open)
+    if (!areRequiredFieldsSatisfied()) {
+      toast.error('Please fill the required fields before continuing.');
+      return;
+    }
+    setIsSaving(true);
+    try {
       let imageUrl: string | undefined;
       if (image) {
         const form = new FormData();
@@ -471,7 +487,7 @@ export default function ProfileDialog() {
             <div className="text-xs text-muted-foreground">{bio.length}/500</div>
           </div>
           {/* Chat profile selection now integrated into Vehicle Photos above */}
-          <Button onClick={save} disabled={isSaving} className="w-full">
+          <Button onClick={() => save()} disabled={isSaving} className="w-full">
             {isSaving ? (
               <>
                 <Loader2Icon className="mr-2 size-4 animate-spin" />
@@ -506,6 +522,37 @@ export default function ProfileDialog() {
                 setVehicles((prev)=>prev.filter((x)=>!(x.make===v.make && x.model===v.model && x.type===v.type)));
                 setPendingDeleteVehicle(null);
               }}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={confirmSkipVehiclesOpen} onOpenChange={setConfirmSkipVehiclesOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save without a vehicle?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const missingVehicle = vehicles.length === 0;
+                const missingPhotos = carPhotos.length === 0;
+                if (missingVehicle && missingPhotos) {
+                  return 'You haven’t added any vehicles or car photos yet. Saving now keeps your profile empty until you add them later.';
+                }
+                if (missingVehicle) {
+                  return 'You removed all vehicles. Saving now means people won’t see what you drive until you add one again.';
+                }
+                return 'Your vehicles don’t have any photos yet. Saving now keeps your profile imagery blank until you upload some.';
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmSkipVehiclesOpen(false)}>Go back</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmSkipVehiclesOpen(false);
+                void save({ allowVehicleSkip: true });
+              }}
+            >
+              Save without vehicle
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
