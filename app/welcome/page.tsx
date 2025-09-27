@@ -31,6 +31,9 @@ function WelcomePageInner() {
         }
         const me: MeResponse = await meRes.json();
         const plan = ("plan" in (me as Record<string, unknown>) ? (me as Record<string, unknown>).plan : null) as string | null | undefined;
+        const email = ("email" in (me as Record<string, unknown>) && typeof (me as Record<string, unknown>).email === 'string')
+          ? String((me as Record<string, string>).email)
+          : null;
         // Compute and optionally use displayName if needed in future
         const _displayName = ("name" in (me as Record<string, unknown>) && typeof (me as Record<string, unknown>).name === 'string')
           ? String((me as Record<string, unknown>).name)
@@ -44,10 +47,14 @@ function WelcomePageInner() {
         if (!appliedParamsRef.current) {
           appliedParamsRef.current = true;
           const handle = params.get('name') || '';
+          const emailFallback = email ? sanitizeInstagramHandle((email.split('@')[0] || '')) : '';
           const chosenPlan = params.get('plan') || '';
           try {
             if (handle) {
-              await fetch('/api/profile', { method: 'POST', body: JSON.stringify({ name: sanitizeInstagramHandle(handle) }) });
+              const sanitizedHandle = sanitizeInstagramHandle(handle);
+              if (sanitizedHandle && (!emailFallback || sanitizedHandle !== emailFallback)) {
+                await fetch('/api/profile', { method: 'POST', body: JSON.stringify({ name: sanitizedHandle }) });
+              }
             }
           } catch {}
           // If a plan was preselected before signup, redirect to new plan page instead

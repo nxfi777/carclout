@@ -52,11 +52,16 @@ function OnboardingPageInner() {
         }
         const me = await meRes.json();
         const plan = ("plan" in (me as Record<string, unknown>) ? (me as Record<string, unknown>).plan : null) as string | null | undefined;
+        const email = ("email" in (me as Record<string, unknown>) && typeof (me as Record<string, unknown>).email === "string")
+          ? String((me as Record<string, string>).email)
+          : null;
 
         const profileRes = await fetch("/api/profile", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
         const profile = profileRes?.profile || null;
+        let nextUsername = "";
         if (profile) {
-          if (typeof profile.name === "string") setUsername(profile.name || "");
+          const existingName = typeof profile.name === "string" ? sanitizeInstagramHandle(profile.name) : "";
+          if (existingName) nextUsername = existingName;
           if (typeof profile.displayName === "string") setDisplayName(profile.displayName || "");
           if (Array.isArray(profile.vehicles)) setVehicles(profile.vehicles as Vehicle[]);
           if (Array.isArray(profile.carPhotos)) setCarPhotos((profile.carPhotos as string[]).filter((value) => typeof value === "string"));
@@ -71,7 +76,12 @@ function OnboardingPageInner() {
           return;
         }
         const handle = params.get("name") || params.get("handle") || "";
-        if (handle && !profile?.name) setUsername(sanitizeInstagramHandle(handle));
+        const sanitizedHandle = handle ? sanitizeInstagramHandle(handle) : "";
+        const emailFallback = email ? sanitizeInstagramHandle((email.split("@")[0] || "")) : "";
+        if (sanitizedHandle && (!nextUsername || (emailFallback && nextUsername === emailFallback))) {
+          nextUsername = sanitizedHandle;
+        }
+        setUsername(nextUsername || emailFallback);
       } finally {
         if (mounted) setLoading(false);
       }

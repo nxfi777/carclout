@@ -21,7 +21,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import { confirmToast } from "@/components/ui/toast-helpers";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CarFront, SquarePen, ImagePlus, Loader2, X, UploadCloud } from "lucide-react";
+import { CarFront, SquarePen, ImagePlus, Loader2, UploadCloud, SquareCheckBig, SquarePlus, SquareSlash } from "lucide-react";
 import Chevron from "@/components/ui/chevron";
 import { getViewUrls } from "@/lib/view-url-client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -50,6 +50,8 @@ type ChatProfile = {
   photos?: string[];
   bio?: string;
 };
+
+type AttachmentStatus = 'pending' | 'uploading';
 
 const R2_PUBLIC_BASE = (process.env.NEXT_PUBLIC_R2_PUBLIC_BASE || "https://r2.ignitecdn.com").replace(/\/$/, "");
 const IMAGE_EXTENSIONS = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp|bmp|ico|tiff?|heic|heif)$/i;
@@ -81,8 +83,11 @@ function DashboardShowroomPageInner() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [attachmentErrorShakeKey, setAttachmentErrorShakeKey] = useState(0);
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState<Record<string, string>>({});
+  const [attachmentStatusMap, setAttachmentStatusMap] = useState<Record<string, AttachmentStatus>>({});
+  const [sessionUploadKeys, setSessionUploadKeys] = useState<string[]>([]);
   const [messageAttachmentUrls, setMessageAttachmentUrls] = useState<Record<string, string>>({});
   const libraryLoadedRef = useRef(false);
+  const sendingAttachmentsRef = useRef(false);
   const maxAttachments = 6;
   const [selectedAttachmentTab, setSelectedAttachmentTab] = useState<'upload' | 'library'>('upload');
   const [libraryItems, setLibraryItems] = useState<Array<{ key: string; url: string }>>([]);
@@ -153,6 +158,55 @@ function DashboardShowroomPageInner() {
       if (existing && existing.width === width && existing.height === height) return prev;
       return { ...prev, [key]: { width, height } };
     });
+  }, []);
+  const markAttachmentsStatus = useCallback((keys: string[], status: AttachmentStatus) => {
+    if (!keys.length) return;
+    setAttachmentStatusMap((prev) => {
+      let mutated = false;
+      const next: Record<string, AttachmentStatus> = { ...prev };
+      for (const key of keys) {
+        if (!key) continue;
+        if (next[key] !== status) {
+          next[key] = status;
+          mutated = true;
+        }
+      }
+      return mutated ? next : prev;
+    });
+  }, []);
+  const clearAttachmentStatus = useCallback((keys: string[]) => {
+    if (!keys.length) return;
+    setAttachmentStatusMap((prev) => {
+      let mutated = false;
+      const next: Record<string, AttachmentStatus> = { ...prev };
+      for (const key of keys) {
+        if (!key) continue;
+        if (Object.prototype.hasOwnProperty.call(next, key)) {
+          delete next[key];
+          mutated = true;
+        }
+      }
+      return mutated ? next : prev;
+    });
+  }, []);
+  const finalizeSentAttachments = useCallback((keys: string[]) => {
+    if (!keys.length) return;
+    const cleaned = keys.filter((key): key is string => typeof key === 'string' && key.length > 0);
+    if (!cleaned.length) return;
+    const keySet = new Set(cleaned);
+    setPendingAttachments((prev) => prev.filter((key) => !keySet.has(key)));
+    setAttachmentStatusMap((prev) => {
+      let mutated = false;
+      const next: Record<string, AttachmentStatus> = { ...prev };
+      keySet.forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(next, key)) {
+          delete next[key];
+          mutated = true;
+        }
+      });
+      return mutated ? next : prev;
+    });
+    setSessionUploadKeys((prev) => prev.filter((key) => !keySet.has(key)));
   }, []);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -870,25 +924,35 @@ function DashboardShowroomPageInner() {
 
   const handleSendAttachments = useCallback(async () => {
     if (!pendingAttachments.length) return;
+    if (sendingAttachmentsRef.current) return;
+    const attachmentsToSend = pendingAttachments
+      .map((key) => {
+        if (typeof key !== 'string' || !key) return null;
+        const url = attachmentPreviewMap[key];
+        if (!url) return null;
+        return { key, url };
+      })
+      .filter((item): item is { key: string; url: string } => !!item);
+    if (!attachmentsToSend.length) return;
+    sendingAttachmentsRef.current = true;
+    setAttachmentModalOpen(false);
+    setAttachmentError(null);
+    const sentKeys = attachmentsToSend.map((item) => item.key);
+    markAttachmentsStatus(sentKeys, 'pending');
     const input = inputRef.current;
     const raw = input?.value ?? '';
     const trimmed = raw.trim();
     const hasText = trimmed.length > 0;
     const messageText = hasText ? trimmed : '';
     if (input) input.value = '';
-    await sendMessage(messageText, undefined, pendingAttachments.map((key) => ({ key, url: attachmentPreviewMap[key] || '' })));
-    setPendingAttachments([]);
-    setAttachmentPreviewMap((prev) => {
-      const next = { ...prev } as Record<string, string>;
-      for (const key of pendingAttachments) {
-        try { delete next[key]; } catch {}
-      }
-      return next;
-    });
-    setAttachmentModalOpen(false);
-    setAttachmentError(null);
-    setSelectedAttachmentTab('upload');
-  }, [pendingAttachments, attachmentPreviewMap, sendMessage]);
+    try {
+      await sendMessage(messageText, undefined, attachmentsToSend);
+    } finally {
+      finalizeSentAttachments(sentKeys);
+      setSelectedAttachmentTab('upload');
+      sendingAttachmentsRef.current = false;
+    }
+  }, [pendingAttachments, attachmentPreviewMap, finalizeSentAttachments, markAttachmentsStatus, sendMessage]);
 
   if (loading) {
     return (
@@ -1150,11 +1214,12 @@ function DashboardShowroomPageInner() {
                           {hasAttachments ? (
                             <ul className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
                               {attachments.map((key) => {
+                                const status = attachmentStatusMap[key];
                                 const resolved = messageAttachmentUrls[key] || attachmentPreviewMap[key] || `${R2_PUBLIC_BASE}/${key}`;
                                 return (
                                   <li
                                     key={`${m.id || m.tempId}-${key}`}
-                                    className="relative overflow-hidden rounded border border-[color:var(--border)]/60 bg-black/20"
+                                    className={`relative overflow-hidden rounded border border-[color:var(--border)]/60 ${status ? 'bg-black/40 grayscale opacity-70' : 'bg-black/20'}`}
                                     style={getAspectStyle(key)}
                                   >
                                     {resolved ? (
@@ -1171,6 +1236,12 @@ function DashboardShowroomPageInner() {
                                         <Loader2 className="h-4 w-4 animate-spin" />
                                       </div>
                                     )}
+                                    {status ? (
+                                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/40 text-white/70">
+                                        <Loader2 className="h-5 w-5 animate-spin" />
+                                        <span className="text-[10px] uppercase tracking-wide">Uploading…</span>
+                                      </div>
+                                    ) : null}
                                     <a
                                       href={resolved || '#'}
                                       target="_blank"
@@ -1672,64 +1743,17 @@ function DashboardShowroomPageInner() {
                   <TabsTrigger value="library" className="px-4 py-2 text-sm data-[state=active]:bg-[rgba(255,255,255,0.12)] data-[state=active]:text-white">Browse Library</TabsTrigger>
                 </TabsList>
                 <div className="mt-4 space-y-4">
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!pendingAttachments.length}
-                      onClick={()=> { void handleSendAttachments(); }}
-                    >
-                      Send
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium">Selected</div>
-                      <div className="text-xs text-white/60">{pendingAttachments.length}/{maxAttachments}</div>
-                    </div>
-                    {pendingAttachments.length ? (
-                      <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {pendingAttachments.map((key) => {
-                          const preview = attachmentPreviewMap[key];
-                          return (
-                            <li key={key} className="relative group">
-                              <div
-                                className="relative overflow-hidden rounded bg-black/20"
-                                style={getAspectStyle(key)}
-                              >
-                                {preview ? (
-                                  <Image
-                                    src={preview}
-                                    alt="Preview"
-                                    fill
-                                    className="object-contain"
-                                    sizes="128px"
-                                    onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
-                                  />
-                                ) : (
-                                  <div className="flex h-full w-full items-center justify-center text-xs text-white/50">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  </div>
-                                )}
-                              </div>
-                              <button
-                                type="button"
-                                className="absolute top-1 right-1 inline-flex items-center justify-center rounded-full bg-black/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                                onClick={()=> setPendingAttachments((prev) => prev.filter((existing) => existing !== key))}
-                                aria-label="Remove image"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : (
-                      <div className="text-xs text-white/50 border border-dashed border-[color:var(--border)]/60 rounded p-4 text-center">
-                        No images selected yet.
-                      </div>
-                    )}
-                  </div>
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-white/60">{pendingAttachments.length}/{maxAttachments} selected</div>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!pendingAttachments.length || pendingAttachments.some((key) => attachmentStatusMap[key] === 'uploading')}
+              onClick={()=> { void handleSendAttachments(); }}
+            >
+              Send
+            </Button>
+          </div>
 
                   <TabsContent value="upload" className="space-y-3">
                     <DropZone
@@ -1749,40 +1773,44 @@ function DashboardShowroomPageInner() {
                         const eligible = incoming.filter((file) => file.size <= MAX_UPLOAD_BYTES);
                         if (!eligible.length) return;
                         const compressed = await Promise.all(eligible.map((file) => compressImage(file)));
+                        let uploadedKeys: string[] = [];
                         try {
-                          setUploadingAttachments(true);
+          setUploadingAttachments(true);
                           const uploaded = await uploadFilesToChat({
                             files: compressed,
                             channel: activeChatType === 'channel' ? active : undefined,
                             dmEmail: activeChatType === 'dm' ? activeDm?.email : undefined,
                           });
-                          const keys = uploaded.map((item) => item.key).filter(Boolean) as string[];
-                          const urls = await getViewUrls(keys);
+                          uploadedKeys = uploaded.map((item) => item.key).filter(Boolean) as string[];
+                          if (!uploadedKeys.length) return;
+                          markAttachmentsStatus(uploadedKeys, 'uploading');
+                          setSessionUploadKeys((prev) => {
+                            const merged = new Set(prev);
+                            uploadedKeys.forEach((k) => merged.add(k));
+                            return Array.from(merged);
+                          });
+                          clearAttachmentStatus(uploadedKeys);
+                          const urls = await getViewUrls(uploadedKeys);
+                          const map: Record<string, string> = {};
+                          for (const key of uploadedKeys) {
+                            const fallbackUrl = uploaded.find((item) => item.key === key)?.url || `${R2_PUBLIC_BASE}/${key}`;
+                            map[key] = urls[key] || fallbackUrl;
+                          }
+                          setAttachmentPreviewMap((prev) => ({ ...prev, ...map }));
+                          setMessageAttachmentUrls((prev) => ({ ...prev, ...map }));
                           setPendingAttachments((prev) => {
                             const merged = [...prev];
-                            for (const key of keys) {
+                            for (const key of uploadedKeys) {
                               if (!merged.includes(key)) merged.push(key);
                             }
                             return merged.slice(0, maxAttachments);
                           });
-                          setAttachmentPreviewMap((prev) => {
-                            const next = { ...prev } as Record<string, string>;
-                            for (const key of keys) {
-                              next[key] = urls[key] || uploaded.find((item) => item.key === key)?.url || `${R2_PUBLIC_BASE}/${key}`;
-                            }
-                            return next;
-                          });
-                          setMessageAttachmentUrls((prev) => {
-                            const next = { ...prev } as Record<string, string>;
-                            for (const key of keys) {
-                              const resolved = urls[key] || uploaded.find((item) => item.key === key)?.url || `${R2_PUBLIC_BASE}/${key}`;
-                              if (resolved) next[key] = resolved;
-                            }
-                            return next;
-                          });
                         } catch (err) {
                           const message = err instanceof Error ? err.message : 'Failed to upload images';
                           setAttachmentError(message);
+                          if (uploadedKeys.length) {
+                            markAttachmentsStatus(uploadedKeys, 'pending');
+                          }
                         } finally {
                           setUploadingAttachments(false);
                         }
@@ -1795,6 +1823,58 @@ function DashboardShowroomPageInner() {
                         <span className="text-xs text-white/50">Up to {maxAttachments} images</span>
                       </div>
                     </DropZone>
+                    {sessionUploadKeys.length ? (
+                      <div className="space-y-2">
+                        <div className="text-xs text-white/70">Uploaded this session</div>
+                        <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          {sessionUploadKeys.map((key) => {
+                            const url = attachmentPreviewMap[key] || messageAttachmentUrls[key] || `${R2_PUBLIC_BASE}/${key}`;
+                            const selected = pendingAttachments.includes(key);
+                            const status = attachmentStatusMap[key];
+                            return (
+                              <li key={key}>
+                                <button
+                                  type="button"
+                                  className={`relative block w-full overflow-hidden rounded transition ${selected ? 'ring-2 ring-emerald-400/50 ring-offset-2 ring-offset-[color:var(--card)]' : ''}`}
+                                  style={getAspectStyle(key)}
+                                  onClick={()=>{
+                                    setPendingAttachments((prev) => prev.includes(key) ? prev.filter((existing) => existing !== key) : [...prev, key]);
+                                    if (!attachmentPreviewMap[key]) {
+                                      setAttachmentPreviewMap((prev) => ({ ...prev, [key]: url }));
+                                    }
+                                    markAttachmentsStatus([key], 'pending');
+                                  }}
+                                >
+                                  {url ? (
+                                    <Image
+                                      src={url}
+                                      alt="Uploaded preview"
+                                      fill
+                                      className="object-contain"
+                                      sizes="128px"
+                                      onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
+                                    />
+                                  ) : (
+                                    <div className="flex h-full items-center justify-center text-xs text-white/50">
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    </div>
+                                  )}
+                          <span className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center rounded bg-black/70 p-1 transition-colors ${selected ? 'text-emerald-300' : (pendingAttachments.length >= maxAttachments ? 'text-white/50' : 'text-white/70')}`}>
+                            {selected ? <SquareCheckBig className="h-4 w-4" /> : (pendingAttachments.length >= maxAttachments ? <SquareSlash className="h-4 w-4" /> : <SquarePlus className="h-4 w-4" />)}
+                                  </span>
+                                  {status === 'uploading' ? (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/50 text-white/70">
+                                      <Loader2 className="h-5 w-5 animate-spin" />
+                                      <span className="text-[10px] uppercase tracking-wide">Uploading…</span>
+                                    </div>
+                                  ) : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
                   </TabsContent>
 
                   <TabsContent value="library" className="space-y-3">
@@ -1802,40 +1882,54 @@ function DashboardShowroomPageInner() {
                       <div className="text-xs text-white/60">Loading library…</div>
                     ) : libraryItems.length ? (
                       <ul className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3.5">
-                        {libraryItems.map(({ key }) => (
-                              <li key={key}>
-                                <button
-                                  type="button"
-                                  className="relative block w-full overflow-hidden rounded bg-black/20"
-                                  style={getAspectStyle(key)}
-                                  onClick={()=>{
-                                    const url = attachmentPreviewMap[key] || libraryItems.find((item) => item.key === key)?.url || (`https://r2.ignitecdn.com/${key}`);
-                                    setPendingAttachments((prev) => prev.includes(key) ? prev : [...prev, key]);
-                                    setAttachmentPreviewMap((prev) => ({ ...prev, [key]: url }));
-                                  }}
-                                  disabled={pendingAttachments.length >= maxAttachments && !pendingAttachments.includes(key)}
-                                >
-                                  {(() => {
-                                    const displayUrl = attachmentPreviewMap[key] || libraryItems.find((item) => item.key === key)?.url || (`https://r2.ignitecdn.com/${key}`);
-                                    return displayUrl ? (
-                                      <Image
-                                        src={displayUrl}
-                                        alt="Library"
-                                        fill
-                                        className="object-contain"
-                                        sizes="128px"
-                                        onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
-                                      />
-                                    ) : (
-                                      <div className="flex h-full items-center justify-center text-xs text-white/50">No preview</div>
-                                    );
-                                  })()}
-                                  {pendingAttachments.includes(key) ? (
-                                    <span className="absolute top-1 right-1 rounded-full bg-black/70 px-2 py-0.5 text-[10px] text-white">Added</span>
-                                  ) : null}
-                                </button>
-                              </li>
-                        ))}
+                    {libraryItems.map(({ key }) => {
+                      const baseUrl = libraryItems.find((item) => item.key === key)?.url || (`https://r2.ignitecdn.com/${key}`);
+                      const url = attachmentPreviewMap[key] || baseUrl;
+                      const selected = pendingAttachments.includes(key);
+                      const status = attachmentStatusMap[key];
+                      const atCapacity = pendingAttachments.length >= maxAttachments && !selected;
+                      return (
+                        <li key={key}>
+                          <button
+                            type="button"
+                            className={`relative block w-full overflow-hidden rounded transition ${atCapacity ? 'cursor-not-allowed opacity-60' : 'hover:bg-white/5'} ${selected ? 'ring-2 ring-emerald-400/50 ring-offset-2 ring-offset-[color:var(--card)]' : ''}`}
+                            style={getAspectStyle(key)}
+                            onClick={()=>{
+                              if (atCapacity) return;
+                              setPendingAttachments((prev) => prev.includes(key) ? prev.filter((existing) => existing !== key) : [...prev, key]);
+                              setAttachmentPreviewMap((prev) => ({ ...prev, [key]: baseUrl }));
+                              markAttachmentsStatus([key], 'pending');
+                              setSessionUploadKeys((prev)=> prev.filter((existing)=> existing !== key));
+                            }}
+                            disabled={atCapacity}
+                          >
+                            {url ? (
+                              <Image
+                                src={url}
+                                alt="Library"
+                                fill
+                                className="object-contain"
+                                sizes="128px"
+                                onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
+                              />
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-xs text-white/50">No preview</div>
+                            )}
+                            <span
+                              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center rounded bg-black/70 p-1 transition-colors ${selected ? 'text-emerald-300' : 'text-white/70'}`}
+                            >
+                              {selected ? <SquareCheckBig className="h-4 w-4" /> : <SquarePlus className="h-4 w-4" />}
+                            </span>
+                            {status === 'uploading' ? (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/50 text-white/70">
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                                <span className="text-[10px] uppercase tracking-wide">Uploading…</span>
+                              </div>
+                            ) : null}
+                          </button>
+                        </li>
+                      );
+                    })}
                       </ul>
                     ) : (
                       <div className="text-xs text-white/60 border border-dashed border-[color:var(--border)]/60 rounded p-4 text-center">No images found in your library.</div>
