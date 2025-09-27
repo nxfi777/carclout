@@ -57,6 +57,90 @@ const R2_PUBLIC_BASE = (process.env.NEXT_PUBLIC_R2_PUBLIC_BASE || "https://r2.ig
 const IMAGE_EXTENSIONS = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp|bmp|ico|tiff?|heic|heif)$/i;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function resolveRecordId(raw: unknown): string | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
+  if (isRecord(raw)) {
+    if ("id" in raw) {
+      const nested = resolveRecordId(raw["id"]);
+      if (nested) {
+        if (typeof raw["tb"] === "string" && !nested.includes(":")) {
+          return `${String(raw["tb"]) || ""}:${nested}`.replace(/^:+/, "");
+        }
+        return nested;
+      }
+    }
+    const toString = (raw as { toString?: () => string }).toString;
+    if (typeof toString === "function" && toString !== Object.prototype.toString) {
+      try {
+        const result = toString.call(raw);
+        if (typeof result === "string" && result && result !== "[object Object]") {
+          return result;
+        }
+      } catch {}
+    }
+  }
+  return undefined;
+}
+
+function extractLiveChange(payload: unknown): {
+  action?: string;
+  after: Record<string, unknown> | null;
+  before: Record<string, unknown> | null;
+} {
+  const containers: Record<string, unknown>[] = [];
+  const collect = (value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => collect(item));
+      return;
+    }
+    if (isRecord(value)) {
+      containers.push(value);
+      if (value["result"] !== undefined) collect(value["result"]);
+      if (value["record"] !== undefined) collect(value["record"]);
+      if (value["data"] !== undefined) collect(value["data"]);
+    }
+  };
+  collect(payload);
+
+  let action: string | undefined;
+  if (isRecord(payload)) {
+    const rawAction = typeof payload["action"] === "string" ? payload["action"] : (typeof payload["type"] === "string" ? payload["type"] : undefined);
+    if (rawAction) action = rawAction.toLowerCase();
+  }
+
+  let before: Record<string, unknown> | null = null;
+  let after: Record<string, unknown> | null = null;
+
+  for (const container of containers) {
+    if (!before) {
+      const maybeBefore = container["before"];
+      if (isRecord(maybeBefore)) before = maybeBefore;
+    }
+    if (!after) {
+      const maybeAfter = container["after"];
+      if (isRecord(maybeAfter)) after = maybeAfter;
+    }
+    if (before && after) break;
+  }
+
+  if (!after) {
+    for (const container of containers) {
+      if (isRecord(container)) {
+        after = container;
+        break;
+      }
+    }
+  }
+
+  return { action, after, before };
+}
+
 function DashboardShowroomPageInner() {
   const [loading, setLoading] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
@@ -624,27 +708,35 @@ function DashboardShowroomPageInner() {
         es.onmessage = (ev) => {
           try {
             const data = JSON.parse(ev.data);
-            const row = data?.result || data?.record || data;
+            const { action, after, before } = extractLiveChange(data);
+            const row = isRecord(after) ? after : (isRecord(data?.result) ? data.result : (isRecord(data?.record) ? data.record : (isRecord(data) ? data : null)));
+
+            if (action === 'delete') {
+              const id = resolveRecordId(before?.id ?? row?.id);
+              if (!id) return;
+              setMessages((prev) => prev.filter((m) => m.id !== id));
+              return;
+            }
+
             const rawText: string = typeof row?.text === 'string' ? row.text : '';
-            let userName: string | undefined = row?.senderName;
-            // Never show email as name; if email-like, mask to 'Member'
+            let userName: string | undefined = typeof row?.senderName === 'string' ? row.senderName : undefined;
             if (!userName || /@/.test(String(userName))) userName = 'Member';
-            if (row?.senderEmail && blocked.includes(row.senderEmail)) return;
+            if (typeof row?.senderEmail === 'string' && blocked.includes(row.senderEmail)) return;
             const attachments = Array.isArray(row?.attachments)
               ? (row.attachments as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 6)
               : [];
             const hasVisibleText = rawText.replace(/\u200B/g, '').trim().length > 0;
             if (!hasVisibleText && attachments.length === 0) return;
-            const id = row?.id?.id?.toString?.() || row?.id;
+            const id = resolveRecordId(row?.id);
             const message = {
               text: rawText,
               userName,
-              userEmail: row?.senderEmail,
+              userEmail: typeof row?.senderEmail === 'string' ? row.senderEmail : undefined,
               status: 'sent' as const,
-              created_at: row?.created_at,
+              created_at: typeof row?.created_at === 'string' ? row.created_at : undefined,
               id,
               attachments,
-            };
+            } satisfies ChatMessage;
             setMessages((prev) => {
               if (id) {
                 const existingIndex = prev.findIndex((m) => m.id === id);
@@ -669,26 +761,35 @@ function DashboardShowroomPageInner() {
         es.onmessage = (ev) => {
           try {
             const data = JSON.parse(ev.data);
-            const row = data?.result || data?.record || data;
+            const { action, after, before } = extractLiveChange(data);
+            const row = isRecord(after) ? after : (isRecord(data?.result) ? data.result : (isRecord(data?.record) ? data.record : (isRecord(data) ? data : null)));
+
+            if (action === 'delete') {
+              const id = resolveRecordId(before?.id ?? row?.id);
+              if (!id) return;
+              setMessages((prev) => prev.filter((m) => m.id !== id));
+              return;
+            }
+
             const rawText: string = typeof row?.text === 'string' ? row.text : '';
-            let userName: string | undefined = row?.userName;
+            let userName: string | undefined = typeof row?.userName === 'string' ? row.userName : undefined;
             if (!userName || /@/.test(String(userName))) userName = 'Member';
-            if (row?.userEmail && blocked.includes(row.userEmail)) return;
+            if (typeof row?.userEmail === 'string' && blocked.includes(row.userEmail)) return;
             const attachments = Array.isArray(row?.attachments)
               ? (row.attachments as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 6)
               : [];
             const hasVisibleText = rawText.replace(/\u200B/g, '').trim().length > 0;
             if (!hasVisibleText && attachments.length === 0) return;
-            const id = row?.id?.id?.toString?.() || row?.id;
+            const id = resolveRecordId(row?.id);
             const message = {
               text: rawText,
               userName,
-              userEmail: row?.userEmail,
+              userEmail: typeof row?.userEmail === 'string' ? row.userEmail : undefined,
               status: 'sent' as const,
-              created_at: row?.created_at,
+              created_at: typeof row?.created_at === 'string' ? row.created_at : undefined,
               id,
               attachments,
-            };
+            } satisfies ChatMessage;
             setMessages((prev) => {
               if (id) {
                 const existingIndex = prev.findIndex((m) => m.id === id);
@@ -1137,15 +1238,32 @@ function DashboardShowroomPageInner() {
                     <AlertDialogCancel onClick={()=> setConfirmOpen(null)}>Cancel</AlertDialogCancel>
                     <AlertDialogAction onClick={async()=>{
                       if (confirmOpen?.type === 'purge') {
+                        const count = confirmOpen.count;
                         setConfirmOpen(null);
+                        // optimistic remove while server processes request
+                        setMessages((prev) => {
+                          if (!prev.length) return prev;
+                          const toRemove = Math.min(count, prev.length);
+                          if (toRemove <= 0) return prev;
+                          return prev.slice(0, prev.length - toRemove);
+                        });
                         setChatLoading(true);
+                        let ok = false;
                         try {
-                          await fetch('/api/admin/showroom/purge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: active, limit: confirmOpen.count }) });
+                          const res = await fetch('/api/admin/showroom/purge', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ channel: active, limit: count }),
+                          });
+                          ok = res.ok;
                         } catch {}
                         try {
-                          const m: { messages?: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string }[] } = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then(r=>r.json());
-                          setMessages((m.messages || []).map((mm) => ({ ...mm, status: 'sent' })));
+                          const snapshot: { messages?: ChatMessage[] } = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then((r) => r.json());
+                          setMessages((snapshot.messages || []).map((mm) => ({ ...mm, status: 'sent' })));
                         } catch {}
+                        if (!ok) {
+                          toast.error('Failed to purge messages.');
+                        }
                         setChatLoading(false);
                       }
                     }}>Confirm</AlertDialogAction>

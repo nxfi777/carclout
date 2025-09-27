@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
-// import { auth } from "@/lib/auth";
 import { checkChannelRead, getSessionLite, type ChannelLike } from "@/lib/chatPerms";
 
 export const dynamic = "force-dynamic";

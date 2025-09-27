@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { RecordId } from "surrealdb";
 import { getSurreal } from "@/lib/surrealdb";
 import { auth } from "@/lib/auth";
 
@@ -28,7 +29,21 @@ export async function POST(request: Request) {
     { c: channel, l: limit }
   );
   const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ id?: unknown }>) : [];
-  const ids = rows.map((r) => (r?.id as unknown)).filter(Boolean);
+  const ids = rows
+    .map((r) => {
+      try {
+        const val = r?.id as unknown;
+        if (!val) return null;
+        if (val instanceof RecordId) return val.toString();
+        if (typeof val === "object" && typeof (val as { toString?: () => string }).toString === "function") {
+          return (val as { toString: () => string }).toString();
+        }
+        return String(val);
+      } catch {
+        return null;
+      }
+    })
+    .filter((v): v is string => typeof v === "string" && v.length > 0);
 
   let purged = 0;
   if (ids.length > 0) {
