@@ -1,5 +1,6 @@
 "use client";
 import { Suspense, useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { isRecord, resolveRecordId } from "@/lib/records";
 import type { CSSProperties } from "react";
 // Removed Stream chat; bespoke Surreal chat implementation
 import { useRouter, useSearchParams } from "next/navigation";
@@ -53,6 +54,134 @@ type ChatProfile = {
 
 type AttachmentStatus = 'pending' | 'uploading';
 
+type PresenceStatus = 'online' | 'idle' | 'dnd' | 'invisible';
+type PresenceDerivedStatus = PresenceStatus | 'offline';
+type PresenceEntry = {
+  email?: string;
+  name: string;
+  image?: string;
+  rawStatus: PresenceDerivedStatus;
+  status: PresenceDerivedStatus;
+  updatedAtMs: number | null;
+  role?: string;
+  plan?: string;
+};
+
+const PRESENCE_GRACE_MS = 60_000;
+
+function pickPresenceStatus(value: unknown): PresenceDerivedStatus | null {
+  if (typeof value !== 'string') return null;
+  const lowered = value.toLowerCase();
+  if (lowered === 'online' || lowered === 'idle' || lowered === 'dnd' || lowered === 'invisible' || lowered === 'offline') {
+    return lowered as PresenceDerivedStatus;
+  }
+  return null;
+}
+
+function parseIsoToMs(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function derivePresenceStatus(rawStatus: PresenceDerivedStatus, updatedAtMs: number | null, now: number, isSelf: boolean): PresenceDerivedStatus {
+  if (rawStatus === 'invisible') return 'invisible';
+  if (rawStatus === 'offline') return 'offline';
+  if (isSelf) {
+    if (rawStatus === 'idle' || rawStatus === 'dnd') return rawStatus;
+    return 'online';
+  }
+  if (updatedAtMs === null) {
+    if (rawStatus === 'idle' || rawStatus === 'dnd') return rawStatus;
+    return 'online';
+  }
+  const age = now - updatedAtMs;
+  if (age <= PRESENCE_GRACE_MS) {
+    if (rawStatus === 'idle' || rawStatus === 'dnd') return rawStatus;
+    return 'online';
+  }
+  return 'offline';
+}
+
+function toPresenceEntry(raw: unknown, existing: PresenceEntry | undefined, meEmail: string | null | undefined, now: number): PresenceEntry | null {
+  const record = isRecord(raw) ? raw : {};
+  const existingEmail = existing?.email;
+  const emailRaw = typeof record['email'] === 'string' ? record['email'] : existingEmail;
+  if (!emailRaw) return null;
+  const email = emailRaw;
+  const displayName = typeof record['displayName'] === 'string' && record['displayName'].trim().length ? record['displayName'].trim() : undefined;
+  const nameRaw = typeof record['name'] === 'string' && record['name'].trim().length ? record['name'].trim() : undefined;
+  const name = displayName ?? nameRaw ?? existing?.name ?? email;
+  const image = typeof record['image'] === 'string' ? record['image'] : existing?.image;
+    const rawStatusCandidate = pickPresenceStatus(record['rawStatus'])
+    ?? pickPresenceStatus(record['presence_status'])
+    ?? existing?.rawStatus
+    ?? 'online';
+  const updatedIso = record['updatedAt']
+    ?? record['presence_updated_at']
+    ?? record['presenceUpdatedAt']
+    ?? record['last_seen']
+    ?? null;
+  let updatedAtMs = parseIsoToMs(updatedIso);
+  if (updatedAtMs === null) {
+    updatedAtMs = existing?.updatedAtMs ?? (record['presence_status'] !== undefined ? now : null);
+  }
+  const meLower = typeof meEmail === 'string' && meEmail ? meEmail.toLowerCase() : undefined;
+  const emailLower = email.toLowerCase();
+  const isSelf = meLower ? emailLower === meLower : false;
+  const derivedCandidate = pickPresenceStatus(record['status']);
+  const derived = derivedCandidate ?? derivePresenceStatus(rawStatusCandidate, updatedAtMs, now, isSelf);
+  const role = typeof record['role'] === 'string' ? record['role'] : existing?.role;
+  const plan = typeof record['plan'] === 'string' ? record['plan'] : existing?.plan;
+  return {
+    email,
+    name,
+    image,
+    rawStatus: rawStatusCandidate,
+    status: derived,
+    updatedAtMs,
+    role,
+    plan,
+  } satisfies PresenceEntry;
+}
+
+function normalizePresenceList(users: unknown[], previous: PresenceEntry[], meEmail: string | null | undefined, now: number = Date.now()): PresenceEntry[] {
+  const prevMap = new Map(previous.map((entry) => [String(entry.email || '').toLowerCase(), entry]));
+  const result: PresenceEntry[] = [];
+  for (const raw of users) {
+    const emailKey = isRecord(raw) && typeof raw['email'] === 'string' ? raw['email'].toLowerCase() : undefined;
+    const existing = emailKey ? prevMap.get(emailKey) : undefined;
+    const entry = toPresenceEntry(raw, existing, meEmail, now);
+    if (entry) result.push(entry);
+  }
+  return result;
+}
+
+function mergePresenceUpdate(previous: PresenceEntry[], incoming: unknown, meEmail: string | null | undefined, now: number = Date.now()): PresenceEntry[] {
+  if (!isRecord(incoming)) {
+    return previous;
+  }
+  const email = typeof incoming['email'] === 'string' ? incoming['email'] : undefined;
+  if (!email) return previous;
+  const key = email.toLowerCase();
+  let index = -1;
+  for (let i = 0; i < previous.length; i++) {
+    if ((previous[i].email || '').toLowerCase() === key) {
+      index = i;
+      break;
+    }
+  }
+  const existing = index >= 0 ? previous[index] : undefined;
+  const entry = toPresenceEntry(incoming, existing, meEmail, now);
+  if (!entry) return previous;
+  if (index === -1) {
+    return [entry, ...previous];
+  }
+  const next = [...previous];
+  next[index] = entry;
+  return next;
+}
+
 const R2_PUBLIC_BASE = (process.env.NEXT_PUBLIC_R2_PUBLIC_BASE || "https://r2.ignitecdn.com").replace(/\/$/, "");
 const IMAGE_EXTENSIONS = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp|bmp|ico|tiff?|heic|heif)$/i;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -60,88 +189,15 @@ const SESSION_PREVIEW_SIZES = "(min-width: 80rem) 16rem, (min-width: 64rem) 14re
 const LIBRARY_PREVIEW_SIZES = "(min-width: 80rem) 18rem, (min-width: 64rem) 16rem, (min-width: 48rem) 14rem, 90vw";
 const PROFILE_PREVIEW_SIZES = "(min-width: 64rem) 12rem, (min-width: 48rem) 10rem, 70vw";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
-
-function resolveRecordId(raw: unknown): string | undefined {
-  if (raw === null || raw === undefined) return undefined;
-  if (typeof raw === "string") return raw;
-  if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
-  if (isRecord(raw)) {
-    if ("id" in raw) {
-      const nested = resolveRecordId(raw["id"]);
-      if (nested) {
-        if (typeof raw["tb"] === "string" && !nested.includes(":")) {
-          return `${String(raw["tb"]) || ""}:${nested}`.replace(/^:+/, "");
-        }
-        return nested;
-      }
-    }
-    const toString = (raw as { toString?: () => string }).toString;
-    if (typeof toString === "function" && toString !== Object.prototype.toString) {
-      try {
-        const result = toString.call(raw);
-        if (typeof result === "string" && result && result !== "[object Object]") {
-          return result;
-        }
-      } catch {}
-    }
+function pickMessageIdsForPurge(messages: ChatMessage[], limit: number): string[] {
+  if (!Array.isArray(messages) || messages.length === 0 || limit <= 0) return [];
+  const selected: string[] = [];
+  for (let idx = messages.length - 1; idx >= 0 && selected.length < limit; idx--) {
+    const id = resolveRecordId(messages[idx]?.id);
+    if (!id) continue;
+    selected.push(id);
   }
-  return undefined;
-}
-
-function extractLiveChange(payload: unknown): {
-  action?: string;
-  after: Record<string, unknown> | null;
-  before: Record<string, unknown> | null;
-} {
-  const containers: Record<string, unknown>[] = [];
-  const collect = (value: unknown) => {
-    if (Array.isArray(value)) {
-      value.forEach((item) => collect(item));
-      return;
-    }
-    if (isRecord(value)) {
-      containers.push(value);
-      if (value["result"] !== undefined) collect(value["result"]);
-      if (value["record"] !== undefined) collect(value["record"]);
-      if (value["data"] !== undefined) collect(value["data"]);
-    }
-  };
-  collect(payload);
-
-  let action: string | undefined;
-  if (isRecord(payload)) {
-    const rawAction = typeof payload["action"] === "string" ? payload["action"] : (typeof payload["type"] === "string" ? payload["type"] : undefined);
-    if (rawAction) action = rawAction.toLowerCase();
-  }
-
-  let before: Record<string, unknown> | null = null;
-  let after: Record<string, unknown> | null = null;
-
-  for (const container of containers) {
-    if (!before) {
-      const maybeBefore = container["before"];
-      if (isRecord(maybeBefore)) before = maybeBefore;
-    }
-    if (!after) {
-      const maybeAfter = container["after"];
-      if (isRecord(maybeAfter)) after = maybeAfter;
-    }
-    if (before && after) break;
-  }
-
-  if (!after) {
-    for (const container of containers) {
-      if (isRecord(container)) {
-        after = container;
-        break;
-      }
-    }
-  }
-
-  return { action, after, before };
+  return selected;
 }
 
 function DashboardShowroomPageInner() {
@@ -150,16 +206,18 @@ function DashboardShowroomPageInner() {
   const [channels, setChannels] = useState<ChannelPerms[]>([]);
   const [active, setActive] = useState<string>("general");
   const [activeChatType, setActiveChatType] = useState<"channel" | "dm">("channel");
-  const [activeDm, setActiveDm] = useState<{ email: string; name?: string; image?: string } | null>(null);
+  const [activeDm, setActiveDm] = useState<{ email: string; name?: string; image?: string | null } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const messageCountRef = useRef(0);
   const [showMembers, setShowMembers] = useState(false);
   const [showChannels, setShowChannels] = useState(false);
   const [showroomView, setShowroomView] = useState<ShowroomView>("showroom");
   const [forgeTab] = useState<"workspace" | "content">("workspace");
-  const [presence, setPresence] = useState<{ email?: string; name?: string; image?: string; status: string; role?: string; plan?: string }[]>([]);
-  const [dmConversations, setDmConversations] = useState<{ email: string; name?: string; image?: string }[]>([]);
-  const [me, setMe] = useState<{ email?: string; role?: string; plan?: string; name?: string } | null>(null);
+  const [presence, setPresence] = useState<PresenceEntry[]>([]);
+  const [dmConversations, setDmConversations] = useState<{ email: string; name?: string; image?: string | null }[]>([]);
+  const [me, setMe] = useState<{ email?: string | null; role?: string | null; plan?: string | null; name?: string | null } | null>(null);
+  const meEmail = me?.email ?? null;
   const [muted] = useState<{ active: boolean; reason?: string } | null>(null);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -170,6 +228,7 @@ function DashboardShowroomPageInner() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [attachmentErrorShakeKey, setAttachmentErrorShakeKey] = useState(0);
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState<Record<string, string>>({});
+  const [attachmentCanLoadDirect, setAttachmentCanLoadDirect] = useState<Record<string, boolean>>({});
   const [attachmentStatusMap, setAttachmentStatusMap] = useState<Record<string, AttachmentStatus>>({});
   const [sessionUploadKeys, setSessionUploadKeys] = useState<string[]>([]);
   const [messageAttachmentUrls, setMessageAttachmentUrls] = useState<Record<string, string>>({});
@@ -194,7 +253,7 @@ function DashboardShowroomPageInner() {
         setShowMembers(true);
       }
     } catch {}
-  }, []);
+  }, [meEmail]);
   const flagEmojis = useMemo(() => {
     const codes = [
       "AD","AE","AF","AG","AI","AL","AM","AO","AQ","AR","AS","AT","AU","AW","AX","AZ",
@@ -314,8 +373,17 @@ function DashboardShowroomPageInner() {
         ]);
         if (mounted && meRes.status === 'fulfilled') setMe({ email: meRes.value?.email, role: meRes.value?.role, plan: meRes.value?.plan, name: meRes.value?.name });
         if (mounted && channelsRes.status === 'fulfilled') setChannels((channelsRes.value.channels || []).map((x: { slug: string; name?: string; requiredReadRole?: ChannelPerms['requiredReadRole']; requiredRole?: ChannelPerms['requiredReadRole']; requiredReadPlan?: ChannelPerms['requiredReadPlan']; locked?: boolean; locked_until?: string | null })=> ({ slug: String(x.slug), name: x.name, requiredReadRole: x.requiredReadRole || x.requiredRole, requiredReadPlan: x.requiredReadPlan, locked: !!x.locked, locked_until: x.locked_until || null })));
-        if (mounted && messagesRes.status === 'fulfilled') setMessages(((messagesRes.value.messages || []) as Array<{ id?: string; text: string; userName: string; userEmail?: string; created_at?: string }>).map((mm) => ({ ...mm, status: 'sent' })));
-        if (mounted && presenceRes.status === 'fulfilled') setPresence(presenceRes.value.users || []);
+        if (mounted && messagesRes.status === 'fulfilled') setMessages(((messagesRes.value.messages || []) as Array<{ id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string }>).map((mm) => ({
+          ...mm,
+          status: 'sent',
+          userEmail: typeof mm.userEmail === 'string' ? mm.userEmail : undefined,
+        })));
+        if (mounted && presenceRes.status === 'fulfilled') {
+          const fetchedMeEmail = meRes.status === 'fulfilled' ? meRes.value?.email : null;
+          const rawUsers = Array.isArray(presenceRes.value.users) ? presenceRes.value.users : [];
+          const snapshot = normalizePresenceList(rawUsers, [], fetchedMeEmail);
+          setPresence(snapshot);
+        }
         if (mounted && convRes.status === 'fulfilled') {
           const self = String(meRes.status === 'fulfilled' ? meRes.value?.email || '' : '').toLowerCase();
           const convs = Array.isArray(convRes.value.conversations) ? convRes.value.conversations : [];
@@ -398,10 +466,17 @@ function DashboardShowroomPageInner() {
       (async () => {
         setLoading(true);
         try {
-          const m = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then(r=>r.json());
-          setMessages((m.messages || []).map((mm: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string }) => ({ ...mm, status: 'sent' })));
+        const m = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then(r=>r.json());
+        setMessages((m.messages || []).map((mm: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string }) => ({
+          ...mm,
+          status: 'sent',
+          userEmail: typeof mm.userEmail === 'string' ? mm.userEmail : undefined,
+        })));
           const pres = await fetch('/api/presence', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({users:[]}));
-          setPresence(pres.users || []);
+          setPresence(prev => {
+            const rawUsers = Array.isArray(pres.users) ? pres.users : [];
+            return normalizePresenceList(rawUsers, prev, me?.email);
+          });
           // Also refresh DM conversations so names update immediately
           try {
             const conv = await fetch('/api/chat/dm/conversations', { cache: 'no-store' }).then(r=>r.json());
@@ -440,18 +515,25 @@ function DashboardShowroomPageInner() {
     async function initSSE() {
       try {
         const snapshot = await fetch('/api/presence', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({users:[]}));
-        if (mounted) setPresence(snapshot.users || []);
+        if (mounted) {
+          setPresence(prev => {
+            const rawUsers = Array.isArray(snapshot.users) ? snapshot.users : [];
+            return normalizePresenceList(rawUsers, prev, meEmail);
+          });
+        }
       } catch {}
       es = new EventSource('/api/presence/live');
       es.onmessage = (ev) => {
         try {
           const { user } = JSON.parse(ev.data);
           if (!user?.email) return;
-          setPresence(prev => {
-            const others = prev.filter(u => u.email !== user.email);
-            const merged = { email: user.email, name: user.name, image: user.image, status: user.presence_status || 'online', role: user.role, plan: user.plan };
-            return [merged, ...others];
-          });
+          const payload = {
+            ...user,
+            rawStatus: user.rawStatus ?? user.presence_status ?? user.status,
+            status: user.status ?? user.presence_status ?? user.rawStatus,
+            updatedAt: user.updatedAt ?? user.presence_updated_at ?? user.last_seen ?? null,
+          };
+          setPresence(prev => mergePresenceUpdate(prev, payload, meEmail));
         } catch {}
       };
       es.onerror = () => {
@@ -466,7 +548,41 @@ function DashboardShowroomPageInner() {
       try { es?.close(); } catch {}
       if (beat) clearInterval(beat);
     };
-  }, []);
+  }, [meEmail]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const snapshot = await fetch('/api/presence', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ users: [] }));
+        if (!cancelled) {
+          const rawUsers = Array.isArray(snapshot.users) ? snapshot.users : [];
+          setPresence(prev => normalizePresenceList(rawUsers, prev, meEmail));
+        }
+      } catch {}
+    };
+    const onPresenceUpdated = () => {
+      refresh();
+    };
+    const onPresenceUpdatedLocal = (event: Event) => {
+      const detail = (event as CustomEvent<{ email?: string; status?: string; updatedAt?: string; source?: string }>).detail;
+      if (!detail?.email || !detail.status) return;
+      const payload = {
+        email: detail.email,
+        status: detail.status,
+        rawStatus: detail.status,
+        updatedAt: detail.updatedAt ?? new Date().toISOString(),
+      };
+      setPresence(prev => mergePresenceUpdate(prev, payload, meEmail));
+    };
+    window.addEventListener('presence-updated', onPresenceUpdated as EventListener);
+    window.addEventListener('presence-updated-local', onPresenceUpdatedLocal as EventListener);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('presence-updated', onPresenceUpdated as EventListener);
+      window.removeEventListener('presence-updated-local', onPresenceUpdatedLocal as EventListener);
+    };
+  }, [meEmail]);
 
   function tempId() {
     try { return crypto.randomUUID() } catch { return `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}` }
@@ -657,7 +773,7 @@ function DashboardShowroomPageInner() {
         return prev.map(m => m.tempId === tid ? { ...m, status: 'pending' } : m);
       }
       const display = (me?.name && !/@/.test(String(me.name))) ? me.name : (me?.email || 'You');
-      return [...prev, { tempId: tid, text: displayText, userName: display, status: 'pending', userEmail: me?.email, attachments: attachments?.map((a) => a.key) }];
+      return [...prev, { tempId: tid, text: displayText, userName: display, status: 'pending', userEmail: me?.email || undefined, attachments: attachments?.map((a) => a.key) }];
     });
 
     try {
@@ -666,14 +782,30 @@ function DashboardShowroomPageInner() {
         if (attachments?.length) payload.attachments = attachments.map((a) => a.key);
         if (trimmed.length) payload.text = trimmed;
         const r = await fetch('/api/chat/dm/messages', { method:'POST', body: JSON.stringify(payload) }).then(r=>r.json());
-        setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, id: r.message?.id?.id?.toString?.() || r.message?.id || m.id, text: r.message?.text || displayText, userName: r.message?.userName || m.userName, created_at: r.message?.created_at, status: 'sent', attachments: Array.isArray(r.message?.attachments) ? r.message.attachments : m.attachments } : m));
-        setDmConversations(prev => prev.some(c => c.email === activeDm.email) ? prev : [{ email: activeDm.email, name: activeDm.name || activeDm.email, image: activeDm.image }, ...prev]);
+        setMessages(prev => prev.map(m => m.tempId === tid ? {
+          ...m,
+          id: resolveRecordId(r.message?.id) || m.id,
+          text: r.message?.text || displayText,
+          userName: r.message?.userName || m.userName,
+          created_at: r.message?.created_at,
+          status: 'sent',
+          attachments: Array.isArray(r.message?.attachments) ? r.message.attachments : m.attachments,
+        } : m));
+        setDmConversations(prev => prev.some(c => c.email === activeDm.email) ? prev : [{ email: activeDm.email, name: activeDm.name || activeDm.email, image: activeDm.image ?? null }, ...prev]);
       } else {
         const payload: Record<string, unknown> = { channel: active };
         if (attachments?.length) payload.attachments = attachments.map((a) => a.key);
         if (trimmed.length) payload.text = trimmed;
         const r = await fetch('/api/chat/messages', { method:'POST', body: JSON.stringify(payload) }).then(r=>r.json());
-        setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, id: r.message?.id?.id?.toString?.() || r.message?.id || m.id, text: r.message?.text || displayText, userName: r.message?.userName || m.userName, created_at: r.message?.created_at, status: 'sent', attachments: Array.isArray(r.message?.attachments) ? r.message.attachments : m.attachments } : m));
+        setMessages(prev => prev.map(m => m.tempId === tid ? {
+          ...m,
+          id: resolveRecordId(r.message?.id) || m.id,
+          text: r.message?.text || displayText,
+          userName: r.message?.userName || m.userName,
+          created_at: r.message?.created_at,
+          status: 'sent',
+          attachments: Array.isArray(r.message?.attachments) ? r.message.attachments : m.attachments,
+        } : m));
       }
     } catch {
       setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, status: 'failed' } : m));
@@ -695,95 +827,163 @@ function DashboardShowroomPageInner() {
 
   // Subscribe to live updates for active chat (channel or DM)
   useEffect(() => {
+    messageCountRef.current = messages.length;
+  }, [messages.length]);
+
+  useEffect(() => {
     if (showroomView !== 'showroom') return;
     let es: EventSource | null = null;
     // Only fetch snapshot here if we don't already have messages for the active target
-    const needSnapshot = messages.length === 0;
+    const needSnapshot = messageCountRef.current === 0;
     if (needSnapshot) setChatLoading(true);
-    (async () => {
+    let disposed = false;
+    async function initStream() {
+      if (disposed) return;
       if (activeChatType === 'dm' && activeDm?.email) {
         if (needSnapshot) {
-        const m: { messages?: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(activeDm.email)}`).then(r=>r.json());
-        setMessages((m.messages || []).map((mm) => ({ ...mm, status: 'sent' })));
+        const m: { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(activeDm.email)}`).then(r=>r.json());
+        setMessages((m.messages || []).map((mm) => ({
+          ...mm,
+          status: 'sent',
+          userEmail: typeof mm.userEmail === 'string' ? mm.userEmail : undefined,
+        })));
         setChatLoading(false);
         }
         es = new EventSource(`/api/chat/dm/live?user=${encodeURIComponent(activeDm.email)}`);
         es.onmessage = (ev) => {
           try {
             const data = JSON.parse(ev.data);
-            const { action, after, before } = extractLiveChange(data);
-            const row = isRecord(after) ? after : (isRecord(data?.result) ? data.result : (isRecord(data?.record) ? data.record : (isRecord(data) ? data : null)));
-
-            if (action === 'delete') {
-              const id = resolveRecordId(before?.id ?? row?.id);
+            const action = typeof data?.action === 'string' ? data.action.toLowerCase() : 'update';
+            const before = isRecord(data?.before) ? data.before : null;
+            const after = isRecord(data?.after) ? data.after : null;
+          if (action === 'delete') {
+            const id = resolveRecordId(before?.id ?? after?.id);
               if (!id) return;
               setMessages((prev) => prev.filter((m) => m.id !== id));
               return;
             }
-
-            const rawText: string = typeof row?.text === 'string' ? row.text : '';
-            let userName: string | undefined = typeof row?.senderName === 'string' ? row.senderName : undefined;
+            const rawFallback = data?.raw;
+            let row = after ?? (isRecord(rawFallback) ? rawFallback : null);
+            if (!isRecord(row) && Array.isArray(rawFallback?.result)) {
+              const first = rawFallback.result.find((item: unknown) => isRecord(item));
+              if (isRecord(first)) row = first;
+            }
+            if (!isRecord(row) && isRecord(after) && Array.isArray(after.result)) {
+              const firstAfter = after.result.find((item: unknown) => isRecord(item));
+              if (isRecord(firstAfter)) row = firstAfter;
+            }
+            if (!isRecord(row)) return;
+            if (!isRecord(row)) return;
+            const rawText: string = typeof row.text === 'string' ? row.text : '';
+            let userName: string | undefined = typeof row.senderName === 'string' ? row.senderName : undefined;
             if (!userName || /@/.test(String(userName))) userName = 'Member';
-            if (typeof row?.senderEmail === 'string' && blocked.includes(row.senderEmail)) return;
-            const attachments = Array.isArray(row?.attachments)
-              ? (row.attachments as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 6)
+            if (typeof row.senderEmail === 'string' && blocked.includes(row.senderEmail)) return;
+            const attachments = Array.isArray(row.attachments)
+              ? row.attachments.filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 6)
               : [];
             const hasVisibleText = rawText.replace(/\u200B/g, '').trim().length > 0;
             if (!hasVisibleText && attachments.length === 0) return;
-            const id = resolveRecordId(row?.id);
+            const id = resolveRecordId(row.id);
+            const normalizedEmail = typeof row.senderEmail === 'string' ? row.senderEmail.toLowerCase() : undefined;
             const message = {
               text: rawText,
               userName,
-              userEmail: typeof row?.senderEmail === 'string' ? row.senderEmail : undefined,
+              userEmail: typeof row.senderEmail === 'string' ? row.senderEmail : undefined,
               status: 'sent' as const,
-              created_at: typeof row?.created_at === 'string' ? row.created_at : undefined,
+              created_at: typeof row.created_at === 'string' ? row.created_at : undefined,
               id,
               attachments,
             } satisfies ChatMessage;
             setMessages((prev) => {
+              const next = [...prev];
+              const findPendingIndex = () => {
+                if (!normalizedEmail) return -1;
+                const attachmentsKey = attachments.join('\u0000');
+                return next.findIndex((m) => {
+                  if (m.id) return false;
+                  if (m.status === 'sent') return false;
+                  if ((m.userEmail || '').toLowerCase() !== normalizedEmail) return false;
+                  if ((m.text || '') !== rawText) return false;
+                  const prevAttachments = Array.isArray(m.attachments) ? m.attachments : [];
+                  if (prevAttachments.length !== attachments.length) return false;
+                  if (prevAttachments.join('\u0000') !== attachmentsKey) return false;
+                  return true;
+                });
+              };
+
+              const pendingIndex = findPendingIndex();
+              if (pendingIndex !== -1) {
+                next[pendingIndex] = { ...next[pendingIndex], ...message };
+                return next;
+              }
+
               if (id) {
-                const existingIndex = prev.findIndex((m) => m.id === id);
+                const existingIndex = next.findIndex((m) => m.id === id);
                 if (existingIndex !== -1) {
-                  const next = [...prev];
                   next[existingIndex] = { ...next[existingIndex], ...message };
                   return next;
                 }
               }
-              return [...prev, message];
+              next.push(message);
+              return next;
             });
           } catch {}
         };
-        es.onerror = () => { try { es?.close(); } catch {}; };
+        es.onerror = () => {
+          try { es?.close(); } catch {};
+          es = null;
+          if (!disposed) {
+            setTimeout(() => { initStream().catch(() => {}); }, 3000);
+          }
+        };
       } else {
         if (needSnapshot) {
-        const m: { messages?: { id?: string; text: string; userName: string; userEmail?: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then(r=>r.json());
-        setMessages((m.messages || []).map((mm) => ({ ...mm, status: 'sent' })));
+        const m = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+        setMessages((m.messages || []).map((mm) => ({
+          ...mm,
+          status: 'sent',
+          userEmail: typeof mm.userEmail === 'string' ? mm.userEmail : undefined,
+        })));
         setChatLoading(false);
         }
         es = new EventSource(`/api/chat/live?channel=${encodeURIComponent(active)}`);
         es.onmessage = (ev) => {
           try {
             const data = JSON.parse(ev.data);
-            const { action, after, before } = extractLiveChange(data);
-            const row = isRecord(after) ? after : (isRecord(data?.result) ? data.result : (isRecord(data?.record) ? data.record : (isRecord(data) ? data : null)));
+            const action = typeof data?.action === 'string' ? data.action.toLowerCase() : 'update';
+            const before = isRecord(data?.before) ? data.before : null;
+            const after = isRecord(data?.after) ? data.after : null;
 
             if (action === 'delete') {
-              const id = resolveRecordId(before?.id ?? row?.id);
+              const id = resolveRecordId(before?.id ?? after?.id);
               if (!id) return;
               setMessages((prev) => prev.filter((m) => m.id !== id));
               return;
             }
 
-            const rawText: string = typeof row?.text === 'string' ? row.text : '';
-            let userName: string | undefined = typeof row?.userName === 'string' ? row.userName : undefined;
+            const rawFallback = data?.raw;
+            let row = after ?? (isRecord(rawFallback) ? rawFallback : null);
+            if (!isRecord(row) && Array.isArray(rawFallback?.result)) {
+              const first = rawFallback.result.find((item: unknown) => isRecord(item));
+              if (isRecord(first)) row = first;
+            }
+            if (!isRecord(row) && isRecord(after) && Array.isArray(after.result)) {
+              const firstAfter = after.result.find((item: unknown) => isRecord(item));
+              if (isRecord(firstAfter)) row = firstAfter;
+            }
+            if (!isRecord(row)) return;
+
+            const rawText: string = typeof row.text === 'string' ? row.text : '';
+            let userName: string | undefined = typeof row.userName === 'string' ? row.userName : undefined;
             if (!userName || /@/.test(String(userName))) userName = 'Member';
-            if (typeof row?.userEmail === 'string' && blocked.includes(row.userEmail)) return;
-            const attachments = Array.isArray(row?.attachments)
-              ? (row.attachments as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 6)
+            if (typeof row.userEmail === 'string' && blocked.includes(row.userEmail)) return;
+            const attachments = Array.isArray(row.attachments)
+              ? row.attachments.filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 6)
               : [];
             const hasVisibleText = rawText.replace(/\u200B/g, '').trim().length > 0;
             if (!hasVisibleText && attachments.length === 0) return;
-            const id = resolveRecordId(row?.id);
+            const id = resolveRecordId(row.id);
+            const normalizedEmail = typeof row?.userEmail === 'string' ? row.userEmail.toLowerCase() : undefined;
             const message = {
               text: rawText,
               userName,
@@ -794,23 +994,50 @@ function DashboardShowroomPageInner() {
               attachments,
             } satisfies ChatMessage;
             setMessages((prev) => {
+              const next = [...prev];
+              const attachmentsKey = attachments.join('\u0000');
+              const pendingIndex = normalizedEmail ? next.findIndex((m) => {
+                if (m.id) return false;
+                if (m.status === 'sent') return false;
+                if ((m.userEmail || '').toLowerCase() !== normalizedEmail) return false;
+                if ((m.text || '') !== rawText) return false;
+                const prevAttachments = Array.isArray(m.attachments) ? m.attachments : [];
+                if (prevAttachments.length !== attachments.length) return false;
+                return prevAttachments.join('\u0000') === attachmentsKey;
+              }) : -1;
+
+              if (pendingIndex !== -1) {
+                next[pendingIndex] = { ...next[pendingIndex], ...message };
+                return next;
+              }
+
               if (id) {
-                const existingIndex = prev.findIndex((m) => m.id === id);
+                const existingIndex = next.findIndex((m) => m.id === id);
                 if (existingIndex !== -1) {
-                  const next = [...prev];
                   next[existingIndex] = { ...next[existingIndex], ...message };
                   return next;
                 }
               }
-              return [...prev, message];
+              next.push(message);
+              return next;
             });
           } catch {}
         };
-        es.onerror = () => { try { es?.close(); } catch {}; };
+        es.onerror = () => {
+          try { es?.close(); } catch {};
+          es = null;
+          if (!disposed) {
+            setTimeout(() => { initStream().catch(() => {}); }, 3000);
+          }
+        };
       }
-    })();
-    return () => { try { es?.close(); } catch {}; };
-  }, [active, activeChatType, activeDm?.email, showroomView, blocked, messages.length]);
+    }
+    initStream().catch(() => {});
+    return () => {
+      disposed = true;
+      try { es?.close(); } catch {};
+    };
+  }, [active, activeChatType, activeDm?.email, showroomView, blocked]);
 
   function canAccessByRole(userRole?: 'user' | 'staff' | 'admin', required?: 'user' | 'staff' | 'admin') {
     if (!required) return true;
@@ -1007,7 +1234,8 @@ function DashboardShowroomPageInner() {
         }
       }
     }
-    const missing = Array.from(keys).filter((key) => !messageAttachmentUrls[key] && !attachmentPreviewMap[key]);
+    const shouldPrefetch = (key: string) => !messageAttachmentUrls[key] && !attachmentPreviewMap[key] && attachmentCanLoadDirect[key] !== true;
+    const missing = Array.from(keys).filter((key) => shouldPrefetch(key));
     if (missing.length === 0) return;
     let cancelled = false;
     (async () => {
@@ -1024,7 +1252,7 @@ function DashboardShowroomPageInner() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [messages, messageAttachmentUrls, attachmentPreviewMap]);
+  }, [messages, messageAttachmentUrls, attachmentPreviewMap, attachmentCanLoadDirect]);
 
   const handleSendAttachments = useCallback(async () => {
     if (!pendingAttachments.length) return;
@@ -1094,8 +1322,12 @@ function DashboardShowroomPageInner() {
                   if (c.slug === 'request-a-feature') {
                     setMessages([]);
                   } else {
-                    const m: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/messages?channel=${c.slug}`).then(r=>r.json());
-                    setMessages((m.messages||[]).map((mm)=>({...mm,status:'sent'})));
+                    const m = await fetch(`/api/chat/messages?channel=${c.slug}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[]; image?: string | null }[] };
+                    setMessages((m.messages||[]).map((mm)=>({
+                      ...mm,
+                      status: 'sent',
+                      userEmail: typeof mm.userEmail === 'string' ? mm.userEmail : undefined,
+                    })));
                   }
                   setChatLoading(false);
                 }} className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${showroomView==='showroom' && activeChatType==='channel' && active===c.slug ? `bg-white/10 ${c.slug==='pro' ? 'ring-1 ring-[#ff6a00]/40' : ''}` : `hover:bg-white/5 ${c.slug==='pro' ? 'ring-1 ring-transparent hover:ring-[#ff6a00]/30' : ''}`}`}>
@@ -1147,7 +1379,7 @@ function DashboardShowroomPageInner() {
                     </div>
                   </ContextMenuTrigger>
                   <UserContextMenu
-                    meEmail={me?.email}
+                    meEmail={me?.email ?? undefined}
                     email={u.email}
                     name={u.name || u.email}
                     activeChannel={active}
@@ -1158,13 +1390,17 @@ function DashboardShowroomPageInner() {
                       userPlan={p?.plan}
                     onStartDm={async (email, name) => {
                   setActiveChatType('dm');
-                      setActiveDm({ email, name, image: u.image });
+                      setActiveDm({ email, name, image: u.image ?? null });
                   setShowroomView('showroom');
                   router.push('/dashboard/showroom');
                   closeChannelsIfMobile();
                   setChatLoading(true);
-                      const m: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
-                  setMessages((m.messages||[]).map((mm)=>({...mm,status:'sent'})));
+                      const messagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                  setMessages((messagesResponse.messages||[]).map((mm)=>({
+                    ...mm,
+                    status: 'sent',
+                    userEmail: typeof mm.userEmail === 'string' ? mm.userEmail : undefined,
+                  })));
                   setChatLoading(false);
                       // Unhide if previously hidden
                       try { await fetch('/api/chat/dm/hidden', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherEmail: email }) }); } catch {}
@@ -1243,31 +1479,58 @@ function DashboardShowroomPageInner() {
                       if (confirmOpen?.type === 'purge') {
                         const count = confirmOpen.count;
                         setConfirmOpen(null);
-                        // optimistic remove while server processes request
-                        setMessages((prev) => {
-                          if (!prev.length) return prev;
-                          const toRemove = Math.min(count, prev.length);
-                          if (toRemove <= 0) return prev;
-                          return prev.slice(0, prev.length - toRemove);
-                        });
-                        setChatLoading(true);
-                        let ok = false;
+                        const ids = pickMessageIdsForPurge(messages, count);
+                        if (!ids.length) {
+                          toast.error('No messages to purge.');
+                          return;
+                        }
+                        const optimisticIds = new Set(ids);
+                        const snapshotBefore = messages;
+                        setMessages((prev) => prev.filter((msg) => {
+                          const rid = resolveRecordId(msg.id);
+                          return !(rid && optimisticIds.has(rid));
+                        }));
+
                         try {
                           const res = await fetch('/api/admin/showroom/purge', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ channel: active, limit: count }),
+                            body: JSON.stringify({ channel: active, limit: count, ids }),
                           });
-                          ok = res.ok;
-                        } catch {}
-                        try {
-                          const snapshot: { messages?: ChatMessage[] } = await fetch(`/api/chat/messages?channel=${encodeURIComponent(active)}`).then((r) => r.json());
-                          setMessages((snapshot.messages || []).map((mm) => ({ ...mm, status: 'sent' })));
-                        } catch {}
-                        if (!ok) {
+                          if (!res.ok) {
+                            const info = await res.json().catch(() => ({} as Record<string, unknown>));
+                            const purgedIds = new Set<string>(
+                              Array.isArray(info?.purgedIds) ? info.purgedIds.filter((v: unknown): v is string => typeof v === 'string') : []
+                            );
+                            setMessages((prev) => {
+                              const restored = [...prev];
+                              for (const msg of snapshotBefore) {
+                                const rid = resolveRecordId(msg.id);
+                                if (!rid) continue;
+                                if (optimisticIds.has(rid) && !purgedIds.has(rid)) {
+                                  if (!restored.some((existing) => resolveRecordId(existing.id) === rid)) {
+                                    restored.push({ ...msg, status: 'sent' });
+                                  }
+                                }
+                              }
+                              return restored;
+                            });
+                            toast.error('Failed to purge messages.');
+                          }
+                        } catch {
+                          setMessages((prev) => {
+                            const restored = [...prev];
+                            for (const msg of snapshotBefore) {
+                              const rid = resolveRecordId(msg.id);
+                              if (!rid) continue;
+                              if (optimisticIds.has(rid) && !restored.some((existing) => resolveRecordId(existing.id) === rid)) {
+                                restored.push({ ...msg, status: 'sent' });
+                              }
+                            }
+                            return restored;
+                          });
                           toast.error('Failed to purge messages.');
                         }
-                        setChatLoading(false);
                       }
                     }}>Confirm</AlertDialogAction>
                   </AlertDialogFooter>
@@ -1336,27 +1599,33 @@ function DashboardShowroomPageInner() {
                             <ul className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
                               {attachments.map((key) => {
                                 const status = attachmentStatusMap[key];
-                                const resolved = messageAttachmentUrls[key] || attachmentPreviewMap[key] || `${R2_PUBLIC_BASE}/${key}`;
+                                const fallbackUrl = `${R2_PUBLIC_BASE}/${key}`;
+                                const resolved = messageAttachmentUrls[key] || attachmentPreviewMap[key] || fallbackUrl;
+                                const canDirect = attachmentCanLoadDirect[key];
+                                const isOptimistic = status === 'pending' || (!m.id && (!messageAttachmentUrls[key] || canDirect));
+                                const safeKey = isOptimistic ? `${m.tempId || 'optimistic'}-${key}` : key;
                                 return (
                                   <li
-                                    key={`${m.id || m.tempId}-${key}`}
+                                    key={`${m.id || m.tempId}-${safeKey}`}
                                     className={`relative overflow-hidden rounded border border-[color:var(--border)]/60 ${status ? 'bg-black/40 grayscale opacity-70' : 'bg-black/20'}`}
                                     style={getAspectStyle(key)}
                                   >
-                                    {resolved ? (
-                                      <Image
-                                        src={resolved}
-                                        alt="Attachment"
-                                        fill
-                                        className="object-contain"
-                                        sizes="160px"
-                                        onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
-                                      />
-                                    ) : (
-                                      <div className="flex h-full w-full items-center justify-center text-white/60">
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      </div>
-                                    )}
+                                    <Image
+                                      src={resolved}
+                                      alt="Attachment"
+                                      fill
+                                      className="object-contain"
+                                      sizes="160px"
+                                      loading="lazy"
+                                      decoding="async"
+                                      onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
+                                      onError={() => {
+                                        setAttachmentCanLoadDirect((prev) => {
+                                          if (prev[key]) return prev;
+                                          return { ...prev, [key]: true };
+                                        });
+                                      }}
+                                    />
                                     {status ? (
                                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/40 text-white/70">
                                         <Loader2 className="h-5 w-5 animate-spin" />
@@ -1381,7 +1650,7 @@ function DashboardShowroomPageInner() {
                       </ContextMenuTrigger>
                       {m.userEmail ? (
                         <UserContextMenu
-                          meEmail={me?.email}
+                          meEmail={me?.email ?? undefined}
                           email={m.userEmail}
                           name={m.userName}
                           activeChannel={active}
@@ -1392,15 +1661,19 @@ function DashboardShowroomPageInner() {
                           userPlan={p?.plan}
                           onStartDm={async (email, name) => {
                             setActiveChatType('dm');
-                            setActiveDm({ email, name, image: undefined });
+                            setActiveDm({ email, name, image: null });
                             setShowroomView('showroom');
                             router.push('/dashboard/showroom');
                             closeChannelsIfMobile();
                             setChatLoading(true);
-                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
-                            setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
+                        const dmMessagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                        setMessages((dmMessagesResponse.messages||[]).map((x)=>({
+                          ...x,
+                          status: 'sent',
+                          userEmail: typeof x.userEmail === 'string' ? x.userEmail : undefined,
+                        })));
                             setChatLoading(false);
-                            setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: undefined }, ...prev]);
+                            setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: null }, ...prev]);
                           }}
                         />
                       ) : null}
@@ -1556,7 +1829,7 @@ function DashboardShowroomPageInner() {
                       </ContextMenuTrigger>
                       {u.email ? (
                         <UserContextMenu
-                          meEmail={me?.email}
+                          meEmail={me?.email ?? undefined}
                           email={u.email}
                           name={u.name}
                           activeChannel={active}
@@ -1567,13 +1840,17 @@ function DashboardShowroomPageInner() {
                           userPlan={u.plan}
                           onStartDm={async (email, name) => {
                           setActiveChatType('dm');
-                            setActiveDm({ email, name, image: u.image });
+                            setActiveDm({ email, name, image: u.image ?? null });
                           setShowroomView('showroom');
                           router.push('/dashboard/showroom');
                           closeChannelsIfMobile();
                           setChatLoading(true);
-                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
-                            setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
+                            const dmMessagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                            setMessages((dmMessagesResponse.messages||[]).map((x)=>({
+                              ...x,
+                              status: 'sent',
+                              userEmail: typeof x.userEmail === 'string' ? x.userEmail : undefined,
+                            })));
                           setChatLoading(false);
                             setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
                           }}
@@ -1605,7 +1882,7 @@ function DashboardShowroomPageInner() {
                       </ContextMenuTrigger>
                       {u.email ? (
                           <UserContextMenu
-                            meEmail={me?.email}
+                            meEmail={me?.email ?? undefined}
                             email={u.email}
                             name={u.name}
                             activeChannel={active}
@@ -1616,13 +1893,17 @@ function DashboardShowroomPageInner() {
                             userPlan={u.plan}
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
-                              setActiveDm({ email, name, image: u.image });
+                              setActiveDm({ email, name, image: u.image ?? null });
                               setShowroomView('showroom');
                               router.push('/dashboard/showroom');
                               closeChannelsIfMobile();
                               setChatLoading(true);
-                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
-                              setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
+                            const dmMessagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                            setMessages((dmMessagesResponse.messages||[]).map((x)=>({
+                              ...x,
+                              status: 'sent',
+                              userEmail: typeof x.userEmail === 'string' ? x.userEmail : undefined,
+                            })));
                               setChatLoading(false);
                               setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
                             }}
@@ -1654,7 +1935,7 @@ function DashboardShowroomPageInner() {
                         </ContextMenuTrigger>
                         {u.email ? (
                           <UserContextMenu
-                            meEmail={me?.email}
+                            meEmail={me?.email ?? undefined}
                             email={u.email}
                             name={u.name}
                             activeChannel={active}
@@ -1665,14 +1946,18 @@ function DashboardShowroomPageInner() {
                             userPlan={u.plan}
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
-                              setActiveDm({ email, name, image: u.image });
+                              setActiveDm({ email, name, image: u.image ?? null });
                               setShowroomView('showroom');
                               router.push('/dashboard/showroom');
                               setChatLoading(true);
-                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
-                              setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
+                            const dmMessagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                            setMessages((dmMessagesResponse.messages||[]).map((x)=>({
+                              ...x,
+                              status: 'sent',
+                              userEmail: typeof x.userEmail === 'string' ? x.userEmail : undefined,
+                            })));
                               setChatLoading(false);
-                              setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
+                              setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image ?? null }, ...prev]);
                             }}
                           />
                       ) : null}
@@ -1716,7 +2001,7 @@ function DashboardShowroomPageInner() {
                       </ContextMenuTrigger>
                       {u.email ? (
                         <UserContextMenu
-                          meEmail={me?.email}
+                          meEmail={me?.email ?? undefined}
                           email={u.email}
                           name={u.name}
                           activeChannel={active}
@@ -1727,13 +2012,17 @@ function DashboardShowroomPageInner() {
                           userPlan={u.plan}
                           onStartDm={async (email, name) => {
                           setActiveChatType('dm');
-                            setActiveDm({ email, name, image: u.image });
+                            setActiveDm({ email, name, image: u.image ?? null });
                           setShowroomView('showroom');
                           router.push('/dashboard/showroom');
                           closeChannelsIfMobile();
                           setChatLoading(true);
-                            const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string; attachments?: string[] }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
-                            setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
+                            const dmMessagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                            setMessages((dmMessagesResponse.messages||[]).map((x)=>({
+                              ...x,
+                              status: 'sent',
+                              userEmail: typeof x.userEmail === 'string' ? x.userEmail : undefined,
+                            })));
                           setChatLoading(false);
                             setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
                           }}
@@ -1765,7 +2054,7 @@ function DashboardShowroomPageInner() {
                       </ContextMenuTrigger>
                       {u.email ? (
                           <UserContextMenu
-                            meEmail={me?.email}
+                            meEmail={me?.email ?? undefined}
                             email={u.email}
                             name={u.name}
                             activeChannel={active}
@@ -1776,12 +2065,16 @@ function DashboardShowroomPageInner() {
                             userPlan={u.plan}
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
-                              setActiveDm({ email, name, image: u.image });
+                            setActiveDm({ email, name, image: u.image ?? null });
                               setShowroomView('showroom');
                               router.push('/dashboard/showroom');
                               setChatLoading(true);
-                              const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
-                              setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
+                              const dmMessagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                              setMessages((dmMessagesResponse.messages||[]).map((x)=>({
+                                ...x,
+                                status: 'sent',
+                                userEmail: typeof x.userEmail === 'string' ? x.userEmail : undefined,
+                              })));
                               setChatLoading(false);
                               setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
                             }}
@@ -1813,7 +2106,7 @@ function DashboardShowroomPageInner() {
                         </ContextMenuTrigger>
                         {u.email ? (
                           <UserContextMenu
-                            meEmail={me?.email}
+                            meEmail={me?.email ?? undefined}
                             email={u.email}
                             name={u.name}
                             activeChannel={active}
@@ -1824,12 +2117,16 @@ function DashboardShowroomPageInner() {
                             userPlan={u.plan}
                             onStartDm={async (email, name) => {
                               setActiveChatType('dm');
-                              setActiveDm({ email, name, image: u.image });
+                            setActiveDm({ email, name, image: u.image ?? null });
                               setShowroomView('showroom');
                               router.push('/dashboard/showroom');
                               setChatLoading(true);
-                              const mm: { messages?: { id?: string; text: string; userName: string; created_at?: string }[] } = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json());
-                              setMessages((mm.messages||[]).map((x)=>({...x,status:'sent'})));
+                              const dmMessagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                              setMessages((dmMessagesResponse.messages||[]).map((x)=>({
+                                ...x,
+                                status: 'sent',
+                                userEmail: typeof x.userEmail === 'string' ? x.userEmail : undefined,
+                              })));
                               setChatLoading(false);
                               setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
                             }}

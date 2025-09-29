@@ -1,6 +1,28 @@
 import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
-import { Uuid } from "surrealdb";
+import { RecordId, Uuid } from "surrealdb";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function unwrapLiveResult(candidate: unknown): Record<string, unknown> | null {
+  if (!isRecord(candidate)) return null;
+  if (isRecord(candidate.after)) return unwrapLiveResult(candidate.after);
+  if (isRecord(candidate.data)) return unwrapLiveResult(candidate.data);
+  return candidate;
+}
+
+function toIsoOrNull(value: unknown): string | null {
+  if (typeof value === "string" && value.length) return value;
+  return null;
+}
+
+function toMaybeString(value: unknown): string | undefined {
+  if (value instanceof RecordId) return value.toString();
+  if (typeof value === "string" && value.length) return value;
+  return undefined;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -21,20 +43,41 @@ export async function GET(request: Request) {
           liveId = null;
         }
         if (!liveId) throw new Error("live id parse failed");
-        await db.subscribeLive(liveId, (...args: unknown[]) => {
+        await db.subscribeLive(liveId, (first: unknown, second?: unknown) => {
           try {
-            const ev = (args?.[0] ?? {}) as Record<string, unknown>;
-            const action = (typeof ev.action === 'string' ? ev.action : (typeof ev.type === 'string' ? ev.type : 'update')) as string;
-            const raw = (ev as { result?: unknown; record?: unknown }).result ?? (ev as { record?: unknown }).record ?? ev;
-            let user: unknown = raw;
-            try {
-              const maybeEmail = (raw as { email?: unknown } | undefined)?.email;
-              if (!maybeEmail) {
-                user = (raw as { after?: unknown } | undefined)?.after ?? (raw as { data?: unknown } | undefined)?.data ?? raw;
-              }
-            } catch {}
-            const u = user as Record<string, unknown> | undefined;
-            const payload = { op: String(action).toLowerCase(), user: { email: u?.email as string | undefined, name: u?.name as string | undefined, image: u?.image as string | undefined, presence_status: u?.presence_status as string | undefined, role: u?.role as string | undefined, plan: u?.plan as string | undefined } };
+            let actionRaw: string | undefined;
+            let resultRaw: unknown = undefined;
+
+            if (typeof first === "string") {
+              actionRaw = first;
+              resultRaw = second;
+            } else if (isRecord(first)) {
+              actionRaw = typeof first.action === "string" ? first.action : (typeof first.type === "string" ? first.type : undefined);
+              resultRaw = first.result ?? first.record ?? first.after ?? first.data ?? second;
+            } else {
+              resultRaw = second ?? first;
+            }
+
+            const action = (actionRaw ?? "update").toLowerCase();
+            if (action === "close") return;
+
+            const userRecord = unwrapLiveResult(resultRaw);
+            if (!userRecord) return;
+
+            const payload = {
+              op: action,
+              user: {
+                email: toMaybeString(userRecord.email),
+                name: toMaybeString(userRecord.name),
+                image: toMaybeString(userRecord.image),
+                presence_status: toMaybeString(userRecord.presence_status),
+                presence_updated_at: toIsoOrNull(userRecord.presence_updated_at),
+                last_seen: toIsoOrNull(userRecord.last_seen),
+                role: toMaybeString(userRecord.role),
+                plan: toMaybeString(userRecord.plan),
+              },
+            };
+
             controller.enqueue(te.encode(`data: ${JSON.stringify(payload)}\n\n`));
           } catch {}
         });

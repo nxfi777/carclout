@@ -102,7 +102,7 @@ export async function POST(req: Request) {
       client_reference_id: userIdString || undefined,
       metadata: { plan: key, userId: userIdString, userEmail: email },
       subscription_data: { metadata: { plan: key, userId: userIdString, userEmail: email } },
-      success_url: `${origin}/dashboard/home?welcome=1`,
+        success_url: `${origin}/dashboard/templates?welcome=1`,
       cancel_url: `${origin}/plan?canceled=1`,
       allow_promotion_codes: true,
     });

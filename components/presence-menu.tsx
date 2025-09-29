@@ -42,7 +42,7 @@ export default function PresenceMenu({ email, variant = "button" }: { email: str
     setStatus(next); // optimistic
     try {
       // notify local listeners immediately for optimistic sidebar updates
-      window.dispatchEvent(new CustomEvent("presence-updated-local", { detail: { email, status: next } }));
+      window.dispatchEvent(new CustomEvent("presence-updated-local", { detail: { email, status: next, updatedAt: new Date().toISOString(), source: "manual" } }));
     } catch {}
     setLoading(true);
     try {
@@ -52,7 +52,7 @@ export default function PresenceMenu({ email, variant = "button" }: { email: str
       // revert on failure
       setStatus(prev);
       try {
-        window.dispatchEvent(new CustomEvent("presence-updated-local", { detail: { email, status: prev } }));
+        window.dispatchEvent(new CustomEvent("presence-updated-local", { detail: { email, status: prev, updatedAt: new Date().toISOString(), source: "manual" } }));
       } catch {}
     } finally {
       setLoading(false);

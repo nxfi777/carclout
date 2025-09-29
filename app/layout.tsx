@@ -50,7 +50,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="en">
       <body className={`${roboto.className} ${roboto.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh min-h-[100svh] bg-background text-foreground overflow-x-hidden`}>
-        <SessionProviderWrapper>
+        <SessionProviderWrapper session={session}>
           <UmamiTracker session={session} />
           <HeaderGate>
             <SiteHeader />

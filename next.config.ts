@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: [
+    "https://dev.nytforge.com",
+    "https://dev.nytforge.com:443",
+    "http://dev.nytforge.com",
+    "http://dev.nytforge.com:3000",
+    "https://dev.nytforge.com:3000",
+  ],
   images: {
     // Allow optimized remote images from R2 signed URLs
     remotePatterns: [

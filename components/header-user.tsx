@@ -79,35 +79,37 @@ export default function HeaderUser({
   return (
     <>
       <DropdownMenu open={open} onOpenChange={setOpen}>
-        <DropdownMenuTrigger asChild>
-          <div className="flex items-center gap-2 cursor-pointer">
-            <div className="hidden md:block text-sm text-left">
-              <div className="leading-none">{currentName || email}</div>
-              <div className="text-muted-foreground flex items-center gap-2">
-                <span>{plan ? String(plan).toUpperCase() : "FORGELESS"}</span>
-                {level !== null && remaining !== null ? (
-                  <span className="text-xs">Lv {level} · {remaining} XP to next</span>
+        <div className="relative inline-flex items-center gap-2">
+          <DropdownMenuTrigger asChild>
+            <div className="flex items-center gap-2 cursor-pointer">
+              <div className="hidden md:block text-sm text-left">
+                <div className="leading-none">{currentName || email}</div>
+                <div className="text-muted-foreground flex items-center gap-2">
+                  <span>{plan ? String(plan).toUpperCase() : "FORGELESS"}</span>
+                  {level !== null && remaining !== null ? (
+                    <span className="text-xs">Lv {level} · {remaining} XP to next</span>
+                  ) : null}
+                </div>
+                {levelSpan !== null && xpIntoLevel !== null ? (
+                  <div className="mt-1 w-40">
+                    <Progress value={progressValue} />
+                  </div>
                 ) : null}
               </div>
-              {levelSpan !== null && xpIntoLevel !== null ? (
-                <div className="mt-1 w-40">
-                  <Progress value={progressValue} />
-                </div>
-              ) : null}
-            </div>
-            <div className="relative inline-block">
-              <Avatar className="size-10 md:size-11">
-                <AvatarImage src={currentImage || undefined} />
-                <AvatarFallback className="text-xs md:text-sm bg-[color:var(--primary)]/15 text-[color:var(--primary)]">
-                  <CarFront className="size-5 md:size-6" />
-                </AvatarFallback>
-              </Avatar>
-              <div className="absolute right-0 bottom-0 translate-x-[20%] translate-y-[20%] z-10">
-                <PresenceMenu email={email} variant="dot" />
+              <div className="inline-block">
+                <Avatar className="size-10 md:size-11">
+                  <AvatarImage src={currentImage || undefined} />
+                  <AvatarFallback className="text-xs md:text-sm bg-[color:var(--primary)]/15 text-[color:var(--primary)]">
+                    <CarFront className="size-5 md:size-6" />
+                  </AvatarFallback>
+                </Avatar>
               </div>
             </div>
+          </DropdownMenuTrigger>
+          <div className="absolute right-0 bottom-0 translate-x-[20%] translate-y-[20%] z-10 pointer-events-auto">
+            <PresenceMenu email={email} variant="dot" />
           </div>
-        </DropdownMenuTrigger>
+        </div>
         <DropdownMenuContent align="end" className="min-w-64">
           {/* Desktop credits summary inside dropdown */}
           <div className="hidden md:block px-3 pt-3 pb-2">

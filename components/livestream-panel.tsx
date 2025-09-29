@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { resolveRecordId, isRecord } from "@/lib/records";
 import {
   StreamVideoClient,
   StreamCall,
@@ -267,11 +268,53 @@ function LivestreamChat({ initialSession }: { initialSession?: string }) {
       es.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data);
-          const row = (data as { result?: unknown; record?: unknown } | Record<string, unknown>)?.result || (data as { result?: unknown; record?: unknown } | Record<string, unknown>)?.record || data;
-          if (!row?.text) return;
-          const r = row as { id?: { id?: unknown; toString?: () => string } | string; text?: string; userName?: string; userEmail?: string; created_at?: string };
-          const idVal = typeof r?.id === 'string' ? r.id : (typeof (r?.id as { toString?: () => string } | undefined)?.toString === 'function' ? (r!.id as { toString: () => string }).toString() : undefined);
-          setMessages((prev) => [...prev, { id: idVal, text: String(r.text || ''), userName: (r.userName || r.userEmail || 'user'), created_at: r.created_at }]);
+          const action = typeof data?.action === "string" ? data.action.toLowerCase() : "update";
+          const before = isRecord(data?.before) ? data.before : null;
+          const after = isRecord(data?.after) ? data.after : null;
+
+          if (action === "delete") {
+            const id = resolveRecordId(before?.id ?? after?.id);
+            if (!id) return;
+            setMessages((prev) => prev.filter((m) => m.id !== id));
+            return;
+          }
+
+          let row = after;
+          if (!row) {
+            const raw = isRecord(data?.raw) ? data.raw : null;
+            if (isRecord(raw?.after)) row = raw.after;
+            else if (isRecord(raw?.result)) row = raw.result;
+            else if (isRecord(raw?.record)) row = raw.record;
+            else if (Array.isArray(raw?.result) && isRecord(raw?.result[0])) row = raw.result[0];
+            else if (isRecord(raw)) row = raw;
+          }
+          if (!isRecord(row)) return;
+
+          const text = typeof row.text === "string" ? row.text : "";
+          const attachments = Array.isArray(row.attachments) ? row.attachments.filter((x): x is string => typeof x === "string" && x.length > 0).slice(0, 6) : [];
+          const hasVisibleText = text.replace(/\u200B/g, "").trim().length > 0;
+          if (!hasVisibleText && attachments.length === 0) return;
+
+          const id = resolveRecordId(row.id);
+          if (!id) return;
+
+          const userName = typeof row.userName === "string" && row.userName.length
+            ? row.userName
+            : typeof row.userEmail === "string"
+              ? row.userEmail
+              : "user";
+
+          setMessages((prev) => {
+            const next = [...prev];
+            const idx = next.findIndex((m) => m.id === id);
+            const base = { id, text, userName, created_at: typeof row.created_at === "string" ? row.created_at : undefined };
+            if (idx >= 0) {
+              next[idx] = { ...next[idx], ...base };
+            } else {
+              next.push(base);
+            }
+            return next;
+          });
         } catch {}
       };
       es.onerror = () => { try { es?.close(); } catch {} };

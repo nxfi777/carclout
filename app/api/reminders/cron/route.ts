@@ -5,7 +5,7 @@ import { RecordId } from "surrealdb";
 
 async function sendEmail({ to, subject, html, text }: { to: string; subject: string; html: string; text: string }) {
   const apiKey = process.env.AUTH_RESEND_KEY || process.env.RESEND_API_KEY || "";
-  const from = process.env.EMAIL_FROM || "ignite@nytforge.com";
+  const from = process.env.EMAIL_FROM || "support@ignition.nytforge.com";
   if (!apiKey) throw new Error("Missing Resend API key");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",

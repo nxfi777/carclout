@@ -72,7 +72,7 @@ function OnboardingPageInner() {
         }
         const isSubscribed = plan === "minimum" || plan === "basic" || plan === "pro";
         if (isSubscribed) {
-          router.replace("/dashboard/home");
+          router.replace("/dashboard/templates");
           return;
         }
         const handle = params.get("name") || params.get("handle") || "";

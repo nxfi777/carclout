@@ -42,7 +42,7 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
   const [upscaling, setUpscaling] = useState(false);
   const [dirty, setDirty] = useState(false);
   const dirtyCommitRef = React.useRef<(() => void) | null>(null);
-  void aspectRatio; void onClose; // accepted for API compatibility
+  void aspectRatio; void onClose; void saveLabel; // accepted for API compatibility
 
   useEffect(()=>{
     let cancelled = false;
@@ -75,47 +75,6 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
     return ()=>{ cancelled = true; };
   }, [bgKey, rembg]);
 
-  const downloadComposite = useCallback(async () => {
-    if (downloading || !bgUrl) return;
-    setDownloading(true);
-    try {
-      const getState = (window as unknown as { getLayerEditorSnapshot?: ()=>{ backgroundUrl: string; carMaskUrl?: string | null; layers: import("@/types/layer-editor").Layer[] } }).getLayerEditorSnapshot;
-      const snap = getState ? getState() : { backgroundUrl: bgUrl, carMaskUrl: fgUrl || null, layers: [] as import("@/types/layer-editor").Layer[] };
-      const blob = await composeLayersToBlob({ backgroundUrl: snap.backgroundUrl, carMaskUrl: snap.carMaskUrl, layers: snap.layers });
-      if (!blob) return;
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `design-${Date.now()}.png`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
-    } finally { setDownloading(false); }
-  }, [bgUrl, downloading, fgUrl]);
-
-  const saveComposite = useCallback(async () => {
-    if (!onSave || !bgUrl) return;
-    if (saving) return;
-    setSaving(true);
-    try {
-      const getState = (window as unknown as { getLayerEditorSnapshot?: ()=>{ backgroundUrl: string; carMaskUrl?: string | null; layers: import("@/types/layer-editor").Layer[] } }).getLayerEditorSnapshot;
-      const snap = getState ? getState() : { backgroundUrl: bgUrl, carMaskUrl: fgUrl || null, layers: [] as import("@/types/layer-editor").Layer[] };
-      const blob = await composeLayersToBlob({ backgroundUrl: snap.backgroundUrl, carMaskUrl: snap.carMaskUrl, layers: snap.layers });
-      if (!blob) return;
-      try {
-        const [md5Bg, md5Out] = await Promise.all([
-          (async()=>{
-            const r = await fetch(bgUrl, { cache:'no-store' }); const b = await r.arrayBuffer(); const { default: SparkMD5 } = await import('spark-md5'); return SparkMD5.ArrayBuffer.hash(b);
-          })(),
-          (async()=>{
-            const ab = await blob.arrayBuffer(); const { default: SparkMD5 } = await import('spark-md5'); return SparkMD5.ArrayBuffer.hash(ab);
-          })(),
-        ]);
-        if (md5Bg && md5Out && md5Bg === md5Out) return;
-      } catch {}
-      await onSave(blob);
-    } finally { setSaving(false); }
-  }, [bgUrl, fgUrl, onSave, saving]);
-
   const exportCompositeBlob = useCallback(async (): Promise<Blob | null> => {
     if (!bgUrl) return null;
     try {
@@ -125,6 +84,50 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
       return blob;
     } catch { return null; }
   }, [bgUrl, fgUrl]);
+
+  const saveComposite = useCallback(async (): Promise<boolean> => {
+    if (!onSave || !bgUrl) return false;
+    if (saving) return false;
+    setSaving(true);
+    try {
+      const blob = await exportCompositeBlob();
+      if (!blob) return false;
+      try {
+        const [md5Bg, md5Out] = await Promise.all([
+          (async()=>{
+            const r = await fetch(bgUrl, { cache:'no-store' }); const b = await r.arrayBuffer(); const { default: SparkMD5 } = await import('spark-md5'); return SparkMD5.ArrayBuffer.hash(b);
+          })(),
+          (async()=>{
+            const ab = await blob.arrayBuffer(); const { default: SparkMD5 } = await import('spark-md5'); return SparkMD5.ArrayBuffer.hash(ab);
+          })(),
+        ]);
+        if (md5Bg && md5Out && md5Bg === md5Out) return false;
+      } catch {}
+      await onSave(blob);
+      return true;
+    } finally { setSaving(false); }
+  }, [bgUrl, exportCompositeBlob, onSave, saving]);
+
+  const downloadComposite = useCallback(async () => {
+    if (downloading || saving || !bgUrl) return;
+    setDownloading(true);
+    try {
+      if (onSave && dirty) {
+        const saved = await saveComposite();
+        if (saved && dirtyCommitRef.current) {
+          dirtyCommitRef.current();
+        }
+      }
+      const blob = await exportCompositeBlob();
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `design-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
+    } finally { setDownloading(false); }
+  }, [bgUrl, dirty, downloading, exportCompositeBlob, onSave, saveComposite, saving]);
 
   const upscaleBackground = useCallback(async () => {
     if (upscaling) return;
@@ -184,35 +187,18 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
         electric: true,
       });
     }
-    if (onSave && (dirty || saving)) {
-      list.push({
-        key: "save",
-        label: saving ? "Saving…" : (saveLabel || "Save"),
-        onSelect: async()=>{
-          try {
-            await saveComposite();
-            if (dirtyCommitRef.current) {
-              dirtyCommitRef.current();
-            }
-          } catch {
-            // no-op: keep dirty state so user can retry
-          }
-        },
-        disabled: saving || !dirty,
-        loading: saving,
-      });
-    }
     list.push({
       key: "download",
-      label: downloading ? "Downloading…" : "Download",
+      label: downloading || saving ? "Downloading…" : "Download",
       onSelect: downloadComposite,
-      disabled: downloading,
-      loading: downloading,
-      icon: !downloading ? <Download className="size-4" aria-hidden /> : undefined,
+      disabled: downloading || saving,
+      loading: downloading || saving,
+      icon: !(downloading || saving) ? <Download className="size-4" aria-hidden /> : undefined,
       srLabel: "Download design",
+      section: "desktop-only",
     });
     return list;
-  }, [onTryAgain, onSave, saveLabel, showAnimate, onAnimate, downloading, saving, upscaling, downloadComposite, exportCompositeBlob, saveComposite, upscaleBackground, dirty]);
+  }, [onTryAgain, showAnimate, onAnimate, downloading, saving, upscaling, downloadComposite, upscaleBackground, exportCompositeBlob]);
 
   if (busy) {
     return (
@@ -246,7 +232,23 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
           }}
         >
           <ExposeLayerState />
-          <LayerEditorShell />
+          <LayerEditorShell
+            mobileHeaderAccessory={(
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="h-9 w-9 rounded-md border border-[color:var(--border)] bg-[color:var(--popover)]/80 text-white shadow-lg backdrop-blur transition hover:bg-[color:var(--popover)]"
+                onClick={downloadComposite}
+                disabled={downloading || saving}
+                title="Download"
+                aria-label={downloading || saving ? "Downloading" : "Download"}
+              >
+                <Download className="size-4" aria-hidden />
+                <span className="sr-only">{downloading || saving ? "Downloading" : "Download"}</span>
+              </Button>
+            )}
+          />
           <div className="pt-2">
             <div className={`hidden sm:flex flex-wrap items-center ${onTryAgain ? 'justify-between' : 'justify-end'} gap-2`}
               aria-label="Designer actions"
@@ -272,23 +274,15 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
                     {upscaling ? 'Upscaling…' : 'Upscale'}
                   </Button>
                 </ElectricBorder>
-                {onSave && (dirty || saving) ? (
-                  <Button type="button" className="w-full sm:w-auto" disabled={saving || !dirty} onClick={async()=>{
-                    await saveComposite();
-                    if (dirtyCommitRef.current) {
-                      dirtyCommitRef.current();
-                    }
-                  }}>{saveLabel || 'Save'}</Button>
-                ) : null}
                 <Button
                   type="button"
                   className="w-full sm:w-auto flex items-center justify-center"
                   onClick={downloadComposite}
-                  disabled={downloading}
+                  disabled={downloading || saving}
                   title="Download"
-                  aria-label={downloading ? 'Downloading' : 'Download'}
+                  aria-label={downloading || saving ? 'Downloading' : 'Download'}
                 >
-                  {downloading ? 'Downloading…' : (
+                  {downloading || saving ? 'Downloading…' : (
                     <>
                       <Download className="size-4" aria-hidden />
                       <span className="sr-only">Download</span>

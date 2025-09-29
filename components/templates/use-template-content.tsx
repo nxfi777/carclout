@@ -792,7 +792,6 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                       setSelectedImageKeys([]);
                     } catch {}
                   }}
-                  saveLabel={"Save"}
                   aspectRatio={typeof template?.aspectRatio === "number" ? Number(template.aspectRatio) : undefined}
                   onReplaceBgKey={(newKey, newUrl) => {
                     try {

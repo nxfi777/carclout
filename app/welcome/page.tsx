@@ -40,7 +40,7 @@ function WelcomePageInner() {
           : ("email" in (me as Record<string, unknown>) ? String((me as Record<string, unknown>).email) : "");
         const isSubscribed = plan === 'minimum' || plan === 'basic' || plan === 'pro';
         if (isSubscribed) {
-          router.replace('/dashboard/home');
+          router.replace('/dashboard/templates');
           return;
         }
         // Apply any onboarding params after login (once)

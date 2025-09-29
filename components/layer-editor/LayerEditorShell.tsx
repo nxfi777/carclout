@@ -8,7 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import MobileActions from "@/components/designer/mobile-actions";
 import { Wand2 } from "lucide-react";
 
-export default function LayerEditorShell() {
+export default function LayerEditorShell({ mobileHeaderAccessory }: { mobileHeaderAccessory?: React.ReactNode }) {
   return (
     <TooltipProvider>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-3">
@@ -16,7 +16,10 @@ export default function LayerEditorShell() {
           <Toolbox />
         </div>
         <div className="flex-1 min-w-0 space-y-2">
-          <ToolOptionsBar />
+          <ToolOptionsBar
+            className={mobileHeaderAccessory ? "relative pr-14 sm:pr-0" : undefined}
+            accessory={mobileHeaderAccessory}
+          />
           <div data-designer-canvas>
             <LayerCanvas />
           </div>

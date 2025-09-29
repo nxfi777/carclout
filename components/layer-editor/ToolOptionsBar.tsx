@@ -74,7 +74,7 @@ const FONT_OPTIONS: FontFamilyOption[] = FONT_FAMILIES.map((value)=> ({
   label: value.split(",")[0]?.replace(/"/g, "").trim() || value,
 }));
 
-export default function ToolOptionsBar({ className }: { className?: string }) {
+export default function ToolOptionsBar({ className, accessory }: { className?: string; accessory?: React.ReactNode }) {
   const { state, undo, redo, canUndo, canRedo } = useLayerEditor();
   const selectedIds = state.selectedLayerIds && state.selectedLayerIds.length > 0 ? state.selectedLayerIds : (state.activeLayerId ? [state.activeLayerId] : []);
   const selectedLayers = state.layers.filter((l) => selectedIds.includes(l.id));
@@ -84,6 +84,13 @@ export default function ToolOptionsBar({ className }: { className?: string }) {
   return (
     <div className="space-y-1">
       <div className={cn("relative z-10 flex items-center gap-2 px-2 py-1 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm flex-wrap", className)}>
+        {accessory ? (
+          <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center sm:hidden">
+            <div className="pointer-events-auto">
+              {accessory}
+            </div>
+          </div>
+        ) : null}
         <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
           <Button size="icon" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" /></Button>
           <Button size="icon" variant="outline" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)"><Redo2 className="size-4" /></Button>

@@ -1,4 +1,14 @@
-import { Surreal } from "surrealdb";
+import { Surreal, type LiveHandler, type LiveHandlerArguments, type Patch, Uuid } from "surrealdb";
+
+function wrapSubscribeLive(client: Surreal) {
+  const original = client.subscribeLive.bind(client);
+  client.subscribeLive = (<Result extends Record<string, unknown> | Patch = Record<string, unknown>>(
+    queryUuid: Uuid,
+    handler: LiveHandler<Result>,
+  ): Promise<void> => original(queryUuid, (...args: LiveHandlerArguments<Result>) => {
+    handler(...args);
+  })) as typeof client.subscribeLive;
+}
 
 // Support both Ignite (SURREAL_*) and distrib-forge (AUTH_SURREALDB_*) envs
 const rawConnection =
@@ -47,6 +57,7 @@ export async function getSurreal(): Promise<Surreal> {
     auth: { username, password },
   });
   await client.ready;
+  wrapSubscribeLive(client);
   return client;
 }
 

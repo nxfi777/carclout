@@ -1476,7 +1476,6 @@ export function TemplatesTabContent(){
                     onClose={handleDesignerClose}
                     onTryAgain={handleDesignerTryAgain}
                     onSave={saveDesignToGenerations}
-                    saveLabel={'Save'}
                     aspectRatio={typeof activeTemplate?.aspectRatio === 'number' ? Number(activeTemplate.aspectRatio) : undefined}
                     onReplaceBgKey={handleDesignerReplaceBgKey}
                     showAnimate={!!(activeTemplate?.video && (activeTemplate.video as { enabled?: boolean } | null | undefined)?.enabled)}

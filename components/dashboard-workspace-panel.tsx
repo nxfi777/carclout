@@ -1710,7 +1710,6 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                 rembg={{ enabled: true }}
                 onClose={()=> setDesignOpen(false)}
                 onSave={saveDesignToWorkspace}
-                saveLabel={path==='vehicles' ? 'Save (choose folder)' : 'Save'}
                 onReplaceBgKey={(newKey)=>{ try { if (newKey) { setDesignKey(newKey); } } catch {} }}
                 showAnimate={(() => { try { const name = (designKey || '').split('/').pop() || ''; return /^[0-9T\-:.]+-[a-z0-9\-]+/i.test(name); } catch { return false; } })()}
                 onAnimate={async (getBlob)=>{

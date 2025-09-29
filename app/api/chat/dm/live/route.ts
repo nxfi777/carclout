@@ -1,7 +1,42 @@
 import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
-import type { Uuid } from "surrealdb";
+import { isRecord } from "@/lib/records";
+import { RecordId, Uuid } from "surrealdb";
 import { auth } from "@/lib/auth";
+
+function toStringOrUndefined(value: unknown): string | undefined {
+  if (value instanceof RecordId) return value.toString();
+  if (typeof value === "string" && value.length) return value;
+  return undefined;
+}
+
+function toIsoOrNull(value: unknown): string | null {
+  if (typeof value === "string" && value.length) return value;
+  if (value instanceof Date) return value.toISOString();
+  return null;
+}
+
+function toAttachments(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item === "string" && item.length) out.push(item);
+  }
+  return out;
+}
+
+function normalizeMessage(record: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!record) return null;
+  return {
+    id: toStringOrUndefined(record.id),
+    text: typeof record.text === "string" ? record.text : toStringOrUndefined(record.text) ?? "",
+    dmKey: toStringOrUndefined(record.dmKey),
+    created_at: toIsoOrNull(record.created_at),
+    senderEmail: toStringOrUndefined(record.senderEmail),
+    recipientEmail: toStringOrUndefined(record.recipientEmail),
+    attachments: toAttachments(record.attachments),
+  };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -24,17 +59,27 @@ export async function GET(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        const res = await db.query(`LIVE SELECT * FROM dm_message WHERE dmKey = $key ORDER BY created_at`, { key });
-        const id = Array.isArray(res) && res[0] ? (Array.isArray(res[0]) ? (res[0] as unknown[])[0] : res[0]) : res;
-        liveId = id as unknown as Uuid;
-        await db.subscribeLive(liveId as Uuid, (...args: unknown[]) => {
-          try {
-            // Note: keep handler sync to satisfy types; filtering handled in GET list
-            controller.enqueue(te.encode(`data: ${JSON.stringify(args[0])}\n\n`));
-          } catch {}
+        const subscriptionId = await db.live<Record<string, unknown>>("dm_message", (actionRaw, resultRaw) => {
+          Promise.resolve().then(() => {
+            try {
+              const action = typeof actionRaw === "string" ? actionRaw.toLowerCase() : "update";
+              if (action === "close") return;
+
+              const record = isRecord(resultRaw) ? resultRaw : null;
+              const normalized = normalizeMessage(record);
+              if (!normalized) return;
+              const dmKey = typeof normalized.dmKey === "string" ? normalized.dmKey.toLowerCase() : "";
+              if (dmKey !== key) return;
+
+              const payload: Record<string, unknown> = { action, after: normalized };
+              controller.enqueue(te.encode(`data: ${JSON.stringify(payload)}\n\n`));
+            } catch {}
+          });
         });
-      } catch {
-        controller.enqueue(te.encode(`event: error\n` + `data: ${JSON.stringify({ error: 'live_failed' })}\n\n`));
+        liveId = subscriptionId instanceof Uuid ? subscriptionId : new Uuid(String(subscriptionId));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'live_failed';
+        controller.enqueue(te.encode(`event: error\n` + `data: ${JSON.stringify({ error: message })}\n\n`));
       }
     },
     async cancel() {
@@ -55,5 +100,4 @@ export async function GET(request: Request) {
     },
   });
 }
-
 
