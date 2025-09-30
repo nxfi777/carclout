@@ -1,15 +1,9 @@
-import { type ClassValue } from "clsx";
+import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { RecordId } from "surrealdb";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(
-    inputs
-      .flat()
-      .filter(Boolean)
-      .map((v) => String(v))
-      .join(" ")
-  );
+  return twMerge(clsx(inputs));
 }
 
 
