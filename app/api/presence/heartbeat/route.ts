@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
 import { auth } from "@/lib/auth";
+import { retryOnConflict } from "@/lib/retry";
 
 export async function POST() {
   const session = await auth();
@@ -24,17 +25,9 @@ export async function POST() {
   }
 
   const now = new Date(nowMs).toISOString();
-  let attempts = 0;
-  while (true) {
-    try {
-      await db.query("UPDATE user SET presence_updated_at = $now, last_seen = $now WHERE email = $email;", { now, email: session.user.email });
-      break;
-    } catch (e) {
-      attempts++;
-      if (attempts >= 3) throw e;
-      await new Promise((r) => setTimeout(r, 50 * attempts));
-    }
-  }
+  await retryOnConflict(async () => {
+    await db.query("UPDATE user SET presence_updated_at = $now, last_seen = $now WHERE email = $email;", { now, email: session.user.email });
+  });
   return NextResponse.json({ ok: true, at: now });
 }
 

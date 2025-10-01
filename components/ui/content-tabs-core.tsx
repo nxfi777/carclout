@@ -1217,9 +1217,9 @@ export function TemplatesTabContent(){
     const sess = sessionRef.current;
     setResultUrl(null);
     try {
-      // Prevent negative balance: require at least 6 credits before attempting a generation
+      // Prevent negative balance: require at least 100 credits before attempting a generation (90 gen + 10 cutout)
       const bal = await getCredits();
-      if (bal < 6) { toast.error('Not enough credits to generate. Top up in Billing.'); return; }
+      if (bal < 100) { toast.error('Not enough credits to generate. Top up in Billing.'); return; }
       // Preflight checks without showing the generating UI
       const requiredImages = Math.max(1, Number((activeTemplate as { maxUploadImages?: number })?.maxUploadImages || 1));
       let selectedFullKey: string | null = null;

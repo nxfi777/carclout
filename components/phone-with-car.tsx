@@ -77,7 +77,7 @@ export default function PhoneWithCarParallax() {
 
   return (
     <div
-      className="relative mx-auto flex items-center justify-center min-h-[22rem] sm:min-h-[26rem] md:min-h-[28rem] select-none w-full overflow-hidden"
+      className="relative mx-auto flex items-center justify-center min-h-[22rem] sm:min-h-[26rem] md:min-h-[28rem] select-none w-full"
       onMouseMove={handleMove}
       onMouseLeave={handleLeave}
       // Try to request motion permission on first tap for iOS

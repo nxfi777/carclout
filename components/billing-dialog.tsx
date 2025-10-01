@@ -14,18 +14,18 @@ export default function BillingDialog() {
   const [plan, setPlan] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
-  // Pricing helpers for equivalence explainer
-  const GENERATION_CREDITS_PER_IMAGE = 7; // UI estimate (designer cost)
-  const UPSCALE_CREDITS_PER_UPSCALE = 1; // keep in sync with server
-  const MIN_PER_DOLLAR = 50; // Minimum plan: 250 credits for $5
-  const PRO_PER_DOLLAR = 100; // Pro plan: 500 credits for $5
+  // Pricing helpers for equivalence explainer (10x scale for granular pricing)
+  const GENERATION_CREDITS_PER_IMAGE = 100; // UI estimate (90 gen + 10 cutout)
+  const UPSCALE_CREDITS_PER_UPSCALE = 20; // keep in sync with server
+  const MIN_PER_DOLLAR = 500; // Minimum plan: 2,500 credits for $5 (10x scale)
+  const PRO_PER_DOLLAR = 1000; // Pro plan: 5,000 credits for $5 (10x scale)
   const USD_5 = 5;
   const kling5sCredits = useMemo(() => {
     try {
       return Math.max(1, estimateVideoCredits('1080p', 5, 24, 'auto', 'kling2_5'));
     } catch {
-      // Fallback: 0.35 vendor * 1.5 markup * 100 credits per $ = 52.5 → 53
-      return 53;
+      // Fallback: 0.35 vendor * 2.25 markup * 1000 credits per $ = 787.5 → 788
+      return 788;
     }
   }, []);
   const eq = useMemo(() => {

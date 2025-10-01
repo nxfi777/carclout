@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       const GB = 1024 ** 3;
       const TB = 1024 ** 4;
       const plan = (effectivePlan || 'base').toLowerCase();
-      const limitBytes = plan === 'ultra' ? (1 * TB) : plan === 'premium' ? (100 * GB) : (5 * GB);
+      const limitBytes = plan === 'ultra' ? (1 * TB) : plan === 'premium' ? (100 * GB) : (1 * GB);
       // Compute current usage for this user
       const root = `users/${cleanUser}`;
       const objects = await listAllObjects(root.endsWith('/') ? root : `${root}/`);

@@ -65,17 +65,24 @@ export async function GET(request: Request) {
             return null;
           }
           const p = canonicalPlan(session.plan);
-          const windowMs = p === 'ultra' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
-          const lastRes = await db.query("SELECT created_at FROM feature_request WHERE created_byEmail = $email ORDER BY created_at DESC LIMIT 1;", { email: session.email });
-          const last = Array.isArray(lastRes) && Array.isArray(lastRes[0]) ? (lastRes[0][0] as { created_at?: string } | undefined) : undefined;
-          const lastIso = (last?.created_at as string | undefined) || null;
-          if (lastIso) {
-            const ts = Date.parse(lastIso);
-            if (Number.isFinite(ts)) {
-              const next = ts + windowMs;
-              if (Date.now() < next) {
-                canCreate = false;
-                nextAllowedAt = new Date(next).toISOString();
+          // Minimum plan users cannot create feature requests
+          if (p === 'base') {
+            canCreate = false;
+            nextAllowedAt = null;
+          } else if (p === 'ultra') {
+            // Pro plan: 1 per day
+            const windowMs = 24 * 60 * 60 * 1000;
+            const lastRes = await db.query("SELECT created_at FROM feature_request WHERE created_byEmail = $email ORDER BY created_at DESC LIMIT 1;", { email: session.email });
+            const last = Array.isArray(lastRes) && Array.isArray(lastRes[0]) ? (lastRes[0][0] as { created_at?: string } | undefined) : undefined;
+            const lastIso = (last?.created_at as string | undefined) || null;
+            if (lastIso) {
+              const ts = Date.parse(lastIso);
+              if (Number.isFinite(ts)) {
+                const next = ts + windowMs;
+                if (Date.now() < next) {
+                  canCreate = false;
+                  nextAllowedAt = new Date(next).toISOString();
+                }
               }
             }
           }
@@ -159,17 +166,24 @@ export async function GET(request: Request) {
         nextAllowedAt = null;
       } else {
         const p = canonicalPlan(session.plan);
-        const windowMs = p === 'ultra' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
-        const lastRes = await db.query("SELECT created_at FROM feature_request WHERE created_byEmail = $email ORDER BY created_at DESC LIMIT 1;", { email: session.email });
-        const last = Array.isArray(lastRes) && Array.isArray(lastRes[0]) ? (lastRes[0][0] as { created_at?: string } | undefined) : undefined;
-        const lastIso = (last?.created_at as string | undefined) || null;
-        if (lastIso) {
-          const ts = Date.parse(lastIso);
-          if (Number.isFinite(ts)) {
-            const next = ts + windowMs;
-            if (Date.now() < next) {
-              canCreate = false;
-              nextAllowedAt = new Date(next).toISOString();
+        // Minimum plan users cannot create feature requests
+        if (p === 'base') {
+          canCreate = false;
+          nextAllowedAt = null;
+        } else if (p === 'ultra') {
+          // Pro plan: 1 per day
+          const windowMs = 24 * 60 * 60 * 1000;
+          const lastRes = await db.query("SELECT created_at FROM feature_request WHERE created_byEmail = $email ORDER BY created_at DESC LIMIT 1;", { email: session.email });
+          const last = Array.isArray(lastRes) && Array.isArray(lastRes[0]) ? (lastRes[0][0] as { created_at?: string } | undefined) : undefined;
+          const lastIso = (last?.created_at as string | undefined) || null;
+          if (lastIso) {
+            const ts = Date.parse(lastIso);
+            if (Number.isFinite(ts)) {
+              const next = ts + windowMs;
+              if (Date.now() < next) {
+                canCreate = false;
+                nextAllowedAt = new Date(next).toISOString();
+              }
             }
           }
         }
@@ -213,7 +227,7 @@ export async function POST(request: Request) {
   const db = await getSurreal();
   await ensureIndexes();
 
-  // Rate limit by plan: ultra -> daily, otherwise weekly; admins unlimited
+  // Rate limit by plan: ultra -> daily, base -> blocked; admins unlimited
   const userRole = (session.user as { role?: string } | undefined)?.role || 'user';
   if (userRole !== 'admin') {
     let plan: string | null | undefined = undefined;
@@ -222,16 +236,25 @@ export async function POST(request: Request) {
       plan = lite.plan;
     } catch {}
     const canonical = canonicalPlan(plan);
-    const windowMs = canonical === 'ultra' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
-    const lastRes = await db.query("SELECT created_at FROM feature_request WHERE created_byEmail = $email ORDER BY created_at DESC LIMIT 1;", { email: session.user.email });
-    const last = Array.isArray(lastRes) && Array.isArray(lastRes[0]) ? (lastRes[0][0] as { created_at?: string } | undefined) : undefined;
-    const lastIso = (last?.created_at as string | undefined) || null;
-    if (lastIso) {
-      const ts = Date.parse(lastIso);
-      if (Number.isFinite(ts)) {
-        const next = ts + windowMs;
-        if (Date.now() < next) {
-          return NextResponse.json({ error: "You can only create a feature request periodically.", nextAllowedAt: new Date(next).toISOString() }, { status: 429 });
+    
+    // Minimum plan users cannot create feature requests
+    if (canonical === 'base') {
+      return NextResponse.json({ error: "Feature requests are not available on the minimum plan. Please upgrade to Pro to submit feature requests." }, { status: 403 });
+    }
+    
+    // Pro plan: 1 per day
+    if (canonical === 'ultra') {
+      const windowMs = 24 * 60 * 60 * 1000;
+      const lastRes = await db.query("SELECT created_at FROM feature_request WHERE created_byEmail = $email ORDER BY created_at DESC LIMIT 1;", { email: session.user.email });
+      const last = Array.isArray(lastRes) && Array.isArray(lastRes[0]) ? (lastRes[0][0] as { created_at?: string } | undefined) : undefined;
+      const lastIso = (last?.created_at as string | undefined) || null;
+      if (lastIso) {
+        const ts = Date.parse(lastIso);
+        if (Number.isFinite(ts)) {
+          const next = ts + windowMs;
+          if (Date.now() < next) {
+            return NextResponse.json({ error: "You can only create a feature request periodically.", nextAllowedAt: new Date(next).toISOString() }, { status: 429 });
+          }
         }
       }
     }

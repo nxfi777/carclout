@@ -31,7 +31,7 @@ export default function NotFound() {
                 </Link>
               </Button>
               <Button asChild variant="link" className="h-9 px-3">
-                <Link href="/#pricing">Pricing</Link>
+                <Link href="/pricing">Pricing</Link>
               </Button>
               <Button asChild variant="link" className="h-9 px-3">
                 <Link href="/contact">

@@ -103,7 +103,7 @@ export default function FeatureRequestsPanel({ showForm = true }: { showForm?: b
         setTitle("");
         setDesc("");
         setCanCreate(false);
-        // If server enforces cool-down, compute a local conservative 24h window for Pro or 7d for Base would be ideal, but we rely on nextAllowedAt on refresh
+        // If server enforces cool-down, compute a local conservative 24h window for Pro. Minimum plan users cannot create requests.
       }
       toast.success('Request submitted');
     } catch (e) {

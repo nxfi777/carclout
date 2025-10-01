@@ -1,19 +1,20 @@
 import { getSurreal } from "@/lib/surrealdb";
 import { RecordId } from "surrealdb";
 
-// Credit economics
-export const PRICE_PER_CREDIT_USD = 0.01; // 1 credit = $0.01 to the user
-export const CREDITS_PER_DOLLAR = Math.round(1 / PRICE_PER_CREDIT_USD); // 100
+// Credit economics (10x scale for granular pricing)
+export const PRICE_PER_CREDIT_USD = 0.001; // 1 credit = $0.001 to the user (10x scale)
+export const CREDITS_PER_DOLLAR = Math.round(1 / PRICE_PER_CREDIT_USD); // 1000
 
 // Operation pricing in credits (≥50% margin over vendor cost)
-// - Nano Banana generation cost ~$0.039 ⇒ charge 6 credits ($0.06) ~54% margin
-export const GENERATION_CREDITS_PER_IMAGE = 6;
-// - BiRefNet (rembg) ~0.00666 avg ⇒ charge 1 credit ($0.01) ~50% margin
-export const REMBG_CREDITS_PER_CALL = 1;
-// - Upscale (SeedVR2) flat: $0.0005 per compute second. Our flat charge: 1 credit per call
-export const UPSCALE_CREDITS_PER_CALL = 1;
-// - Streak restore: +25 credits per missed day
-export const STREAK_RESTORE_CREDITS_PER_DAY = 25;
+// 10x scale for pricing flexibility - allows granular pricing and future model tiers
+// - Nano Banana generation cost ~$0.039 ⇒ charge 90 credits ($0.09) ~131% margin
+export const GENERATION_CREDITS_PER_IMAGE = 90;
+// - BiRefNet (rembg) ~0.00666 avg ⇒ charge 10 credits ($0.01) ~50% margin
+export const REMBG_CREDITS_PER_CALL = 10;
+// - Upscale (SeedVR2) flat: $0.0005 per compute second. Our flat charge: 20 credits per call
+export const UPSCALE_CREDITS_PER_CALL = 20;
+// - Streak restore: +250 credits per missed day
+export const STREAK_RESTORE_CREDITS_PER_DAY = 250;
 
 export function estimateUpscaleCredits(_originalWidth: number, _originalHeight: number, _upscaleFactor: number): number {
   // Flat pricing for UI estimation
@@ -71,17 +72,17 @@ export async function requireAndReserveCredits(email: string, cost: number, reas
 
 export function includedMonthlyCreditsForPlan(plan: "basic" | "pro" | "ultra" | "$1" | "$20" | "$200"): number {
   // Map the app's 3 plans ($1, $20, $200) to included monthly credits.
-  // We price credits at $0.01, with bigger plan bonuses for CX while keeping margins safe.
+  // We price credits at $0.001 (10x scale), with bigger plan bonuses for CX while keeping margins safe.
   switch (plan) {
     case "$1":
     case "basic":
-      return 50; // $1 ⇒ 50 credits → ~8 generations at 6 credits/image
+      return 500; // $1 ⇒ 500 credits → ~5 generations at 100 credits/image (90 gen + 10 cutout)
     case "$20":
     case "pro":
-      return 1200; // $20 ⇒ 1,200 credits → ~200 generations
+      return 25000; // $20 ⇒ 25,000 credits → ~250 generations at 100 credits/image
     case "$200":
     case "ultra":
-      return 12000; // $200 ⇒ 12,000 credits → ~2,000 generations
+      return 250000; // $200 ⇒ 250,000 credits → ~2,500 generations at 100 credits/image
     default:
       return 0;
   }
@@ -95,7 +96,7 @@ export type VideoProvider = 'seedance' | 'kling2_5';
 
 export const DEFAULT_VIDEO_FPS = 24; // aligns with ~ $0.62 for 1080p 5s
 export const VIDEO_VENDOR_USD_PER_MILLION_TOKENS = 2.5; // vendor guidance
-export const VIDEO_MARKUP_MULTIPLIER = 1.5; // ~50% margin similar to image pricing
+export const VIDEO_MARKUP_MULTIPLIER = 2.25; // ~125% margin aligned with image pricing
 
 function heightForResolution(resolution: VideoResolution): number {
   switch (resolution) {

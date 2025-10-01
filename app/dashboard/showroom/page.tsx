@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { DropZone } from "@/components/ui/drop-zone";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import FeatureRequestsPanel from "@/components/feature-requests-panel";
+import XpLeaderboard from "@/components/xp-leaderboard";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -806,6 +807,38 @@ function DashboardShowroomPageInner() {
           status: 'sent',
           attachments: Array.isArray(r.message?.attachments) ? r.message.attachments : m.attachments,
         } : m));
+        
+        // Award XP for showroom post with image
+        if (hasAttachments) {
+          try {
+            const xpRes = await fetch('/api/xp', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reason: 'showroom-post' }),
+            });
+            const xpData = await xpRes.json().catch(() => ({}));
+            if (xpData.added > 0) {
+              const { showXpBonusToast, showStreakMultiplierToast, showFirstPostToast } = await import('@/lib/xp-toast');
+              
+              // Special celebration for first post
+              if (xpData.isFirstPost) {
+                showFirstPostToast(xpData.added);
+              } else {
+                showXpBonusToast(xpData.added, 'Ignition edit posted to Showroom', xpData.streakMultiplier);
+              }
+              
+              if (xpData.streakMultiplier > 1 && xpData.currentStreak >= 7) {
+                showStreakMultiplierToast(xpData.currentStreak);
+              }
+              if (xpData.leveledUp) {
+                window.dispatchEvent(new CustomEvent('level-up', { detail: { level: xpData.level } }));
+              }
+              try { window.dispatchEvent(new CustomEvent('xp-refresh')); } catch {}
+            }
+          } catch (err) {
+            console.error('Failed to award showroom post XP:', err);
+          }
+        }
       }
     } catch {
       setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, status: 'failed' } : m));
@@ -1254,6 +1287,33 @@ function DashboardShowroomPageInner() {
     return () => { cancelled = true; };
   }, [messages, messageAttachmentUrls, attachmentPreviewMap, attachmentCanLoadDirect]);
 
+  // Proactively refresh presigned URLs every 8 minutes to prevent expiration
+  useEffect(() => {
+    const REFRESH_INTERVAL = 8 * 60 * 1000; // 8 minutes (before 9-minute cache TTL)
+    
+    const refreshUrls = async () => {
+      const keys = Object.keys(messageAttachmentUrls);
+      if (keys.length === 0) return;
+      
+      try {
+        // Fetch fresh URLs with TTL=0 to bypass cache
+        const urls = await getViewUrls(keys, undefined, 0);
+        setMessageAttachmentUrls((prev) => {
+          const next = { ...prev };
+          for (const [key, url] of Object.entries(urls)) {
+            if (key && url) next[key] = url;
+          }
+          return next;
+        });
+      } catch (err) {
+        console.error('Failed to refresh attachment URLs:', err);
+      }
+    };
+    
+    const intervalId = setInterval(refreshUrls, REFRESH_INTERVAL);
+    return () => clearInterval(intervalId);
+  }, [messageAttachmentUrls]);
+
   const handleSendAttachments = useCallback(async () => {
     if (!pendingAttachments.length) return;
     if (sendingAttachmentsRef.current) return;
@@ -1286,6 +1346,19 @@ function DashboardShowroomPageInner() {
     }
   }, [pendingAttachments, attachmentPreviewMap, finalizeSentAttachments, markAttachmentsStatus, sendMessage]);
 
+  // Check if user has minimum plan (base plan)
+  const hasMinimumPlan = useMemo(() => {
+    const plan = canonicalPlan(me?.plan);
+    return plan === 'base';
+  }, [me?.plan]);
+
+  // Trigger pro upsell dialog on mount if user has minimum plan
+  useEffect(() => {
+    if (hasMinimumPlan && !loading) {
+      try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
+    }
+  }, [hasMinimumPlan, loading]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100dvh-6rem)]">
@@ -1297,6 +1370,37 @@ function DashboardShowroomPageInner() {
   return (
     <div className={"relative grid h-[calc(100dvh-6rem)] min-h-[calc(100dvh-6rem)] min-w-0"} style={{ gridTemplateColumns }}>
         <SubscriptionGate />
+        {/* Blur overlay for minimum plan users - cannot be removed via inspect element */}
+        {hasMinimumPlan && (
+          <>
+            <div 
+              className="fixed inset-0 z-[9999] backdrop-blur-[12px]" 
+              style={{ 
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                background: 'rgba(0,0,0,0.3)',
+                pointerEvents: 'auto'
+              }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            />
+            <div 
+              className="fixed inset-0 z-[10000] flex items-center justify-center"
+              style={{ pointerEvents: 'none' }}
+            >
+              <div className="text-center" style={{ pointerEvents: 'auto' }}>
+                <h2 className="text-2xl font-bold mb-4">Community Access Locked</h2>
+                <p className="text-lg mb-4">Upgrade to Pro to access the community</p>
+                <Button 
+                  onClick={() => { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} }}
+                  className="text-white"
+                  style={{ backgroundColor: '#ff6a00', borderColor: '#ff6a00' }}
+                >
+                  Upgrade to Pro
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
         {showroomView === 'showroom' && showChannels ? (
         <aside className="h-full min-h-0 border-r border-[color:var(--border)] overflow-y-auto p-2 bg-[var(--card)] md:static absolute inset-0 z-40"> 
           {/* Mobile close */}
@@ -1306,13 +1410,9 @@ function DashboardShowroomPageInner() {
           </button>
           <div className="text-sm font-semibold px-2 mb-2">Channels</div>
           <ul className="space-y-1">
-            {channels.filter(c=>c.slug !== 'livestream').map((c)=> (
+            {channels.filter(c=>c.slug !== 'livestream' && c.slug !== 'pro').map((c)=> (
               <li key={c.slug}>
                 <button onClick={async()=>{
-                  if (c.slug === 'pro' && canonicalPlan(me?.plan) !== 'ultra') {
-                    try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
-                    return;
-                  }
                   setActiveChatType('channel');
                   setActive(c.slug);
                   setActiveDm(null);
@@ -1330,11 +1430,8 @@ function DashboardShowroomPageInner() {
                     })));
                   }
                   setChatLoading(false);
-                }} className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${showroomView==='showroom' && activeChatType==='channel' && active===c.slug ? `bg-white/10 ${c.slug==='pro' ? 'ring-1 ring-[#ff6a00]/40' : ''}` : `hover:bg-white/5 ${c.slug==='pro' ? 'ring-1 ring-transparent hover:ring-[#ff6a00]/30' : ''}`}`}>
-                  <span className={`${c.slug==='pro' ? 'text-[#ff6a00]' : ''}`}>#{c.slug}</span>
-                  {c.slug === 'pro' && canonicalPlan(me?.plan) !== 'ultra' ? (
-                    <span title="Pro required" className="ml-1 inline-flex items-center justify-center rounded-full w-4 h-4 text-[10px] bg-white/10">🔒</span>
-                  ) : null}
+                }} className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${showroomView==='showroom' && activeChatType==='channel' && active===c.slug ? 'bg-white/10' : 'hover:bg-white/5'}`}>
+                  <span>#{c.slug}</span>
                 </button>
               </li>
             ))}
@@ -1554,6 +1651,8 @@ function DashboardShowroomPageInner() {
                 ) : (
                   active === 'request-a-feature' ? (
                     <FeatureRequestsPanel showForm={false} />
+                  ) : active === 'leaderboard' ? (
+                    <XpLeaderboard />
                   ) : messages.map((m)=> {
                     const p = (m.userEmail ? presence.find(u => (u.email || '').toLowerCase() === (m.userEmail || '').toLowerCase()) : undefined);
                     const isAdminName = (p?.role || '').toLowerCase() === 'admin';
@@ -1619,11 +1718,31 @@ function DashboardShowroomPageInner() {
                                       loading="lazy"
                                       decoding="async"
                                       onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
-                                      onError={() => {
+                                      onError={async () => {
+                                        // Image failed to load - likely expired presigned URL
+                                        // Clear cached URL and fetch a fresh one
                                         setAttachmentCanLoadDirect((prev) => {
                                           if (prev[key]) return prev;
                                           return { ...prev, [key]: true };
                                         });
+                                        
+                                        // Remove expired URL from state
+                                        setMessageAttachmentUrls((prev) => {
+                                          const next = { ...prev };
+                                          delete next[key];
+                                          return next;
+                                        });
+                                        
+                                        // Fetch fresh presigned URL with TTL=0 to bypass cache
+                                        try {
+                                          const { getViewUrl } = await import("@/lib/view-url-client");
+                                          const freshUrl = await getViewUrl(key, undefined, 0);
+                                          if (freshUrl) {
+                                            setMessageAttachmentUrls((prev) => ({ ...prev, [key]: freshUrl }));
+                                          }
+                                        } catch (err) {
+                                          console.error('Failed to refresh attachment URL:', err);
+                                        }
                                       }}
                                     />
                                     {status ? (
@@ -1689,11 +1808,15 @@ function DashboardShowroomPageInner() {
                 if (text.trim().startsWith('/')) { const handled = await tryHandleSlashCommand(text); inputRef.current!.value = ""; if (handled) return; }
                 if (muted?.active) return;
                 inputRef.current!.value="";
-                if (active === 'request-a-feature') return; // no chat send in feature channel
+                if (active === 'request-a-feature' || active === 'leaderboard') return; // no chat send in special channels
                 await sendMessage(text, undefined, pendingAttachments.map((key) => ({ key, url: attachmentPreviewMap[key] || "" })));
                 setPendingAttachments([]);
               }}>
-                {active === 'request-a-feature' ? (
+                {active === 'leaderboard' ? (
+                  <div className="w-full text-center text-sm text-white/60 py-2">
+                    View-only leaderboard. Keep earning XP to climb the ranks!
+                  </div>
+                ) : active === 'request-a-feature' ? (
                   <div className="w-full">
                     <Collapsible open={featureOpen} onOpenChange={setFeatureOpen}>
                       <div className="flex items-center gap-2 w-full">
@@ -2519,12 +2642,11 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
         ) : Array.isArray(profile?.photos) && profile!.photos!.length > 0 ? (
           <ul className="grid grid-cols-3 gap-1">
             {profile!.photos!.slice(0,6).map((k: string) => (
-              <li key={k} className="aspect-square rounded overflow-hidden bg-black/20">
+              <li key={k} className="relative aspect-square rounded overflow-hidden bg-black/20">
+                <Skeleton className="absolute inset-0" />
                 {previews[k] ? (
-                  <Image src={previews[k]} alt="Car" fill className="object-cover" sizes={PROFILE_PREVIEW_SIZES} />
-                ) : (
-                  <Skeleton className="w-full h-full" />
-                )}
+                  <Image src={previews[k]} alt="Car" fill className="object-cover relative z-10" sizes={PROFILE_PREVIEW_SIZES} />
+                ) : null}
               </li>
             ))}
           </ul>

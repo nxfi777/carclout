@@ -140,7 +140,7 @@ export async function GET(req: Request) {
       } else if (op === 'rembg') {
         costPerCreditUsd = 0.00666 / Math.max(1, REMBG_CREDITS_PER_CALL);
       } else if (op === 'upscale') {
-        // SeedVR2 vendor cost is time-based; with flat 1 credit/user charge, estimate vendor $/credit with a 9s reference at $0.0005/s
+        // SeedVR2 vendor cost is time-based; with flat 20 credits/user charge (10x scale), estimate vendor $/credit with a 9s reference at $0.0005/s
         const referenceSeconds = 9.01; // example: 1248x832 at 2x → ~9.01s
         const vendorUsdPerCall = 0.0005 * referenceSeconds; // ≈ $0.004505
         costPerCreditUsd = vendorUsdPerCall / Math.max(1, UPSCALE_CREDITS_PER_CALL);

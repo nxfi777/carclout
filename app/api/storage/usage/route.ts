@@ -11,7 +11,7 @@ function bytesForPlan(plan: string | null | undefined): number {
   const p = (plan || "base").toLowerCase();
   if (p === "ultra") return 1 * TB;
   if (p === "premium") return 100 * GB;
-  return 5 * GB; // base/default
+  return 1 * GB; // base/default
 }
 
 export async function GET(req: Request) {

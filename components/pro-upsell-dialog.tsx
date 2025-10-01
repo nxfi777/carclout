@@ -52,6 +52,7 @@ export default function ProUpsellDialog() {
                     </span>
                   </li>
                   <li>Community access</li>
+                  <li>Feature voting</li>
                   <li>100GB storage</li>
                   <li>On-demand upscales</li>
                   <li>Video generation</li>

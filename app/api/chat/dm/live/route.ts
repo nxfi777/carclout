@@ -44,6 +44,19 @@ export async function GET(request: Request) {
   const session = await auth().catch(() => null);
   const me = session?.user?.email as string | undefined;
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  
+  // Check if user has Pro plan (community access required)
+  const userPlan = (session?.user as { plan?: string })?.plan;
+  const canonicalPlan = ((p: string | null | undefined): 'base' | 'ultra' | null => {
+    const s = (p || '').toLowerCase();
+    if (s === 'ultra' || s === 'pro') return 'ultra';
+    if (s === 'base' || s === 'basic' || s === 'minimum') return 'base';
+    return null;
+  })(userPlan);
+  if (canonicalPlan !== 'ultra' && (session?.user as { role?: string })?.role !== 'admin') {
+    return NextResponse.json({ error: "Pro plan required for community access" }, { status: 403 });
+  }
+  
   const { searchParams } = new URL(request.url);
   const other = searchParams.get("user") || "";
   if (!other) return NextResponse.json({ error: "Missing user" }, { status: 400 });

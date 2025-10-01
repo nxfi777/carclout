@@ -44,12 +44,12 @@ export async function POST(req: Request) {
       if (!Number.isFinite(amountUsd) || amountUsd < minUsd) {
         return NextResponse.json({ error: `Minimum top-up is $${minUsd}` }, { status: 400 });
       }
-      // Base rate: 100 credits per $1 (CREDITS_PER_DOLLAR)
+      // Base rate: 1000 credits per $1 (CREDITS_PER_DOLLAR, 10x scale)
       // Special rule for $5 top-ups:
-      // - minimum plan: 250 credits for $5 (50 cr/$)
-      // - pro plan: 500 credits for $5 (100 cr/$)
+      // - minimum plan: 2,500 credits for $5 (500 cr/$)
+      // - pro plan: 5,000 credits for $5 (1000 cr/$)
       // For amounts > $5, keep the same per-dollar rate as $5 case for simplicity.
-      const ratePerDollar = currentPlan === "pro" ? CREDITS_PER_DOLLAR : Math.floor(250 / 5); // 100 or 50
+      const ratePerDollar = currentPlan === "pro" ? CREDITS_PER_DOLLAR : Math.floor(2500 / 5); // 1000 or 500
       const credits = amountUsd * ratePerDollar;
       const origin = resolveOrigin(req);
       const upgradeHint = currentPlan === "minimum" && ratePerDollar < CREDITS_PER_DOLLAR;

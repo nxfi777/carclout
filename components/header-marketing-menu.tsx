@@ -50,7 +50,7 @@ export default function HeaderMarketingMenu() {
           onSelect={()=>{ try { setOpen(false); } catch {} }}
           asChild
         >
-          <Link href="/#pricing" className="block w-full text-sm text-right">Pricing</Link>
+          <Link href="/pricing" className="block w-full text-sm text-right">Pricing</Link>
         </DropdownMenuItem>
         <DropdownMenuItem
           className="px-2 py-2 cursor-pointer"

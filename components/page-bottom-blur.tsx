@@ -28,7 +28,7 @@ export default function PageBottomBlur() {
     <GradualBlur
       target="page"
       position="bottom"
-      height="10rem"
+      height="7rem"
       strength={2.5}
       divCount={8}
       curve="bezier"

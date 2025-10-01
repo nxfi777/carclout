@@ -140,6 +140,8 @@ export default function DailyBonusDrawer() {
 
       const before = await fetchStreakValue();
       let awarded = 0;
+      let leveledUp = false;
+      let newLevel = 0;
       try {
         const res = await fetch("/api/xp", {
           method: "POST",
@@ -148,6 +150,8 @@ export default function DailyBonusDrawer() {
         });
         const data = await res.json().catch(() => ({}));
         awarded = Number(data?.added || 0);
+        leveledUp = !!data?.leveledUp;
+        newLevel = Number(data?.level || 0);
       } catch {
         awarded = 0;
       }
@@ -173,6 +177,15 @@ export default function DailyBonusDrawer() {
         try {
           window.dispatchEvent(new CustomEvent("xp-refresh"));
         } catch {}
+        
+        // Trigger level-up drawer if leveled up
+        if (leveledUp && newLevel > 0) {
+          window.setTimeout(() => {
+            try {
+              window.dispatchEvent(new CustomEvent("level-up", { detail: { level: newLevel } }));
+            } catch {}
+          }, 1000);
+        }
       } else {
         setState("already");
         hasClaimedRef.current = true;
@@ -229,7 +242,7 @@ export default function DailyBonusDrawer() {
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="bottom"
-        className="border-t border-[color:var(--border)] bg-[color:var(--popover)]/95 backdrop-blur-sm sm:mx-auto sm:max-w-xl sm:rounded-t-3xl sm:border sm:border-[color:var(--border)]"
+        className="border-t border-[color:var(--border)] bg-[color:var(--popover)]/95 backdrop-blur-sm sm:mx-auto sm:max-w-xl sm:rounded-t-3xl sm:border sm:border-[color:var(--border)] max-h-[calc(100dvh-6rem)] overflow-y-auto"
       >
         <div className="px-5 pt-6 pb-5 sm:px-6">
           <SheetHeader className="items-center gap-4 text-center">

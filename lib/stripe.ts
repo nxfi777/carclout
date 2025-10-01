@@ -7,7 +7,7 @@ if (!STRIPE_SECRET_KEY) {
 }
 
 export const stripe = new Stripe(STRIPE_SECRET_KEY || "sk_test_", {
-  apiVersion: "2025-08-27.basil",
+  apiVersion: "2025-09-30.clover",
 });
 
 export type Plan = "minimum" | "basic" | "pro";

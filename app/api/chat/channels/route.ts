@@ -7,7 +7,11 @@ async function ensureGeneral(db: Awaited<ReturnType<typeof getSurreal>>) {
   const res = await db.query("SELECT * FROM channel WHERE slug = 'general' LIMIT 1;");
   const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
   if (!row) {
-    await db.create("channel", { name: "General", slug: "general", created_at: new Date().toISOString() });
+    // General channel now requires Pro plan (ultra) for community access
+    await db.create("channel", { name: "General", slug: "general", requiredReadPlan: 'ultra', requiredWritePlan: 'ultra', created_at: new Date().toISOString() });
+  } else {
+    // Update existing general channel to require Pro plan
+    await db.query("UPDATE channel SET requiredReadPlan = 'ultra', requiredWritePlan = 'ultra' WHERE slug = 'general';");
   }
 }
 
@@ -19,19 +23,32 @@ async function ensureLivestream(db: Awaited<ReturnType<typeof getSurreal>>) {
   }
 }
 
-async function ensurePro(db: Awaited<ReturnType<typeof getSurreal>>) {
-  const res = await db.query("SELECT * FROM channel WHERE slug = 'pro' LIMIT 1;");
-  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
-  if (!row) {
-    await db.create("channel", { name: "Pro", slug: "pro", requiredReadPlan: 'ultra', requiredWritePlan: 'ultra', created_at: new Date().toISOString() });
-  }
-}
+// Removed pro channel - no longer needed
+// async function ensurePro(db: Awaited<ReturnType<typeof getSurreal>>) {
+//   const res = await db.query("SELECT * FROM channel WHERE slug = 'pro' LIMIT 1;");
+//   const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
+//   if (!row) {
+//     await db.create("channel", { name: "Pro", slug: "pro", requiredReadPlan: 'ultra', requiredWritePlan: 'ultra', created_at: new Date().toISOString() });
+//   }
+// }
 
 async function ensureFeatureRequests(db: Awaited<ReturnType<typeof getSurreal>>) {
   const res = await db.query("SELECT * FROM channel WHERE slug = 'request-a-feature' LIMIT 1;");
   const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
   if (!row) {
-    await db.create("channel", { name: "Request a Feature", slug: "request-a-feature", created_at: new Date().toISOString() });
+    // Feature requests also requires Pro plan for community access
+    await db.create("channel", { name: "Request a Feature", slug: "request-a-feature", requiredReadPlan: 'ultra', requiredWritePlan: 'ultra', created_at: new Date().toISOString() });
+  } else {
+    // Update existing channel to require Pro plan
+    await db.query("UPDATE channel SET requiredReadPlan = 'ultra', requiredWritePlan = 'ultra' WHERE slug = 'request-a-feature';");
+  }
+}
+
+async function ensureLeaderboard(db: Awaited<ReturnType<typeof getSurreal>>) {
+  const res = await db.query("SELECT * FROM channel WHERE slug = 'leaderboard' LIMIT 1;");
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
+  if (!row) {
+    await db.create("channel", { name: "XP Leaderboard", slug: "leaderboard", requiredReadPlan: 'ultra', requiredWritePlan: 'admin', created_at: new Date().toISOString() });
   }
 }
 
@@ -40,13 +57,16 @@ export async function GET() {
   await Promise.allSettled([
     ensureGeneral(db),
     ensureLivestream(db),
-    ensurePro(db),
+    // ensurePro(db), // Removed pro channel
     ensureFeatureRequests(db),
+    ensureLeaderboard(db),
   ]);
   const session = await getSessionLite();
   const res = await db.query("SELECT * FROM channel ORDER BY created_at;");
   const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as ChannelLike[]) : [];
-  const visible = session.role === 'admin' ? rows : rows.filter((r: ChannelLike) => checkChannelRead(session, r));
+  // Filter out pro channel
+  const filtered = rows.filter((r: ChannelLike) => (r as { slug?: string }).slug !== 'pro');
+  const visible = session.role === 'admin' ? filtered : filtered.filter((r: ChannelLike) => checkChannelRead(session, r));
   return NextResponse.json({ channels: visible });
 }
 

@@ -4,12 +4,12 @@ export type VideoResolution = '480p' | '720p' | '1080p';
 export type VideoAspectRatio = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16' | 'auto';
 export type VideoProvider = 'seedance' | 'kling2_5';
 
-export const PRICE_PER_CREDIT_USD = 0.01; // 1 credit = $0.01
-export const CREDITS_PER_DOLLAR = Math.round(1 / PRICE_PER_CREDIT_USD); // 100
+export const PRICE_PER_CREDIT_USD = 0.001; // 1 credit = $0.001 (10x scale)
+export const CREDITS_PER_DOLLAR = Math.round(1 / PRICE_PER_CREDIT_USD); // 1000
 
 export const DEFAULT_VIDEO_FPS = 24;
 export const VIDEO_VENDOR_USD_PER_MILLION_TOKENS = 2.5;
-export const VIDEO_MARKUP_MULTIPLIER = 1.5; // ~50% margin
+export const VIDEO_MARKUP_MULTIPLIER = 2.25; // ~125% margin aligned with image pricing
 
 function heightForResolution(resolution: VideoResolution): number {
   switch (resolution) {

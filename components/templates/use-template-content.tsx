@@ -481,7 +481,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
     setResultUrl(null);
     try {
       const bal = await getCredits();
-      if (bal < 6) {
+      if (bal < 100) {
         toast.error("Not enough credits to generate. Top up in Billing.");
         return;
       }

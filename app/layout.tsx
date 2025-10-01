@@ -8,6 +8,7 @@ import FooterGate from "@/components/footer-gate";
 import { Toaster } from "@/components/ui/sonner";
 import SessionProviderWrapper from "@/components/session-provider";
 import DailyBonusDrawer from "@/components/daily-bonus-drawer";
+import LevelUpDrawer from "@/components/level-up-drawer";
 import UmamiTracker from "@/components/umami-tracker";
 import { auth } from "@/lib/auth";
 import { createMetadata } from "@/lib/seo";
@@ -64,6 +65,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             <SiteFooter />
           </FooterGate>
           <DailyBonusDrawer />
+          <LevelUpDrawer />
           <Toaster />
         </SessionProviderWrapper>
       </body>

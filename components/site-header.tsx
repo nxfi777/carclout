@@ -71,7 +71,7 @@ export default async function SiteHeader() {
             </Link>
           </div>
           <div className="justify-self-center hidden sm:flex items-center gap-3 md:gap-4">
-            <HeaderNavLink href="/#pricing">PRICING</HeaderNavLink>
+            <HeaderNavLink href="/pricing">PRICING</HeaderNavLink>
             <HeaderNavLink href="/contact">CONTACT</HeaderNavLink>
           </div>
           <div className="flex items-center gap-2 justify-self-end relative">
