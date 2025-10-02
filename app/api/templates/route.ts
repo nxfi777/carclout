@@ -11,6 +11,7 @@ type TemplateDoc = {
   prompt: string;
   falModelSlug?: string;
   thumbnailKey?: string; // admin storage key for preview
+  blurhash?: string; // BlurHash for thumbnail
   adminImageKeys?: string[]; // optional admin-scope image keys to prepend
   imageSize?: { width: number; height: number } | null;
   fixedAspectRatio?: boolean;
@@ -303,6 +304,7 @@ export async function POST(req: Request) {
     prompt = $prompt,
     falModelSlug = $falModelSlug,
     thumbnailKey = $thumbnailKey,
+    blurhash = $blurhash,
     adminImageKeys = $adminImageKeys,
     imageSize = $imageSize,
     fixedAspectRatio = $fixedAspectRatio,

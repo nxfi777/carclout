@@ -3,7 +3,7 @@ import { getEnvBaseUrl } from "@/lib/base-url";
 
 const SITE_NAME = "CarClout";
 const DEFAULT_DESCRIPTION = "The content engine built for car creators.";
-const DEFAULT_IMAGE = "/nytforge.png";
+const DEFAULT_IMAGE = "/carcloutlogo.webp";
 
 export const DEFAULT_KEYWORDS = [
   "CarClout",

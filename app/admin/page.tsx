@@ -44,6 +44,7 @@ type TemplateDisplay = {
   slug?: string;
   thumbnailKey?: string;
   thumbUrl?: string;
+  blurhash?: string;
   variables?: TemplateVariableDef[];
   prompt?: string;
   falModelSlug?: string;
@@ -1041,6 +1042,7 @@ function TemplatesTab() {
           slug: t?.slug,
           thumbnailKey: (t as unknown as { thumbnailKey?: string })?.thumbnailKey,
           thumbUrl: await resolveThumb((t as unknown as { thumbnailKey?: string })?.thumbnailKey),
+          blurhash: typeof (t as { blurhash?: unknown })?.blurhash === 'string' ? (t as { blurhash: string }).blurhash : undefined,
           variables: Array.isArray(t?.variables)?t.variables:[],
           prompt: String(t?.prompt||''),
           falModelSlug: String(t?.falModelSlug || 'fal-ai/bytedance/seedream/v4/edit'),
@@ -1133,7 +1135,7 @@ function TemplatesTab() {
               <ContextMenuTrigger asChild>
                 <div>
                   <TemplateCard
-                    data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount, proOnly: !!t.proOnly }}
+                    data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, blurhash: t.blurhash, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount, proOnly: !!t.proOnly }}
                     showNewBadge={true}
                     showLike={false}
                     showFavoriteCount={true}

@@ -1,8 +1,8 @@
 "use client";
 
-import NextImage from "next/image";
 import { Heart } from "lucide-react";
 import * as React from "react";
+import { BlurhashImage } from "@/components/ui/blurhash-image";
 
 export type TemplateCardData = {
   id?: string;
@@ -10,6 +10,7 @@ export type TemplateCardData = {
   description?: string;
   slug?: string;
   thumbUrl?: string;
+  blurhash?: string;
   // Optional video preview url for hover (desktop)
   videoUrl?: string;
   createdAt?: string | Date;
@@ -88,7 +89,16 @@ export function TemplateCard(props: TemplateCardProps) {
       {data?.videoUrl ? (
         <div className="relative" style={{ aspectRatio: "16 / 10" }}>
           {data.thumbUrl ? (
-            <NextImage src={data.thumbUrl} alt={data?.name || "Template"} width={640} height={360} className="absolute inset-0 w-full h-full object-cover" />
+            <BlurhashImage 
+              src={data.thumbUrl} 
+              alt={data?.name || "Template"} 
+              width={640} 
+              height={360} 
+              className="absolute inset-0 w-full h-full object-cover" 
+              blurhash={data.blurhash}
+              fallbackBlur="cardGradient"
+              showSkeleton={false}
+            />
           ) : (
             <div className="absolute inset-0 grid place-items-center text-white/60">No preview</div>
           )}
@@ -105,7 +115,16 @@ export function TemplateCard(props: TemplateCardProps) {
         </div>
       ) : (
         data?.thumbUrl ? (
-          <NextImage src={data.thumbUrl} alt={data?.name || "Template"} width={640} height={360} className="w-full h-auto" />
+          <BlurhashImage 
+            src={data.thumbUrl} 
+            alt={data?.name || "Template"} 
+            width={640} 
+            height={360} 
+            className="w-full h-auto" 
+            blurhash={data.blurhash}
+            fallbackBlur="cardGradient"
+            showSkeleton={false}
+          />
         ) : (
           <div className="w-full grid place-items-center text-white/60" style={{ aspectRatio: "16 / 10" }}>No preview</div>
         )

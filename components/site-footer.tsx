@@ -15,7 +15,7 @@ export default function SiteFooter() {
       <div className="max-w-7xl mx-auto flex flex-col items-center relative z-10">
         <div className="flex items-center justify-center">
           <Link href="/" className="flex items-center justify-center">
-            <Image src="/nytforge.webp" alt="Nytforge" width={48} height={48} className="rounded" />
+            <Image src="/carcloutlogo.webp" alt="CarClout" width={48} height={48} className="rounded" />
           </Link>
         </div>
 
@@ -38,7 +38,7 @@ export default function SiteFooter() {
         </div>
 
         <p className="text-center text-xs text-[color:var(--muted-foreground)] mt-[1rem]">
-          &copy; {new Date().getFullYear()} Nytforge. All rights reserved.
+          &copy; {new Date().getFullYear()} CarClout. All rights reserved.
         </p>
       </div>
     </footer>

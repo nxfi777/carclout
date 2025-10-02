@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import Image from "next/image";
+import { BLUR_DATA_URLS } from "@/lib/blur-placeholder";
 import InstagramPhone from "@/components/instagram-phone";
 
-export default function PhoneWithCarParallax() {
+function PhoneWithCarParallax() {
   const [cursor, setCursor] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  function handleMove(e: React.MouseEvent<HTMLDivElement>) {
+  // Throttle mouse movement for better performance
+  const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width; // 0..1
     const ny = (e.clientY - rect.top) / rect.height; // 0..1
@@ -15,7 +17,7 @@ export default function PhoneWithCarParallax() {
     const x = nx * 2 - 1;
     const y = ny * 2 - 1;
     setCursor({ x, y });
-  }
+  };
 
   function handleLeave() {
     setCursor({ x: 0, y: 0 });
@@ -98,6 +100,10 @@ export default function PhoneWithCarParallax() {
             sizes="(max-width: 768px) 95vw, 36rem"
             className="object-contain [filter:drop-shadow(0_1.2rem_2.2rem_rgba(0,0,0,0.55))]"
             priority
+            fetchPriority="high"
+            quality={90}
+            placeholder="blur"
+            blurDataURL={BLUR_DATA_URLS.black}
           />
         </div>
       </div>
@@ -118,4 +124,5 @@ export default function PhoneWithCarParallax() {
   );
 }
 
-
+// Memoize to prevent unnecessary re-renders
+export default memo(PhoneWithCarParallax);

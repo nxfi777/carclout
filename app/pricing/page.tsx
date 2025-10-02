@@ -10,6 +10,9 @@ export const metadata = createMetadata({
   path: "/pricing",
 });
 
+// ISR: Regenerate page every 30 minutes (pricing rarely changes)
+export const revalidate = 1800;
+
 export default async function PricingPage() {
   const session = await auth();
   const user = session?.user;

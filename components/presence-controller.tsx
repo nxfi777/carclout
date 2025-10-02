@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
-const HEARTBEAT_INTERVAL_MS = 60_000;
-const HEARTBEAT_MIN_GAP_MS = 5_000;
+const HEARTBEAT_INTERVAL_MS = 55_000; // 55s to avoid edge cases with 60s server rate limit
+const HEARTBEAT_MIN_GAP_MS = 50_000; // 50s minimum gap to ensure rate limit compliance
 
 type PresenceStatus = "online" | "idle" | "dnd" | "invisible";
 
@@ -147,9 +147,9 @@ export default function PresenceController({ email }: { email?: string | null })
     };
 
     const init = () => {
-      startHeartbeat();
       updateStatus(latestStatusRef.current as PresenceStatus, "auto", true);
-      sendHeartbeat().catch(() => {});
+      // Don't send immediate heartbeat - let the interval handle it
+      startHeartbeat();
     };
 
     const destroy = () => {

@@ -10,29 +10,36 @@ import SessionProviderWrapper from "@/components/session-provider";
 import DailyBonusDrawer from "@/components/daily-bonus-drawer";
 import LevelUpDrawer from "@/components/level-up-drawer";
 import UmamiTracker from "@/components/umami-tracker";
+import { WebVitals } from "@/app/web-vitals";
 import { auth } from "@/lib/auth";
 import { createMetadata } from "@/lib/seo";
-
-export const dynamic = "force-dynamic";
 
 const poppins = Poppins({
   variable: "--font-poppins",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "600", "700"], // Reduced weights
   display: "swap",
+  preload: true,
+  fallback: ['system-ui', 'arial'],
+  adjustFontFallback: true,
 });
 
 const roboto = Roboto({
   variable: "--font-roboto",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "700"],
-  style: ["normal", "italic"],
+  weight: ["400", "500", "700"], // Reduced weights (removed 300 and italic)
   display: "swap",
+  preload: true,
+  fallback: ['system-ui', 'arial'],
+  adjustFontFallback: true,
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: "swap",
+  preload: false, // Only preload critical fonts
+  fallback: ['monospace'],
 });
 
 export const metadata: Metadata = {
@@ -44,7 +51,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [{ url: "/favicon.ico" }],
     shortcut: ["/favicon.ico"],
-    apple: [{ url: "/nytforge.png" }],
+    apple: [{ url: "/carcloutlogo.webp" }],
   },
   ...createMetadata({
     title: "CarClout — Make Your Car Page Unskippable",
@@ -59,6 +66,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="en">
       <body className={`${poppins.className} ${poppins.variable} ${roboto.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh min-h-[100svh] bg-background text-foreground overflow-x-hidden`}>
         <SessionProviderWrapper session={session}>
+          <WebVitals />
           <UmamiTracker session={session} />
           <HeaderGate>
             <SiteHeader />

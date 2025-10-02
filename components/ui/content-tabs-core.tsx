@@ -488,12 +488,12 @@ export default function ContentTabs() {
             )}
           </AnimatePresence>
           <AnimatePresence mode='wait'>
-            <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.3 }} className='p-6 h-full min-h-[16rem] overflow-hidden flex flex-col'>
+            <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.3 }} className='p-6 h-full min-h-[16rem] overflow-hidden flex flex-col absolute inset-0'>
               <h3 className='text-lg font-semibold flex items-center gap-2 mb-4 text-white shrink-0'>
                 <span>{tabs.find((t) => t.id === activeTab)?.icon}</span>
                 <span>{tabs.find((t) => t.id === activeTab)?.name}</span>
               </h3>
-              <div className='not-prose flex-1 min-h-0'>
+              <div className='not-prose flex-1 min-h-0 overflow-hidden'>
                 {tabs.find((tab) => tab.id === activeTab)?.content || tabs[0].content}
               </div>
             </motion.div>
@@ -547,6 +547,7 @@ type Template = {
   name: string;
   desc?: string;
   thumbUrl?: string;
+  blurhash?: string;
   slug?: string;
   variables?: TemplateVariable[];
   prompt?: string;
@@ -574,6 +575,8 @@ type Template = {
 export function TemplatesTabContent(){
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<Template[]>([]);
+  const [displayedCount, setDisplayedCount] = useState(20); // Start with 20 templates
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<{ id?: string; name: string; slug?: string } | null>(null);
   const [chevHover, setChevHover] = useState(false);
@@ -722,6 +725,7 @@ export function TemplatesTabContent(){
             name: typeof t.name === 'string' ? t.name : 'Template',
             desc: typeof t.description === 'string' ? t.description : '',
             thumbUrl,
+            blurhash: typeof t.blurhash === 'string' ? t.blurhash : undefined,
             slug: typeof t.slug === 'string' ? t.slug : undefined,
             variables: Array.isArray(t.variables) ? (t.variables as TemplateVariable[]) : [],
             prompt: String(t.prompt || ''),
@@ -876,6 +880,44 @@ export function TemplatesTabContent(){
     return () => window.removeEventListener('profile-updated', onProfileUpdated as EventListener);
   }, [selectedVehicleKey]);
 
+  // Infinite scroll observer with prefetching
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && displayedCount < items.length) {
+          // Load 20 more templates when user scrolls to bottom
+          setDisplayedCount(prev => Math.min(prev + 20, items.length));
+          
+          // Prefetch next batch of images for instant loading
+          const nextBatch = items.slice(displayedCount, displayedCount + 20);
+          nextBatch.forEach(template => {
+            if (template.thumbUrl) {
+              const img = new Image();
+              img.src = template.thumbUrl;
+            }
+          });
+        }
+      },
+      { rootMargin: '400px' } // Start loading 400px before reaching bottom (prefetch earlier)
+    );
+    
+    observer.observe(sentinel);
+    return () => {
+      try {
+        observer.unobserve(sentinel);
+        observer.disconnect();
+      } catch {}
+    };
+  }, [displayedCount, items]);
+
+  // Reset displayed count when items change (filter/sort)
+  useEffect(() => {
+    setDisplayedCount(20);
+  }, [filterBy, sortBy]);
+
   async function toggleFavorite(id?: string, slug?: string) {
     if (!id && !slug) return;
     const key = String(id || slug);
@@ -915,29 +957,47 @@ export function TemplatesTabContent(){
     }
   }
 
+  // Only show templates up to displayedCount
+  const displayedItems = items.slice(0, displayedCount);
+  const hasMore = displayedCount < items.length;
+
   const grid = (
-    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-stretch">
-      {items.map((it, idx)=> (
-        <div key={idx} className="h-full">
-          <TemplateCard
-            data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`carclout:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })(), proOnly: Boolean((it as Record<string, unknown>).proOnly) }}
-            className="h-full"
-            showNewBadge={true}
-            showLike={true}
-            showFavoriteCount={true}
-            onLikeToggle={()=> toggleFavorite(it.id, it.slug)}
-            onClick={()=>{
-              if (Boolean((it as Record<string, unknown>).proOnly) && canonicalPlan(me?.plan) !== 'ultra') {
-                try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
-                return;
-              }
-              setActive({ id: it.id, name: it.name, slug: it.slug });
-              setOpen(true);
-            }}
-          />
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-stretch">
+        {displayedItems.map((it, idx)=> (
+          <div key={idx} className="h-full">
+            <TemplateCard
+              data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, blurhash: it.blurhash, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`carclout:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })(), proOnly: Boolean((it as Record<string, unknown>).proOnly) }}
+              className="h-full"
+              showNewBadge={true}
+              showLike={true}
+              showFavoriteCount={true}
+              onLikeToggle={()=> toggleFavorite(it.id, it.slug)}
+              onClick={()=>{
+                if (Boolean((it as Record<string, unknown>).proOnly) && canonicalPlan(me?.plan) !== 'ultra') {
+                  try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
+                  return;
+                }
+                setActive({ id: it.id, name: it.name, slug: it.slug });
+                setOpen(true);
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      {/* Sentinel for infinite scroll */}
+      {hasMore && (
+        <div ref={sentinelRef} className="py-8 text-center">
+          <div className="inline-flex items-center gap-2 text-sm text-white/60">
+            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Loading more templates...
+          </div>
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 
   const saveDesignToGenerations = useCallback(async (blob: Blob, projectState?: string) => {
@@ -1356,8 +1416,8 @@ export function TemplatesTabContent(){
   if (!items.length) return <div>No templates yet</div>;
 
   return (
-    <div>
-      <div className="grid gap-3 mb-4 sm:gap-4">
+    <div className="flex flex-col h-full">
+      <div className="grid gap-3 mb-4 sm:gap-4 shrink-0">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="flex items-center gap-2">
             <div className="text-xs text-white/70">Filter</div>

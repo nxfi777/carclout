@@ -1,13 +1,22 @@
 import Link from "next/link";
-import PlanSelector from "@/components/plan-selector";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { auth } from "@/lib/auth";
 import PageBottomBlur from "@/components/page-bottom-blur";
-import PhoneWithCarParallax from "@/components/phone-with-car";
-import BrandMarquee from "@/components/brand-marquee";
-import BentoFeatures from "@/components/bento-features";
-import TestimonialsSection from "@/components/testimonials-section";
-import FAQSection from "@/components/faq-section";
+
+// Lazy load heavy components
+const PhoneWithCarParallax = dynamic(() => import("@/components/phone-with-car"), {
+  ssr: true,
+  loading: () => <div className="min-h-[22rem] sm:min-h-[26rem] md:min-h-[28rem]" />,
+});
+const BrandMarquee = dynamic(() => import("@/components/brand-marquee"), { ssr: true });
+const BentoFeatures = dynamic(() => import("@/components/bento-features"), { ssr: true });
+const TestimonialsSection = dynamic(() => import("@/components/testimonials-section"), { ssr: true });
+const FAQSection = dynamic(() => import("@/components/faq-section"), { ssr: true });
+const PlanSelector = dynamic(() => import("@/components/plan-selector"), { ssr: true });
+
+// ISR: Regenerate page every 10 minutes
+export const revalidate = 600;
 
 export default async function Home() {
   const session = await auth();

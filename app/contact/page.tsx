@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   }),
 };
 
+// ISR: Regenerate page every 1 hour (contact form rarely changes)
+export const revalidate = 3600;
+
 import ContactPageClient from "./contact-client";
 
 export default function ContactPage() {

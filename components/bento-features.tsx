@@ -3,6 +3,7 @@
 import { Infinity, Video, Users, Palette } from "lucide-react";
 import Image from "next/image";
 import { type LucideIcon } from "lucide-react";
+import { getClientBlurDataURL } from "@/lib/blur-placeholder";
 
 interface Feature {
   icon: LucideIcon;
@@ -120,6 +121,9 @@ export default function BentoFeatures() {
                       height={300}
                       className="w-full h-auto object-cover"
                       priority={index === 0}
+                      placeholder="blur"
+                      blurDataURL={getClientBlurDataURL('#111a36')}
+                      loading={index === 0 ? 'eager' : 'lazy'}
                     />
                   </div>
                 ) : (

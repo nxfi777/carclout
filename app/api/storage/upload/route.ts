@@ -3,6 +3,7 @@ import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { r2, bucket, listAllObjects } from "@/lib/r2";
 import { getSurreal } from "@/lib/surrealdb";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { generateBlurHash } from "@/lib/blurhash-server";
 
 export async function POST(req: Request) {
   const user = await getSessionUser();
@@ -71,6 +72,8 @@ export async function POST(req: Request) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
     await r2.send(new PutObjectCommand({
       Bucket: bucket,
       Key: key,
@@ -78,7 +81,20 @@ export async function POST(req: Request) {
       ContentType: file.type || "application/octet-stream",
     }));
 
-    return NextResponse.json({ key });
+    // Generate blurhash for images (async, don't block response)
+    let blurhash: string | undefined;
+    const isImage = /\.(jpe?g|png|webp|gif|bmp)$/i.test(file.name);
+    
+    if (isImage) {
+      try {
+        blurhash = await generateBlurHash(buffer, 4, 3);
+      } catch (error) {
+        console.error('BlurHash generation failed (non-fatal):', error);
+        // Don't fail upload if blurhash fails
+      }
+    }
+
+    return NextResponse.json({ key, blurhash });
   } catch (e) {
     console.error("upload error", e);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });

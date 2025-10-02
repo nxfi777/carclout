@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { getClientBlurDataURL } from "@/lib/blur-placeholder";
 interface InstagramPhoneProps {
   likes?: number;
   comments?: number;
@@ -132,6 +133,8 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
                     fill
                     sizes="2rem"
                     className="object-cover pt-[0.1rem]"
+                    placeholder="blur"
+                    blurDataURL={getClientBlurDataURL('#2d2d2d')}
                   />
                 </div>
                 <div className="leading-tight min-w-0">
@@ -156,10 +159,14 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
                 src="/car_post.webp"
                 alt="car post"
                 fill
-                sizes="(max-width: 768px) 100vw, 28rem"
+                sizes="(max-width: 768px) 100vw, 19rem"
                 className={`object-cover transition-opacity duration-[900ms] ease-out ${imageLoaded ? "opacity-100" : "opacity-0"}`}
                 onLoad={() => setImageLoaded(true)}
                 priority
+                fetchPriority="high"
+                quality={85}
+                placeholder="blur"
+                blurDataURL={getClientBlurDataURL('#000000')}
               />
             </div>
 

@@ -508,11 +508,10 @@ function DashboardShowroomPageInner() {
     };
   }, [active, me?.email]);
 
-  // Presence polling + heartbeat
+  // Presence polling (heartbeat handled globally by PresenceController)
   useEffect(() => {
     let mounted = true;
     let es: EventSource | null = null;
-    let beat: ReturnType<typeof setInterval> | null = null;
     async function initSSE() {
       try {
         const snapshot = await fetch('/api/presence', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({users:[]}));
@@ -541,13 +540,11 @@ function DashboardShowroomPageInner() {
         try { es?.close(); } catch {}
         setTimeout(() => { if (mounted) initSSE(); }, 3000);
       };
-      beat = setInterval(() => { fetch('/api/presence/heartbeat', { method: 'POST' }).catch(()=>{}); }, 60000);
     }
     initSSE();
     return () => {
       mounted = false;
       try { es?.close(); } catch {}
-      if (beat) clearInterval(beat);
     };
   }, [meEmail]);
 
