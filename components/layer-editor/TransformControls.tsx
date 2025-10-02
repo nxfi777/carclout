@@ -224,23 +224,23 @@ export default function TransformControls() {
   return (
     <div ref={ref} className="pointer-events-none">
       {/* Rotate handle antenna at top-center */}
-      <div className="absolute left-1/2 -top-7 -translate-x-1/2 pointer-events-none select-none">
-        <div className="absolute left-1/2 top-2 -translate-x-1/2 h-5 w-px bg-white/60" />
+      <div className="absolute left-1/2 -top-6 -translate-x-1/2 pointer-events-none select-none">
+        <div className="absolute left-1/2 top-2 -translate-x-1/2 h-4 w-px bg-white/60" />
         <div
           title="Rotate"
           onPointerDown={handleRotatePointerDown}
           style={{ touchAction: 'none' }}
-          className="relative z-10 size-4 md:size-4 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
+          className="relative z-10 size-3 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
         />
       </div>
       {/* Rotate handle antenna at bottom-center */}
-      <div className="absolute left-1/2 -bottom-7 -translate-x-1/2 pointer-events-none select-none">
-        <div className="absolute left-1/2 bottom-2 -translate-x-1/2 h-5 w-px bg-white/60" />
+      <div className="absolute left-1/2 -bottom-6 -translate-x-1/2 pointer-events-none select-none">
+        <div className="absolute left-1/2 bottom-2 -translate-x-1/2 h-4 w-px bg-white/60" />
         <div
           title="Rotate"
           onPointerDown={handleRotatePointerDown}
           style={{ touchAction: 'none' }}
-          className="relative z-10 size-4 md:size-4 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
+          className="relative z-10 size-3 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
         />
       </div>
       {(['tl','tr','bl','br'] as const).map((h)=> (
@@ -249,10 +249,10 @@ export default function TransformControls() {
           onPointerDown={(e)=>{ e.preventDefault(); e.stopPropagation(); (e.target as HTMLElement).setPointerCapture(e.pointerId); try { const canvas = ref.current?.parentElement?.parentElement as HTMLElement | null; const rect = canvas?.getBoundingClientRect(); const isImage = layer.type === 'image'; if (isImage && rect && rect.width > 0 && rect.height > 0) { const img = layer as ImageLayer; const nw = Number(img.naturalWidth || 0); const nh = Number(img.naturalHeight || 0); if (nw > 0 && nh > 0) { const pixelR = nw / nh; const percentR = pixelR * (rect.height / rect.width); lockAspectRef.current = percentR || 1; } else { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } } else { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } } catch { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } { const sx = layer.scaleX || 1; const sy = layer.scaleY || 1; lockScaleRef.current = sy !== 0 ? (sx / sy) : 1; } lastShiftRef.current = e.shiftKey; setDrag({ type: 'resize', x: e.clientX, y: e.clientY, w: layer.widthPct, h: layer.heightPct, sx: layer.scaleX || 1, sy: layer.scaleY || 1, handle: h }); }}
           style={{ touchAction: 'none' }}
           className={
-            h==='tl' ? 'absolute -left-0.5 -top-0.5 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nwse-resize' :
-            h==='tr' ? 'absolute -right-0.5 -top-0.5 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nesw-resize' :
-            h==='bl' ? 'absolute -left-0.5 -bottom-0.5 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nesw-resize' :
-                       'absolute -right-0.5 -bottom-0.5 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nwse-resize'
+            h==='tl' ? 'absolute -left-0.5 -top-0.5 size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nwse-resize' :
+            h==='tr' ? 'absolute -right-0.5 -top-0.5 size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nesw-resize' :
+            h==='bl' ? 'absolute -left-0.5 -bottom-0.5 size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nesw-resize' :
+                       'absolute -right-0.5 -bottom-0.5 size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nwse-resize'
           }
         />
       ))}
@@ -264,8 +264,8 @@ export default function TransformControls() {
             style={{ touchAction: 'none' }}
             className={
               h==='ml'
-                ? 'absolute -left-0.5 top-1/2 -translate-y-1/2 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-ew-resize'
-                : 'absolute -right-0.5 top-1/2 -translate-y-1/2 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-ew-resize'
+                ? 'absolute -left-0.5 top-1/2 -translate-y-1/2 size-2.5 rounded-sm bg-white border pointer-events-auto cursor-ew-resize'
+                : 'absolute -right-0.5 top-1/2 -translate-y-1/2 size-2.5 rounded-sm bg-white border pointer-events-auto cursor-ew-resize'
             }
           />
         ))

@@ -137,11 +137,17 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
         setWorkspaceLoading(true);
         const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
         const obj = await listRes.json().catch(() => ({}));
-        const arr: Array<{ type?: string; name?: string; key?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+        const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string }> = Array.isArray(obj?.items) ? obj.items : [];
         const files = arr.filter((it) => String(it?.type) === 'file');
         const imageFiles = files.filter((it) => {
           const s = String(it?.key || it?.name || '').toLowerCase();
           return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s);
+        });
+        // Sort by most recent first
+        imageFiles.sort((a, b) => {
+          const aTime = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+          const bTime = b.lastModified ? new Date(b.lastModified).getTime() : 0;
+          return bTime - aTime;
         });
         const keys = imageFiles.map((it) => it.key || `library/${String(it?.name || '')}`);
         if (!keys.length) { if (!aborted) setWorkspaceItems([]); return; }
@@ -160,11 +166,17 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       setWorkspaceLoading(true);
       const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
       const obj = await listRes.json().catch(() => ({}));
-      const arr: Array<{ type?: string; name?: string; key?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+      const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string }> = Array.isArray(obj?.items) ? obj.items : [];
       const files = arr.filter((it) => String(it?.type) === 'file');
       const imageFiles = files.filter((it) => {
         const s = String(it?.key || it?.name || '').toLowerCase();
         return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s);
+      });
+      // Sort by most recent first
+      imageFiles.sort((a, b) => {
+        const aTime = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+        const bTime = b.lastModified ? new Date(b.lastModified).getTime() : 0;
+        return bTime - aTime;
       });
       const keys = imageFiles.map((it) => it.key || `library/${String(it?.name || '')}`);
       if (!keys.length) { setWorkspaceItems([]); return; }

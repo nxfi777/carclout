@@ -4,7 +4,7 @@ import { getEnvBaseUrl } from "@/lib/base-url";
 
 const DEFAULT_WEBSITE_ID = "0e2c9c29-d47e-438b-a98d-5ae80da99a63";
 const DEFAULT_HOST = "https://umami-production-ddaa.up.railway.app";
-const DEFAULT_SCRIPT_PATH = "/umami/script.js";
+const DEFAULT_SCRIPT_PATH = "/script.js";
 const DEFAULT_TAG = "carclout-app";
 
 export interface UmamiClient {

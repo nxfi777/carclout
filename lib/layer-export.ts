@@ -45,8 +45,13 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
   const xCenter = (layer.xPct / 100) * cw;
   const yCenter = (layer.yPct / 100) * ch;
   const rotationRad = (layer.rotationDeg * Math.PI) / 180;
-  // Use fontSizeEm if available (more accurate), otherwise calculate from heightPct
-  const fontSize = layer.fontSizeEm ? Math.max(8, Math.round(layer.fontSizeEm * 16)) : Math.max(8, Math.round(heightPx * 0.8));
+  // Calculate font size to match viewport rendering exactly
+  // fontSizeEm represents the desired size in ems (1em = 16px)
+  // Convert to pixels based on layer height percentage
+  const fontSizePercent = layer.fontSizeEm && heightPx > 0
+    ? Math.max(10, Math.min(200, ((layer.fontSizeEm * 16) / heightPx) * 100))
+    : 50; // Match viewport default: 50% of layer height
+  const fontSize = Math.max(8, Math.round(heightPx * (fontSizePercent / 100)));
 
   // Debug logging for text transforms
   const tiltXDeg = layer.tiltXDeg || 0;

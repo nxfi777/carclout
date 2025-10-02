@@ -175,7 +175,7 @@ export function createDefaultText(xPct = 50, yPct = 50): TextLayer {
     xPct,
     yPct,
     widthPct: 28,
-    heightPct: 12,
+    heightPct: 16, // Increased from 12 for better spacing and larger default text
     rotationDeg: 0,
     tiltXDeg: 0,
     tiltYDeg: 0,

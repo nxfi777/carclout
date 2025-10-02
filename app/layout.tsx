@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Roboto, Geist_Mono, Poppins } from "next/font/google";
 import "./globals.css";
 import SiteHeader from "@/components/site-header";
@@ -41,6 +41,13 @@ const geistMono = Geist_Mono({
   preload: false, // Only preload critical fonts
   fallback: ['monospace'],
 });
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1, // Prevents auto-zoom on iOS when focusing inputs
+  userScalable: false, // Prevents pinch-to-zoom (optional, remove if you want users to zoom)
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL("/", "http://localhost"),

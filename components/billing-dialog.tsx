@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { estimateVideoCredits } from "@/lib/credits-client";
+import { Sparkles, Zap, Loader2 } from "lucide-react";
 
 export default function BillingDialog() {
   const [open, setOpen] = useState(false);
@@ -18,6 +19,9 @@ export default function BillingDialog() {
   const [autoReloadThreshold, setAutoReloadThreshold] = useState("100");
   const [autoReloadAmount, setAutoReloadAmount] = useState("10");
   const [savingAutoReload, setSavingAutoReload] = useState(false);
+  const [xpData, setXpData] = useState<{ totalXp: number; redeemedXp: number; availableXp: number; availableCredits: number } | null>(null);
+  const [redeemAmount, setRedeemAmount] = useState<string>("");
+  const [redeeming, setRedeeming] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   // Pricing helpers for equivalence explainer (10x scale for granular pricing)
@@ -123,6 +127,26 @@ export default function BillingDialog() {
     }
   }
 
+  async function handleRedeem() {
+    const amount = parseInt(redeemAmount, 10);
+    if (!amount || amount <= 0 || !xpData) { toast.error("Please enter a valid amount"); return; }
+    if (amount > xpData.availableCredits) { toast.error(`You can only redeem up to ${xpData.availableCredits} credits`); return; }
+    setRedeeming(true);
+    try {
+      const res = await fetch("/api/xp/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount }), });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); toast.error(err.error || "Failed to redeem XP"); return; }
+      const data = await res.json();
+      toast.success(`Redeemed ${data.creditsAdded} credits!`);
+      setRedeemAmount("");
+      // Reload XP data
+      try {
+        const xpRes = await fetch("/api/xp/redeem", { cache: "no-store" });
+        if (xpRes.ok) { const xpRedeemData = await xpRes.json(); setXpData(xpRedeemData); }
+      } catch {}
+      try { window.dispatchEvent(new CustomEvent("credits-refresh")); window.dispatchEvent(new CustomEvent("xp-refresh")); } catch {}
+    } catch (err) { console.error("Redeem error:", err); toast.error("Failed to redeem XP"); } finally { setRedeeming(false); }
+  }
+
   // Load credits when dialog opens and subscribe to live updates while open
   useEffect(() => {
     let mounted = true;
@@ -154,6 +178,14 @@ export default function BillingDialog() {
       try {
         const me = await fetch('/api/me', { cache: 'no-store' }).then(r=>r.json()).catch(()=>null);
         if (mounted) setPlan((me && typeof me?.plan === 'string') ? me.plan : null);
+      } catch {}
+      // Load XP data
+      try {
+        const xpRes = await fetch("/api/xp/redeem", { cache: "no-store" });
+        if (xpRes.ok && mounted) {
+          const xpRedeemData = await xpRes.json();
+          setXpData(xpRedeemData);
+        }
       } catch {}
       // Load auto-reload settings
       try {
@@ -206,8 +238,59 @@ export default function BillingDialog() {
               )}
             </div>
           </div>
-          <div className="text-sm text-white/70">Manage your subscription, payment methods, and invoices in the customer portal.</div>
-          <Button disabled={loading} onClick={openPortal}>Open customer portal</Button>
+
+          {/* XP Redemption Section */}
+          {xpData && xpData.availableCredits > 0 && (
+            <div className="p-3 rounded border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 to-transparent">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="size-4 text-emerald-400" />
+                <div className="text-sm font-medium">Redeem XP for Free Credits</div>
+              </div>
+              <div className="mb-3 p-2 rounded bg-emerald-500/10 border border-emerald-500/20">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-white/70">Available to redeem</span>
+                  <div className="flex items-center gap-1">
+                    <Zap className="size-3 text-emerald-400" />
+                    <span className="font-bold text-emerald-400">{xpData.availableCredits} credits</span>
+                  </div>
+                </div>
+                <div className="text-[0.7rem] text-white/60 mt-1">
+                  ≈ {Math.floor(xpData.availableCredits / 100)} free image{Math.floor(xpData.availableCredits / 100) !== 1 ? 's' : ''}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <input 
+                  type="number" 
+                  min="1" 
+                  max={xpData.availableCredits}
+                  value={redeemAmount} 
+                  onChange={(e) => setRedeemAmount(e.target.value)}
+                  placeholder={`Max ${xpData.availableCredits}`}
+                  disabled={redeeming}
+                  className="flex-1 rounded bg-white/5 px-3 py-2 text-sm" 
+                />
+                <Button 
+                  onClick={() => setRedeemAmount(String(xpData.availableCredits))} 
+                  variant="outline" 
+                  size="sm"
+                  disabled={redeeming}
+                >
+                  Max
+                </Button>
+                <Button 
+                  onClick={handleRedeem} 
+                  disabled={redeeming || !redeemAmount}
+                  size="sm"
+                >
+                  {redeeming ? <><Loader2 className="size-3 mr-1 animate-spin" />Redeem</> : "Redeem"}
+                </Button>
+              </div>
+              <div className="text-[0.7rem] text-white/60 mt-2">
+                Every 1,000 XP = 100 credits
+              </div>
+            </div>
+          )}
+
           <div className="mt-2 p-3 rounded border border-[color:var(--border)]">
             <div className="text-sm font-medium mb-2">Top up credits</div>
             
@@ -221,8 +304,7 @@ export default function BillingDialog() {
                 >
                   <div className="text-xs text-white/60">Starter</div>
                   <div className="text-lg font-bold">$9.99</div>
-                  <div className="text-xs text-white/80">9,000 cr</div>
-                  <div className="text-[0.65rem] text-white/50">900 cr/$</div>
+                  <div className="text-xs text-white/80 font-semibold">9,000 credits</div>
                 </button>
                 
                 {/* Tier 2: $19.99 */}
@@ -232,8 +314,7 @@ export default function BillingDialog() {
                 >
                   <div className="text-xs text-white/60">Plus</div>
                   <div className="text-lg font-bold">$19.99</div>
-                  <div className="text-xs text-white/80">19,000 cr</div>
-                  <div className="text-[0.65rem] text-white/50">950 cr/$</div>
+                  <div className="text-xs text-white/80 font-semibold">19,000 credits</div>
                 </button>
                 
                 {/* Tier 3: $27 - POPULAR */}
@@ -244,8 +325,7 @@ export default function BillingDialog() {
                   <div className="absolute -top-2 left-2 text-[0.65rem] px-2 py-0.5 rounded-full bg-blue-500 text-white font-medium">POPULAR</div>
                   <div className="text-xs text-white/60">Standard</div>
                   <div className="text-lg font-bold">$27</div>
-                  <div className="text-xs text-white/80">25,000 cr</div>
-                  <div className="text-[0.65rem] text-white/50">926 cr/$</div>
+                  <div className="text-xs text-white/80 font-semibold">25,000 credits</div>
                 </button>
                 
                 {/* Tier 4: $49.99 - BEST VALUE */}
@@ -256,8 +336,8 @@ export default function BillingDialog() {
                   <div className="absolute -top-2 left-2 text-[0.65rem] px-2 py-0.5 rounded-full bg-amber-500 text-white font-medium">BEST VALUE</div>
                   <div className="text-xs text-white/60">Premium</div>
                   <div className="text-lg font-bold">$49.99</div>
-                  <div className="text-xs text-white/80">50,000 cr</div>
-                  <div className="text-[0.65rem] text-emerald-400 font-medium">1,000 cr/$</div>
+                  <div className="text-xs text-white/80 font-semibold">50,000 credits</div>
+                  <div className="text-[0.65rem] text-emerald-400 font-medium">1:1 ratio</div>
                 </button>
                 
                 {/* Tier 5: $99 - BULK */}
@@ -268,8 +348,7 @@ export default function BillingDialog() {
                   <div className="absolute -top-2 left-2 text-[0.65rem] px-2 py-0.5 rounded-full bg-purple-500 text-white font-medium">+3% BONUS</div>
                   <div className="text-xs text-white/60">Bulk</div>
                   <div className="text-lg font-bold">$99</div>
-                  <div className="text-xs text-white/80">102,000 cr</div>
-                  <div className="text-[0.65rem] text-emerald-400 font-medium">1,030 cr/$</div>
+                  <div className="text-xs text-white/80 font-semibold">102,000 credits</div>
                 </button>
                 
                 {/* Tier 6: $199 - ULTIMATE */}
@@ -280,8 +359,7 @@ export default function BillingDialog() {
                   <div className="absolute -top-2 left-2 text-[0.65rem] px-2 py-0.5 rounded-full bg-purple-500 text-white font-medium">+6% BONUS</div>
                   <div className="text-xs text-white/60">Ultimate</div>
                   <div className="text-lg font-bold">$199</div>
-                  <div className="text-xs text-white/80">211,000 cr</div>
-                  <div className="text-[0.65rem] text-emerald-400 font-medium">1,060 cr/$</div>
+                  <div className="text-xs text-white/80 font-semibold">211,000 credits</div>
                 </button>
               </div>
             )}
@@ -406,6 +484,12 @@ export default function BillingDialog() {
             <Button onClick={handleSaveAutoReload} disabled={savingAutoReload} className="w-full mt-3" size="sm">
               {savingAutoReload ? "Saving..." : "Save Auto-Reload Settings"}
             </Button>
+          </div>
+
+          {/* Customer Portal - at the end */}
+          <div className="pt-2 border-t border-white/10">
+            <div className="text-sm text-white/70 mb-2">Manage your subscription, payment methods, and invoices in the customer portal.</div>
+            <Button disabled={loading} onClick={openPortal} variant="outline" className="w-full">Open customer portal</Button>
           </div>
         </div>
       </DialogContent>

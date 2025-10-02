@@ -118,7 +118,7 @@ export default function LevelUpDrawer() {
           </div>
         </div>
 
-        <SheetFooter className="px-5 pb-5 sm:px-6 pt-3 flex-col sm:flex-row gap-2">
+        <SheetFooter className="px-5 pb-5 sm:px-6 pt-3 flex-col gap-2">
           {availableCredits > 0 ? (
             <>
               <Button

@@ -209,7 +209,7 @@ function DashboardShowroomPageInner() {
   const [activeChatType, setActiveChatType] = useState<"channel" | "dm">("channel");
   const [activeDm, setActiveDm] = useState<{ email: string; name?: string; image?: string | null } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const messageCountRef = useRef(0);
   const [showMembers, setShowMembers] = useState(false);
   const [showChannels, setShowChannels] = useState(false);
@@ -929,11 +929,15 @@ function DashboardShowroomPageInner() {
               const findPendingIndex = () => {
                 if (!normalizedEmail) return -1;
                 const attachmentsKey = attachments.join('\u0000');
+                // Normalize text for comparison (treat \u200B as empty)
+                const normalizedRawText = rawText.replace(/\u200B/g, '').trim();
                 return next.findIndex((m) => {
                   if (m.id) return false;
                   if (m.status === 'sent') return false;
                   if ((m.userEmail || '').toLowerCase() !== normalizedEmail) return false;
-                  if ((m.text || '') !== rawText) return false;
+                  // Normalize both texts for comparison
+                  const mText = (m.text || '').replace(/\u200B/g, '').trim();
+                  if (mText !== normalizedRawText) return false;
                   const prevAttachments = Array.isArray(m.attachments) ? m.attachments : [];
                   if (prevAttachments.length !== attachments.length) return false;
                   if (prevAttachments.join('\u0000') !== attachmentsKey) return false;
@@ -1026,11 +1030,15 @@ function DashboardShowroomPageInner() {
             setMessages((prev) => {
               const next = [...prev];
               const attachmentsKey = attachments.join('\u0000');
+              // Normalize text for comparison (treat \u200B as empty)
+              const normalizedRawText = rawText.replace(/\u200B/g, '').trim();
               const pendingIndex = normalizedEmail ? next.findIndex((m) => {
                 if (m.id) return false;
                 if (m.status === 'sent') return false;
                 if ((m.userEmail || '').toLowerCase() !== normalizedEmail) return false;
-                if ((m.text || '') !== rawText) return false;
+                // Normalize both texts for comparison
+                const mText = (m.text || '').replace(/\u200B/g, '').trim();
+                if (mText !== normalizedRawText) return false;
                 const prevAttachments = Array.isArray(m.attachments) ? m.attachments : [];
                 if (prevAttachments.length !== attachments.length) return false;
                 return prevAttachments.join('\u0000') === attachmentsKey;
@@ -1236,12 +1244,19 @@ function DashboardShowroomPageInner() {
     try {
       const res = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
-      const files: Array<{ key?: string; type?: string }> = Array.isArray(data?.items) ? data.items : [];
-      const keys = files.filter((it) => String(it?.type) === 'file').map((it) => it.key || '').filter(Boolean);
-      const imageKeys = keys.filter((key) => {
-        const basename = key.split('?')[0]?.split('/').pop() || '';
+      const files: Array<{ key?: string; type?: string; lastModified?: string }> = Array.isArray(data?.items) ? data.items : [];
+      const imageFiles = files.filter((it) => {
+        if (String(it?.type) !== 'file') return false;
+        const basename = (it.key || '').split('?')[0]?.split('/').pop() || '';
         return IMAGE_EXTENSIONS.test(basename);
       });
+      // Sort by most recent first
+      imageFiles.sort((a, b) => {
+        const aTime = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+        const bTime = b.lastModified ? new Date(b.lastModified).getTime() : 0;
+        return bTime - aTime;
+      });
+      const imageKeys = imageFiles.map((it) => it.key || '').filter(Boolean);
       if (!imageKeys.length) {
         setLibraryItems([]);
         libraryLoadedRef.current = true;
@@ -1311,6 +1326,16 @@ function DashboardShowroomPageInner() {
     return () => clearInterval(intervalId);
   }, [messageAttachmentUrls]);
 
+  // Auto-resize textarea handler
+  const handleTextareaResize = useCallback(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    
+    textarea.style.height = 'auto';
+    const newHeight = Math.min(textarea.scrollHeight, 96); // max 96px (about 4 lines at 16px font)
+    textarea.style.height = `${newHeight}px`;
+  }, []);
+
   const handleSendAttachments = useCallback(async () => {
     if (!pendingAttachments.length) return;
     if (sendingAttachmentsRef.current) return;
@@ -1333,7 +1358,10 @@ function DashboardShowroomPageInner() {
     const trimmed = raw.trim();
     const hasText = trimmed.length > 0;
     const messageText = hasText ? trimmed : '';
-    if (input) input.value = '';
+    if (input) {
+      input.value = '';
+      handleTextareaResize();
+    }
     try {
       await sendMessage(messageText, undefined, attachmentsToSend);
     } finally {
@@ -1341,7 +1369,7 @@ function DashboardShowroomPageInner() {
       setSelectedAttachmentTab('upload');
       sendingAttachmentsRef.current = false;
     }
-  }, [pendingAttachments, attachmentPreviewMap, finalizeSentAttachments, markAttachmentsStatus, sendMessage]);
+  }, [pendingAttachments, attachmentPreviewMap, finalizeSentAttachments, markAttachmentsStatus, sendMessage, handleTextareaResize]);
 
   // Check if user has minimum plan (base plan)
   const hasMinimumPlan = useMemo(() => {
@@ -1355,6 +1383,15 @@ function DashboardShowroomPageInner() {
       try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
     }
   }, [hasMinimumPlan, loading]);
+
+  // Reset textarea height when messages change (after sending)
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (textarea && !textarea.value) {
+      textarea.style.height = 'auto';
+      handleTextareaResize();
+    }
+  }, [messages.length, handleTextareaResize]);
 
   if (loading) {
     return (
@@ -1798,13 +1835,19 @@ function DashboardShowroomPageInner() {
                   })
                 )}
               </div>
-              <form className="p-3 border-t border-[color:var(--border)] flex gap-2" onSubmit={async (e)=>{
+              <form className="p-3 border-t border-[color:var(--border)] flex items-start gap-2 w-full min-w-0" onSubmit={async (e)=>{
                 e.preventDefault();
                 const text = inputRef.current?.value || "";
                 if (!text) return;
-                if (text.trim().startsWith('/')) { const handled = await tryHandleSlashCommand(text); inputRef.current!.value = ""; if (handled) return; }
+                if (text.trim().startsWith('/')) { 
+                  const handled = await tryHandleSlashCommand(text); 
+                  inputRef.current!.value = ""; 
+                  handleTextareaResize();
+                  if (handled) return; 
+                }
                 if (muted?.active) return;
                 inputRef.current!.value="";
+                handleTextareaResize();
                 if (active === 'request-a-feature' || active === 'leaderboard') return; // no chat send in special channels
                 await sendMessage(text, undefined, pendingAttachments.map((key) => ({ key, url: attachmentPreviewMap[key] || "" })));
                 setPendingAttachments([]);
@@ -1833,10 +1876,24 @@ function DashboardShowroomPageInner() {
                   </div>
                 ) : (
                   <>
-                    <input ref={inputRef} className="flex-1 rounded bg-white/5 px-3 py-2 text-sm disabled:opacity-60" placeholder={activeChatType==='dm' ? `Message @${activeDm?.name || activeDm?.email || 'self'}` : `Message #${active}`} disabled={lockedForMe} />
+                    <textarea 
+                      ref={inputRef} 
+                      className="flex-1 min-w-0 rounded bg-white/5 px-3 py-2 disabled:opacity-60 resize-none overflow-y-auto" 
+                      style={{ fontSize: '16px', minHeight: '2.5rem', height: '2.5rem' }}
+                      placeholder={activeChatType==='dm' ? `Message @${activeDm?.name || activeDm?.email || 'self'}` : `Message #${active}`} 
+                      disabled={lockedForMe}
+                      rows={1}
+                      onInput={handleTextareaResize}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          e.currentTarget.form?.requestSubmit();
+                        }
+                      }}
+                    />
                     <button
                       type="button"
-                      className="inline-flex items-center justify-center px-3 py-2 rounded bg-white/5 hover:bg-white/10 text-sm"
+                      className="flex-shrink-0 inline-flex items-center justify-center px-3 py-2 h-10 rounded bg-white/5 hover:bg-white/10 text-sm"
                       onClick={()=> setAttachmentModalOpen(true)}
                       title="Add images"
                       aria-label="Add images"
@@ -1845,7 +1902,7 @@ function DashboardShowroomPageInner() {
                     </button>
                     <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
                       <PopoverTrigger asChild>
-                        <button type="button" className="hidden md:inline-flex items-center justify-center px-3 py-2 rounded bg-white/5 hover:bg-white/10 text-sm" title="Insert emoji" aria-label="Insert emoji">
+                        <button type="button" className="hidden md:inline-flex items-center justify-center px-3 py-2 h-10 rounded bg-white/5 hover:bg-white/10 text-sm" title="Insert emoji" aria-label="Insert emoji">
                           😊
                         </button>
                       </PopoverTrigger>
@@ -1889,7 +1946,7 @@ function DashboardShowroomPageInner() {
                         </div>
                       </PopoverContent>
                     </Popover>
-                    <button type="submit" className="px-3 py-2 rounded bg-primary text-black text-sm disabled:opacity-60" disabled={!!muted?.active || lockedForMe}>Send</button>
+                    <button type="submit" className="flex-shrink-0 px-3 py-2 h-10 rounded bg-primary text-black text-sm disabled:opacity-60" disabled={!!muted?.active || lockedForMe}>Send</button>
                   </>
                 )}
               </form>

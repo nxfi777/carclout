@@ -112,7 +112,7 @@ function DashboardHomePageInner() {
           }
           return { id: typeof t?.id === 'string' ? t.id : undefined, name, description, slug, thumbnailKey: keyRaw, thumbUrl, createdAt, proOnly: !!t?.proOnly };
         }));
-        const filtered = resolved.filter((t)=> !!t.thumbUrl).slice(0,5);
+        const filtered = resolved.filter((t)=> !!t.thumbUrl).slice(0,6);
         if (mounted) setSuggestions(filtered);
       } catch {}
     })();

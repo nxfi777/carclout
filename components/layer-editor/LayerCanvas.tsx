@@ -15,6 +15,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
   const [dragStart, setDragStart] = useState<{ x: number; y: number; lx: number; ly: number; id: string } | null>(null);
   const [selectRect, setSelectRect] = useState<null | { x: number; y: number; w: number; h: number }>(null);
   const [maskDrag, setMaskDrag] = useState<null | { x: number; y: number; tx: number; ty: number }>(null);
+  const [canvasHeight, setCanvasHeight] = useState(600); // Track canvas height for font sizing
   
   // Track when we just exited editing mode to prevent immediate new text creation
   const justExitedEditingRef = useRef(false);
@@ -31,6 +32,22 @@ export default function LayerCanvas({ className }: { className?: string }) {
       justExitedEditingRef.current = false;
     }
   }, [state.tool]);
+
+  // Track canvas height for font sizing calculations
+  useEffect(() => {
+    const updateCanvasHeight = () => {
+      const el = containerRef.current;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.height > 0) {
+          setCanvasHeight(rect.height);
+        }
+      }
+    };
+    updateCanvasHeight();
+    window.addEventListener('resize', updateCanvasHeight);
+    return () => window.removeEventListener('resize', updateCanvasHeight);
+  }, []);
 
   const onPointerDownLayer = useCallback((e: React.PointerEvent, layer: Layer) => {
     e.stopPropagation();
@@ -244,7 +261,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
             const tiltKey = layer.type === 'text' 
               ? `${layer.id}-${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}-${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}`
               : layer.id;
-            return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} />;
+            return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} canvasHeight={canvasHeight} />;
           })}
 
           {state.carMaskUrl && !state.maskHidden ? (
@@ -272,7 +289,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
             const tiltKey = layer.type === 'text' 
               ? `${layer.id}-${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}-${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}`
               : layer.id;
-            return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} />;
+            return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} canvasHeight={canvasHeight} />;
           })}
 
           {state.activeLayerId === '::mask::' ? (
@@ -300,7 +317,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
   );
 }
 
-function LayerView({ layer, selected, onPointerDown, justExitedEditingRef }: { layer: Layer; selected: boolean; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void; justExitedEditingRef: React.MutableRefObject<boolean> }){
+function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canvasHeight }: { layer: Layer; selected: boolean; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void; justExitedEditingRef: React.MutableRefObject<boolean>; canvasHeight: number }){
   const { state, dispatch } = useLayerEditor();
   const editableRef = React.useRef<HTMLDivElement | null>(null);
   const seededRef = React.useRef<string | null>(null);
@@ -416,13 +433,20 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef }: { l
   let rendered: React.ReactNode = null;
   if (layer.type === 'text') {
     const t = layer as import("@/types/layer-editor").TextLayer;
+    // Calculate font size based on canvas height to ensure viewport-independent sizing
+    // fontSizeEm represents the desired size in ems (1em = 16px)
+    // Convert to percentage of layer height for consistent rendering
+    const layerHeightPx = (layer.heightPct / 100) * canvasHeight;
+    const fontSizePercent = t.fontSizeEm && layerHeightPx > 0
+      ? Math.max(10, Math.min(200, ((t.fontSizeEm * 16) / layerHeightPx) * 100)) // Convert em to % of layer height
+      : 50; // Default: 50% of layer height for better readability when fontSizeEm not set
     const textStyle: React.CSSProperties = {
       color: t.color,
       fontFamily: t.fontFamily,
       fontWeight: t.fontWeight,
       fontStyle: t.italic ? 'italic' : undefined,
       textDecoration: t.underline ? 'underline' : undefined,
-      fontSize: `${(t.fontSizeEm || Math.max(0.5, (layer.heightPct / 3)))}em`,
+      fontSize: `${fontSizePercent}%`, // Percentage of layer height
       letterSpacing: `${t.letterSpacingEm}em`,
       lineHeight: t.lineHeightEm,
       textShadow: [

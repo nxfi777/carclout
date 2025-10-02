@@ -7,7 +7,7 @@ interface IProps {
   name: string;
   review: string;
   marginTop?: string;
-  src: string;
+  src?: string;
 }
 
 export default function TestimonialCard({
@@ -28,14 +28,16 @@ export default function TestimonialCard({
 
       <div className="flex flex-col lg:flex-row items-center lg:items-start mt-auto pt-4 justify-between gap-3 lg:gap-0">
         <div className="flex flex-col lg:flex-row items-center gap-2.5">
-          <Image
-            src={src}
-            alt={name}
-            className="size-8 rounded-full object-cover"
-            height={32}
-            width={32}
-            unoptimized
-          />
+          {src && (
+            <Image
+              src={src}
+              alt={name}
+              className="size-8 rounded-full object-cover"
+              height={32}
+              width={32}
+              unoptimized
+            />
+          )}
           <div className="text-center lg:text-start">
             <h2 className="text-foreground font-semibold whitespace-nowrap">{name}</h2>
             <p className="text-sm text-muted-foreground whitespace-nowrap">{position}</p>
