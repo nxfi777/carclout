@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 async function sendEmail({ to, subject, html, text }: { to: string; subject: string; html: string; text: string }) {
   const apiKey = process.env.AUTH_RESEND_KEY || process.env.RESEND_API_KEY || "";
-  const from = process.env.EMAIL_FROM || "support@carclout.nytforge.com";
+  const from = process.env.EMAIL_FROM || "support@carclout.io";
   if (!apiKey) throw new Error("Missing Resend API key");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       .replace(/>/g, "&gt;")
       .replace(/\n/g, "<br/>");
     const html = `<div style=\"font-family:Arial,Helvetica,sans-serif\"><h3 style=\"margin:0 0 .5rem\">New contact message</h3><p style=\"margin:.25rem 0;color:#444\"><b>From:</b> ${safeName} &lt;${safeEmail}&gt;</p><div style=\"margin-top:.5rem;padding:.75rem;border:1px solid #ddd;border-radius:8px;background:#fafafa;color:#222\">${escaped}</div></div>`;
-    await sendEmail({ to: "support@carclout.nytforge.com", subject, html, text });
+    await sendEmail({ to: "support@carclout.io", subject, html, text });
     return NextResponse.json({ ok: true });
   } catch (e) {
     try { console.error("Contact POST error", e); } catch {}

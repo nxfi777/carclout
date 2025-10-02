@@ -71,7 +71,7 @@ export const authOptions: NextAuthConfig = {
   providers: [
     Resend({
       apiKey: process.env.AUTH_RESEND_KEY!,
-      from: process.env.EMAIL_FROM || "support@carclout.nytforge.com",
+      from: process.env.EMAIL_FROM || "support@carclout.io",
       sendVerificationRequest,
     }),
     Facebook({

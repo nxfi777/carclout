@@ -83,8 +83,8 @@ export default function ContactPageClient() {
           </div>
           <p className="text-xs text-[color:var(--foreground)]/60">
             Or email us directly at
-            <a className="underline hover:text-[color:var(--primary)]" href="mailto:support@carclout.nytforge.com">
-              support@carclout.nytforge.com
+            <a className="underline hover:text-[color:var(--primary)]" href="mailto:support@carclout.io">
+              support@carclout.io
             </a>
             .
           </p>

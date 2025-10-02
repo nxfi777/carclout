@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || process.env.AUTH_URL || process.env.NEXT_PUBLIC_BASE_URL || process.env.APP_URL || "https://carclout.nytforge.com";
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || process.env.AUTH_URL || process.env.NEXT_PUBLIC_BASE_URL || process.env.APP_URL || "https://carclout.io";
 
   const isProd = process.env.NODE_ENV === "production";
 

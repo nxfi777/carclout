@@ -7,7 +7,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     process.env.AUTH_URL ||
     process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.APP_URL ||
-    "https://carclout.nytforge.com";
+    "https://carclout.io";
 
   const publicRoutes = [
     "/",
