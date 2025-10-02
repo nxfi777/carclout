@@ -36,9 +36,9 @@ async function sendVerificationRequest({
     body: JSON.stringify({
       from: provider.from,
       to: email,
-      subject: `Sign in to Nytforge CarClout`,
+      subject: `Sign in to CarClout`,
       html: createEmail({ url, email, request }),
-      text: `Sign in to Nytforge CarClout\n\nClick this link to sign in: ${url}\n\nIf you did not request this email, you can ignore it.`,
+      text: `Sign in to CarClout\n\nClick this link to sign in: ${url}\n\nIf you did not request this email, you can ignore it.`,
     }),
   });
   if (!res.ok) {

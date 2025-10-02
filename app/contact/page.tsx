@@ -6,7 +6,7 @@ export const metadata: Metadata = {
     title: "Contact CarClout Support",
     description: "Reach the CarClout team for support, product questions, or partnership inquiries.",
     path: "/contact",
-    keywords: ["support", "contact", "carclout help", "nytforge contact"],
+    keywords: ["support", "contact", "carclout help"],
   }),
 };
 

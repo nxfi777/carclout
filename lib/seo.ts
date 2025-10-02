@@ -7,7 +7,6 @@ const DEFAULT_IMAGE = "/carcloutlogo.webp";
 
 export const DEFAULT_KEYWORDS = [
   "CarClout",
-  "Nytforge",
   "car content",
   "automotive",
   "social media",

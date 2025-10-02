@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     title: "Sign in to CarClout",
     description: "Log in with your email to access the CarClout creator workspace.",
     path: "/auth/signin",
-    keywords: ["carclout login", "nytforge sign in", "creator dashboard"],
+    keywords: ["carclout login", "sign in", "creator dashboard"],
     robots: NO_INDEX_ROBOTS,
   }),
 };

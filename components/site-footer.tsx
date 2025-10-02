@@ -39,6 +39,21 @@ export default function SiteFooter() {
 
         <p className="text-center text-xs text-[color:var(--muted-foreground)] mt-[1rem]">
           &copy; {new Date().getFullYear()} CarClout. All rights reserved.
+          <br />
+          <span className="mt-[0.5rem] inline-block">
+            Built by{" "}
+            <a 
+              href="https://nytforge.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hover:text-[color:var(--foreground)] transition-colors underline-offset-4 hover:underline"
+              data-umami-event="outbound-link-click"
+              data-umami-event-url="https://nytforge.com"
+              data-umami-event-label="Nytforge"
+            >
+              Nytforge
+            </a>
+          </span>
         </p>
       </div>
     </footer>

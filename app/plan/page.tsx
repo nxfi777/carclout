@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     title: "Choose your CarClout plan",
     description: "Compare CarClout plans and pick the subscription that fits your automotive content workflow.",
     path: "/plan",
-    keywords: ["carclout pricing", "plans", "nytforge subscription"],
+    keywords: ["carclout pricing", "plans", "subscription"],
     robots: NO_INDEX_ROBOTS,
   }),
 };

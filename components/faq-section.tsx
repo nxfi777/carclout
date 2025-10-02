@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 
 export default function FAQSection() {
@@ -19,111 +18,82 @@ export default function FAQSection() {
             }}
           />
           <Accordion type="single" collapsible className="w-full relative">
-            <AccordionItem value="what-is-carclout" className="border-none">
+            <AccordionItem value="editing-skills" className="border-none">
               <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                What makes CarClout different from other content tools?
+                Do I need editing skills to use CarClout?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Make your car page unskippable. CarClout is your creative engine for planning, generating, and publishing high-performing car content in seconds—not hours. Unlike generic editing tools, we&apos;re built specifically for automotive content creators who need professional results without the professional price tag.
+                Nope. Just upload your car photo, choose a template, and hit generate. It&apos;s designed for car guys who want results, not tutorials.
               </AccordionContent>
             </AccordionItem>
-            <AccordionItem value="worth-it" className="border-none">
+            <AccordionItem value="card-details" className="border-none">
               <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                Is this really worth it compared to doing it myself?
+                Why do you need my card details for the $1 plan?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Think about it this way: professional photo shoots cost $500-$2,000+ each time. Photoshop and editing skills take months to master. CarClout gives you pro-level results in 2 clicks for $1 to try. You&apos;re not just saving money—you&apos;re saving dozens of hours you could spend actually growing your page. The question isn&apos;t whether it&apos;s worth it. It&apos;s how much longer you want to do this the hard way.
+                Your $1 payment locks in your founding member spot and lifetime pricing. It also prevents bots from taking spots. Cancel anytime in one click if it&apos;s not for you.
               </AccordionContent>
             </AccordionItem>
-            <AccordionItem value="results" className="border-none">
+            <AccordionItem value="after-trial" className="border-none">
               <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                Will this actually help me get more engagement and followers?
+                What happens after my $1 trial?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Here&apos;s what we know: high-quality visuals stop the scroll. Our users consistently report better engagement when they post CarClout-enhanced content vs. raw phone pics. We can&apos;t guarantee you&apos;ll go viral—no one can—but we can guarantee your content will look professional enough to compete with accounts that have actual production budgets. The rest is up to your consistency and captions.
-              </AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="payments" className="border-none">
-              <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                Is my payment information secure?
-              </AccordionTrigger>
-              <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                100%. All payments are handled by Stripe, the same payment processor trusted by Amazon, Google, and millions of businesses worldwide. We never see or store your payment details. Manage subscriptions and one-time top-ups from your Billing page—no extra accounts, no hassle.
-              </AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="storage" className="border-none">
-              <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                Do you own my content or can you use it?
-              </AccordionTrigger>
-              <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Your images live in your personal workspace and remain 100% yours. They&apos;re private to you, and you can download them anytime. We will never use, share, or claim ownership of your content. Period.
-              </AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="mobile" className="border-none">
-              <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                Can I create on my phone or do I need a computer?
-              </AccordionTrigger>
-              <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                CarClout works beautifully on any device—phone, tablet, or desktop. Create your viral posts from anywhere. For heavy batch work or detailed editing sessions, we recommend desktop for the best experience, but you&apos;re never locked out on mobile.
-              </AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="cancel" className="border-none">
-              <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                What if I want to cancel? Am I locked in?
-              </AccordionTrigger>
-              <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Zero lock-in. Upgrade, downgrade, or cancel anytime from your Billing page. Changes take effect immediately. We only want customers who are getting real value—if we&apos;re not delivering that, you shouldn&apos;t be paying us.
-              </AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="support" className="border-none">
-              <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                What if I get stuck or need help?
-              </AccordionTrigger>
-              <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                We&apos;ve got your back. Reach us anytime via <Link href="/contact" className="underline underline-offset-[0.2em] decoration-[color:var(--border)] hover:text-[color:var(--primary)]">contact</Link> or email support@nytforge.com. Pro members also get direct access to community admins for faster, personalized support. Real humans, real help. We&apos;re here to make sure you succeed, not just to collect your subscription.
-              </AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="speed" className="border-none">
-              <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                How long does it take to generate images?
-              </AccordionTrigger>
-              <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Most generations complete in seconds. High-resolution upscales may take a bit longer depending on size, but we&apos;ll keep you updated with real-time progress in your workspace. You&apos;re never left wondering.
+                After your trial, you can upgrade to Pro for $25/month to unlock unlimited edits, video generation, the designer, and all community features.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="credits" className="border-none">
               <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                How do credits work and will I run out?
+                How do credits work?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Credits meter generation and processing so you only pay for what you actually use. A single image generation is typically about 100 credits. The Minimum plan ($1) gives you 5 generations to try it out risk-free. Pro users get significantly more value per dollar and can create consistently. You&apos;ll always see your credit balance before generating, so there are never any surprises.
+                <p className="mb-2">Every AI edit uses credits:</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>100 credits = 1 image</li>
+                  <li>1350 credits = 1 video</li>
+                </ul>
+                <p className="mt-2">Pro members get monthly credit packs, plus bonus credits from XP, streaks, and the community leaderboard.</p>
               </AccordionContent>
             </AccordionItem>
-            <AccordionItem value="topups" className="border-none">
+            <AccordionItem value="starter-vs-pro" className="border-none">
               <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                What if I need more credits but don&apos;t want to upgrade?
+                What&apos;s the difference between Starter ($1) and Pro ($25)?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                No problem. Top-ups start at just $5 and work with any plan. On Minimum, $5 gets you 2,500 credits (25 image edits). On Pro, that same $5 gets you 5,000 credits (50 image edits)—2× more value per dollar.
-                <div className="mt-2 text-xs rounded px-2 py-1 inline-block bg-[rgba(255,106,0,0.12)] text-[#ff6a00] border border-[#ff6a00]/30">
-                  Pro members get 2× more credits per dollar across all purchases.
-                </div>
+                <p className="mb-2"><strong>Starter:</strong> limited credits, 1 edit, basic community access.</p>
+                <p><strong>Pro:</strong> unlimited photo credits, monthly video credits, daily feature requests, designer, XP leaderboard, and exclusive templates.</p>
               </AccordionContent>
             </AccordionItem>
-            <AccordionItem value="rollover" className="border-none">
+            <AccordionItem value="waitlist-payment" className="border-none">
               <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                Will I lose my credits if I don&apos;t use them right away?
+                Why do I have to pay $1 to join the waitlist?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Never. Credits don&apos;t expire on a timer and stay in your balance until you use them. Even if you cancel your plan, your remaining credits stay available. We don&apos;t believe in punishing you for taking a break.
+                CarClout isn&apos;t a free toy — it&apos;s an exclusive platform for real car enthusiasts. The $1 proves you&apos;re serious and locks you in as a Founder. Once you claim your spot, your price will never increase.
               </AccordionContent>
             </AccordionItem>
-            <AccordionItem value="run-out" className="border-none">
+            <AccordionItem value="after-1000-spots" className="border-none">
               <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                What happens if I run out of credits mid-project?
+                What happens after the first 1,000 spots are gone?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                You&apos;ll be prompted to top up instantly from your Billing page. Add credits in seconds and continue exactly where you left off. Your work is never lost, and you&apos;re never stuck mid-creation.
+                The Founder&apos;s price disappears forever. After that, CarClout membership will be $25/month. The only way to keep it at $1 is to join now.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="change-mind" className="border-none">
+              <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
+                What if I change my mind?
+              </AccordionTrigger>
+              <AccordionContent className="px-[1rem] md:px-[1.25rem]">
+                You can cancel anytime with one click. But if you do, you&apos;ll lose your Founder status and you&apos;ll never get it back.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="access" className="border-none">
+              <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
+                When do I get access?
+              </AccordionTrigger>
+              <AccordionContent className="px-[1rem] md:px-[1.25rem]">
+                As soon as CarClout opens. Founders will be first in line to use the platform and unlock perks before anyone else.
               </AccordionContent>
             </AccordionItem>
           </Accordion>

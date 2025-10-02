@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     title: "Create your CarClout account",
     description: "Sign up for CarClout to access AI-assisted car content creation.",
     path: "/auth/signup",
-    keywords: ["carclout sign up", "nytforge registration", "join carclout"],
+    keywords: ["carclout sign up", "registration", "join carclout"],
     robots: NO_INDEX_ROBOTS,
   }),
 };
