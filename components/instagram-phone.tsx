@@ -63,7 +63,10 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
       <div
         className="relative w-full mx-auto overflow-hidden aspect-[71.5/149.6]"
         suppressHydrationWarning
-        style={{ ['--igp-scale' as unknown as string]: 'calc(var(--igp-w, 12rem) / 19rem)' }}
+        style={{ 
+          ['--igp-scale' as unknown as string]: 'calc(var(--igp-w, 12rem) / 19rem)',
+          fontFamily: 'var(--font-roboto)'
+        }}
       >
       <div
         className="absolute left-0 top-0 will-change-transform"

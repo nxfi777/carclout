@@ -10,7 +10,7 @@ function parseUserRecordId(id: string): RecordId<"user"> {
   return new RecordId("user", actualId);
 }
 
-export function IgniteSurrealAdapter(): Adapter {
+export function CarCloutSurrealAdapter(): Adapter {
   const base = SurrealDBAdapter(getSurreal());
   return {
     ...base,

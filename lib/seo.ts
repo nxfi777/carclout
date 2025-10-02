@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { getEnvBaseUrl } from "@/lib/base-url";
 
-const SITE_NAME = "Ignition";
+const SITE_NAME = "CarClout";
 const DEFAULT_DESCRIPTION = "The content engine built for car creators.";
 const DEFAULT_IMAGE = "/nytforge.png";
 
 export const DEFAULT_KEYWORDS = [
-  "Ignition",
+  "CarClout",
   "Nytforge",
   "car content",
   "automotive",

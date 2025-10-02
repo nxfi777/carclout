@@ -23,7 +23,7 @@ export default function LivestreamPanel() {
   const [isCohost, setIsCohost] = useState(false);
   const [showChat, setShowChat] = useState(true);
   const callType = "livestream";
-  const [callId, setCallId] = useState<string>("ignite-global");
+  const [callId, setCallId] = useState<string>("carclout-global");
   const clientRef = useRef<StreamVideoClient | null>(null);
   const callRef = useRef<Call | null>(null);
 
@@ -49,10 +49,10 @@ export default function LivestreamPanel() {
         clientRef.current = c;
 
         // Resolve current session slug before creating/joining the call
-        let sessionSlug = "ignite-global";
+        let sessionSlug = "carclout-global";
         try {
           const st = await fetch('/api/livestream/status', { cache: 'no-store' }).then(r=>r.json());
-          sessionSlug = String(st?.sessionSlug || 'ignite-global');
+          sessionSlug = String(st?.sessionSlug || 'carclout-global');
         } catch {}
         if (mounted) setCallId(sessionSlug);
 
@@ -255,7 +255,7 @@ function LivestreamChat({ initialSession }: { initialSession?: string }) {
   const [messages, setMessages] = useState<Array<{ id?: string; text: string; userName: string; created_at?: string }>>([]);
   const [sending, setSending] = useState(false);
   const [text, setText] = useState("");
-  const [sessionSlug, _setSessionSlug] = useState<string>(initialSession || 'ignite-global');
+  const [sessionSlug, _setSessionSlug] = useState<string>(initialSession || 'carclout-global');
   useEffect(() => {
     let es: EventSource | null = null;
     let mounted = true;

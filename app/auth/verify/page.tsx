@@ -4,9 +4,9 @@ import { createMetadata, NO_INDEX_ROBOTS } from "@/lib/seo";
 export const metadata: Metadata = {
   ...createMetadata({
     title: "Check your email",
-    description: "We sent a magic link to your inbox. Open it to finish signing into Ignition.",
+    description: "We sent a magic link to your inbox. Open it to finish signing into CarClout.",
     path: "/auth/verify",
-    keywords: ["verify email", "magic link", "ignition login"],
+    keywords: ["verify email", "magic link", "carclout login"],
     robots: NO_INDEX_ROBOTS,
   }),
 };

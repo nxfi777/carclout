@@ -6,7 +6,7 @@ import FAQSection from "@/components/faq-section";
 
 export const metadata = createMetadata({
   title: "Pricing",
-  description: "Simple pricing for Ignition. Pick the plan that fits. Upgrade or cancel anytime.",
+  description: "Simple pricing for CarClout. Pick the plan that fits. Upgrade or cancel anytime.",
   path: "/pricing",
 });
 

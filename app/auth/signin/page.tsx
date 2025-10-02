@@ -4,10 +4,10 @@ import SignInPageClient from "./_components/signin-page-client";
 
 export const metadata: Metadata = {
   ...createMetadata({
-    title: "Sign in to Ignition",
-    description: "Log in with your email to access the Ignition creator workspace.",
+    title: "Sign in to CarClout",
+    description: "Log in with your email to access the CarClout creator workspace.",
     path: "/auth/signin",
-    keywords: ["ignition login", "nytforge sign in", "creator dashboard"],
+    keywords: ["carclout login", "nytforge sign in", "creator dashboard"],
     robots: NO_INDEX_ROBOTS,
   }),
 };

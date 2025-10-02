@@ -39,7 +39,7 @@ type ItemWithTag = Item & { etag?: string };
 
 // Simple in-memory + session cache for workspace items, keyed by scope:path
 const ITEMS_TTL_MS = 60_000; // UI hint only; we still revalidate in background
-const SESSION_PREFIX = "ignite:workspace:list:";
+const SESSION_PREFIX = "carclout:workspace:list:";
 type WorkspaceCacheEntry = { items: ItemWithTag[]; timestamp: number; etag?: string };
 const workspaceItemsCache = new Map<string, WorkspaceCacheEntry>();
 

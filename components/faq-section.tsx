@@ -19,12 +19,12 @@ export default function FAQSection() {
             }}
           />
           <Accordion type="single" collapsible className="w-full relative">
-            <AccordionItem value="what-is-ignition" className="border-none">
+            <AccordionItem value="what-is-carclout" className="border-none">
               <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                What makes Ignition different from other content tools?
+                What makes CarClout different from other content tools?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Make your car page unskippable. Ignition is your creative engine for planning, generating, and publishing high-performing car content in seconds—not hours. Unlike generic editing tools, we&apos;re built specifically for automotive content creators who need professional results without the professional price tag.
+                Make your car page unskippable. CarClout is your creative engine for planning, generating, and publishing high-performing car content in seconds—not hours. Unlike generic editing tools, we&apos;re built specifically for automotive content creators who need professional results without the professional price tag.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="worth-it" className="border-none">
@@ -32,7 +32,7 @@ export default function FAQSection() {
                 Is this really worth it compared to doing it myself?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Think about it this way: professional photo shoots cost $500-$2,000+ each time. Photoshop and editing skills take months to master. Ignition gives you pro-level results in 2 clicks for $1 to try. You&apos;re not just saving money—you&apos;re saving dozens of hours you could spend actually growing your page. The question isn&apos;t whether it&apos;s worth it. It&apos;s how much longer you want to do this the hard way.
+                Think about it this way: professional photo shoots cost $500-$2,000+ each time. Photoshop and editing skills take months to master. CarClout gives you pro-level results in 2 clicks for $1 to try. You&apos;re not just saving money—you&apos;re saving dozens of hours you could spend actually growing your page. The question isn&apos;t whether it&apos;s worth it. It&apos;s how much longer you want to do this the hard way.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="results" className="border-none">
@@ -40,7 +40,7 @@ export default function FAQSection() {
                 Will this actually help me get more engagement and followers?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Here&apos;s what we know: high-quality visuals stop the scroll. Our users consistently report better engagement when they post Ignition-enhanced content vs. raw phone pics. We can&apos;t guarantee you&apos;ll go viral—no one can—but we can guarantee your content will look professional enough to compete with accounts that have actual production budgets. The rest is up to your consistency and captions.
+                Here&apos;s what we know: high-quality visuals stop the scroll. Our users consistently report better engagement when they post CarClout-enhanced content vs. raw phone pics. We can&apos;t guarantee you&apos;ll go viral—no one can—but we can guarantee your content will look professional enough to compete with accounts that have actual production budgets. The rest is up to your consistency and captions.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="payments" className="border-none">
@@ -64,7 +64,7 @@ export default function FAQSection() {
                 Can I create on my phone or do I need a computer?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Ignition works beautifully on any device—phone, tablet, or desktop. Create your viral posts from anywhere. For heavy batch work or detailed editing sessions, we recommend desktop for the best experience, but you&apos;re never locked out on mobile.
+                CarClout works beautifully on any device—phone, tablet, or desktop. Create your viral posts from anywhere. For heavy batch work or detailed editing sessions, we recommend desktop for the best experience, but you&apos;re never locked out on mobile.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="cancel" className="border-none">

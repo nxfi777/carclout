@@ -27,8 +27,10 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--primary);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-poppins);
   --font-mono: var(--font-geist-mono);
+  --font-poppins: var(--font-poppins);
+  --font-roboto: var(--font-roboto);
 }
 
 body {

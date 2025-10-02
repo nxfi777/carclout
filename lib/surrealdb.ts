@@ -10,7 +10,7 @@ function wrapSubscribeLive(client: Surreal) {
   })) as typeof client.subscribeLive;
 }
 
-// Support both Ignite (SURREAL_*) and distrib-forge (AUTH_SURREALDB_*) envs
+// Support both CarClout (SURREAL_*) and distrib-forge (AUTH_SURREALDB_*) envs
 const rawConnection =
   process.env.SURREAL_URL ||
   process.env.AUTH_SURREALDB_CONNECTION ||
@@ -18,11 +18,11 @@ const rawConnection =
 const namespace =
   process.env.SURREAL_NAMESPACE ||
   process.env.AUTH_SURREALDB_NS ||
-  "ignite";
+  "carclout";
 const database =
   process.env.SURREAL_DATABASE ||
   process.env.AUTH_SURREALDB_DB ||
-  "ignite";
+  "carclout";
 const username =
   process.env.SURREAL_USERNAME ||
   process.env.AUTH_SURREALDB_USERNAME ||

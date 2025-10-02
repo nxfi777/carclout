@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import type { ShapeLayer, TextLayer } from "@/types/designer";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2, Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical, Check } from "lucide-react";
+import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2, Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical, Check, Trash2 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { BsTransparency } from "react-icons/bs";
@@ -75,11 +75,18 @@ const FONT_OPTIONS: FontFamilyOption[] = FONT_FAMILIES.map((value)=> ({
 }));
 
 export default function ToolOptionsBar({ className, accessory }: { className?: string; accessory?: React.ReactNode }) {
-  const { state, undo, redo, canUndo, canRedo } = useLayerEditor();
+  const { state, dispatch, undo, redo, canUndo, canRedo } = useLayerEditor();
   const selectedIds = state.selectedLayerIds && state.selectedLayerIds.length > 0 ? state.selectedLayerIds : (state.activeLayerId ? [state.activeLayerId] : []);
   const selectedLayers = state.layers.filter((l) => selectedIds.includes(l.id));
   const hasTextSelected = selectedLayers.some((l) => l.type === 'text');
   const hasShapeSelected = selectedLayers.some((l) => l.type === 'shape');
+  const hasSelection = selectedLayers.length > 0;
+
+  const handleDeleteSelected = React.useCallback(() => {
+    for (const layer of selectedLayers) {
+      dispatch({ type: 'remove_layer', id: layer.id });
+    }
+  }, [selectedLayers, dispatch]);
 
   return (
     <div className="space-y-1">
@@ -95,6 +102,13 @@ export default function ToolOptionsBar({ className, accessory }: { className?: s
           <Button size="icon" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" /></Button>
           <Button size="icon" variant="outline" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)"><Redo2 className="size-4" /></Button>
         </div>
+        {hasSelection ? (
+          <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
+            <Button size="icon" variant="outline" onClick={handleDeleteSelected} title="Delete selected" aria-label="Delete selected">
+              <Trash2 className="size-4" />
+            </Button>
+          </div>
+        ) : null}
         {state.tool === 'text' ? <AlignControls /> : null}
         {state.tool === 'text' && hasTextSelected ? <TextOptions /> : null}
         {state.tool === 'shape' ? <ShapeOptions /> : null}

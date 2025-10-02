@@ -4,10 +4,10 @@ import SignUpPageClient from "./_components/signup-page-client";
 
 export const metadata: Metadata = {
   ...createMetadata({
-    title: "Create your Ignition account",
-    description: "Sign up for Ignition to access AI-assisted car content creation.",
+    title: "Create your CarClout account",
+    description: "Sign up for CarClout to access AI-assisted car content creation.",
     path: "/auth/signup",
-    keywords: ["ignition sign up", "nytforge registration", "join ignition"],
+    keywords: ["carclout sign up", "nytforge registration", "join carclout"],
     robots: NO_INDEX_ROBOTS,
   }),
 };

@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/user";
 import { getSurreal } from "@/lib/surrealdb";
 import { retryOnConflict } from "@/lib/retry";
 
-const CALL_ID = "ignite-global";
+const CALL_ID = "carclout-global";
 
 export async function GET() {
   const db = await getSurreal();

@@ -12,7 +12,7 @@ A comprehensive XP-to-credits reward system that encourages daily engagement and
 |----------|---------|-------|
 | Daily Login | 20 XP | Once per day |
 | Chat Message | 1 XP | Per message in showroom (max 100 XP/day = 100 messages) |
-| Showroom Post (with image) | 50 XP | Bonus for sharing Ignition edits (50× chat value) |
+| Showroom Post (with image) | 50 XP | Bonus for sharing CarClout edits (50× chat value) |
 | **First Showroom Post** | **100 XP** | **One-time milestone bonus** |
 
 ### Streak Multiplier 🔥
@@ -61,7 +61,7 @@ All XP gains are logged to `xp_log` table with:
 3. **User posts subsequent images**
    - Sends message with attachment
    - Receives +50 XP (or +100 XP with 7-day streak)
-   - Animated toast appears: "+50 XP - Ignition edit posted to Showroom"
+   - Animated toast appears: "+50 XP - CarClout edit posted to Showroom"
    - If 7-day streak active, additional toast: "🔥 2× XP Active!"
 
 4. **User levels up**
@@ -252,7 +252,7 @@ Custom events for reactivity:
 ## Framing for Users
 
 **Marketing messaging:**
-- "Earn XP daily by logging in, chatting, and sharing your Ignitions"
+- "Earn XP daily by logging in, chatting, and sharing your CarClout edits"
 - "Every 1,000 XP = 1 free edit"
 - "Hit a 7-day streak for 2× XP rewards"
 - "Grind levels, unlock badges, and get rewarded with credits"

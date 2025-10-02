@@ -4,10 +4,10 @@ import OnboardingPageClient from "./_components/onboarding-page-client";
 
 export const metadata: Metadata = {
   ...createMetadata({
-    title: "Complete your Ignition onboarding",
-    description: "Add your Instagram handle, vehicles, and photos to unlock the Ignition workspace.",
+    title: "Complete your CarClout onboarding",
+    description: "Add your Instagram handle, vehicles, and photos to unlock the CarClout workspace.",
     path: "/onboarding",
-    keywords: ["ignition onboarding", "setup", "creator profile"],
+    keywords: ["carclout onboarding", "setup", "creator profile"],
     robots: NO_INDEX_ROBOTS,
   }),
 };

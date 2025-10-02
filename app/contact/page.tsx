@@ -3,10 +3,10 @@ import { createMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = {
   ...createMetadata({
-    title: "Contact Ignition Support",
-    description: "Reach the Ignition team for support, product questions, or partnership inquiries.",
+    title: "Contact CarClout Support",
+    description: "Reach the CarClout team for support, product questions, or partnership inquiries.",
     path: "/contact",
-    keywords: ["support", "contact", "ignition help", "nytforge contact"],
+    keywords: ["support", "contact", "carclout help", "nytforge contact"],
   }),
 };
 

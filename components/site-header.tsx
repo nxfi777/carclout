@@ -67,7 +67,7 @@ export default async function SiteHeader() {
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2">
               <Image src="/nytforge.webp" alt="Nytforge" width={28} height={28} />
-              <span className="text-xs sm:text-sm uppercase tracking-widest text-[color:var(--foreground)]/80">IGNITION</span>
+              <span className="text-xs sm:text-sm uppercase tracking-widest text-[color:var(--foreground)]/80 font-semibold">CARCLOUT</span>
             </Link>
           </div>
           <div className="justify-self-center hidden sm:flex items-center gap-3 md:gap-4">

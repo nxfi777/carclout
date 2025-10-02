@@ -5,7 +5,7 @@ import { RecordId } from "surrealdb";
 
 async function sendEmail({ to, subject, html, text }: { to: string; subject: string; html: string; text: string }) {
   const apiKey = process.env.AUTH_RESEND_KEY || process.env.RESEND_API_KEY || "";
-  const from = process.env.EMAIL_FROM || "support@ignition.nytforge.com";
+  const from = process.env.EMAIL_FROM || "support@carclout.nytforge.com";
   if (!apiKey) throw new Error("Missing Resend API key");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -43,7 +43,7 @@ export async function POST() {
       if (!email) continue;
       const subject = row.title || "Your scheduled Instagram post";
       const caption = (row.caption || "").trim();
-      const bodyText = `Reminder: ${subject}\n\n${caption ? `Caption:\n${caption}\n\n` : ""}Open Instagram and post.\n\n— Ignition`;
+      const bodyText = `Reminder: ${subject}\n\n${caption ? `Caption:\n${caption}\n\n` : ""}Open Instagram and post.\n\n— CarClout`;
       const bodyHtml = `<div style=\"font-family:Arial,Helvetica,sans-serif;\"><h2 style=\"margin:0 0 .5rem\">Reminder: ${subject}</h2><p style=\"margin:.2rem 0\">${caption ? "<b>Caption:</b><br/>" + caption.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br/>") : ""}</p><p style=\"margin:1rem 0 0;color:#555\">Open Instagram and post. ✨</p></div>`;
       await sendEmail({ to: email, subject, html: bodyHtml, text: bodyText });
       const ridString = ((): string => {

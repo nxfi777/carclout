@@ -695,7 +695,7 @@ export function TemplatesTabContent(){
           const k = adminKey(String((tRaw as { thumbnailKey?: string })?.thumbnailKey || ''));
           if (!k) continue;
           try {
-            const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:thumb:${k}`) : null;
+            const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`carclout:thumb:${k}`) : null;
             if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; if (obj?.url && obj?.ts && now - obj.ts < TTL) continue; }
           } catch {}
           toResolve.push(k);
@@ -705,7 +705,7 @@ export function TemplatesTabContent(){
           try {
             urlsMap = await getViewUrls(toResolve, 'admin');
             if (typeof window !== 'undefined') {
-              for (const [k,u] of Object.entries(urlsMap)) { try { sessionStorage.setItem(`ignite:thumb:${k}`, JSON.stringify({ url: u, ts: now })); } catch {} }
+              for (const [k,u] of Object.entries(urlsMap)) { try { sessionStorage.setItem(`carclout:thumb:${k}`, JSON.stringify({ url: u, ts: now })); } catch {} }
             }
           } catch {}
         }
@@ -714,7 +714,7 @@ export function TemplatesTabContent(){
           const k = adminKey(typeof t.thumbnailKey === 'string' ? t.thumbnailKey : undefined);
           let thumbUrl: string | undefined = undefined;
           if (k) {
-            try { const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:thumb:${k}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string }; if (obj?.url) thumbUrl = obj.url; } } catch {}
+            try { const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`carclout:thumb:${k}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string }; if (obj?.url) thumbUrl = obj.url; } } catch {}
             if (!thumbUrl && urlsMap[k]) thumbUrl = urlsMap[k];
           }
           return {
@@ -773,11 +773,11 @@ export function TemplatesTabContent(){
         try {
           const now = Date.now(); const TTL = 10*60*1000;
           const toResolve = keys.filter(Boolean).filter((k)=>{
-            try { const c = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:veh:${k}`) : null; if (!c) return true; const obj = JSON.parse(c) as { url?: string; ts?: number }; return !(obj?.url && obj?.ts && now - obj.ts < TTL); } catch { return true; }
+            try { const c = typeof window !== 'undefined' ? sessionStorage.getItem(`carclout:veh:${k}`) : null; if (!c) return true; const obj = JSON.parse(c) as { url?: string; ts?: number }; return !(obj?.url && obj?.ts && now - obj.ts < TTL); } catch { return true; }
           });
         if (toResolve.length) {
           const urls: Record<string, string> = await getViewUrls(toResolve);
-          if (typeof window !== 'undefined') { for (const [k,u] of Object.entries(urls)) { try { sessionStorage.setItem(`ignite:veh:${k}`, JSON.stringify({ url: u, ts: now })); } catch {} } }
+          if (typeof window !== 'undefined') { for (const [k,u] of Object.entries(urls)) { try { sessionStorage.setItem(`carclout:veh:${k}`, JSON.stringify({ url: u, ts: now })); } catch {} } }
         }
         } catch {}
       } catch {}
@@ -920,7 +920,7 @@ export function TemplatesTabContent(){
       {items.map((it, idx)=> (
         <div key={idx} className="h-full">
           <TemplateCard
-            data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`ignite:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })(), proOnly: Boolean((it as Record<string, unknown>).proOnly) }}
+            data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`carclout:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })(), proOnly: Boolean((it as Record<string, unknown>).proOnly) }}
             className="h-full"
             showNewBadge={true}
             showLike={true}
@@ -1792,7 +1792,7 @@ export function TemplatesTabContent(){
                                     <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(k) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
                                       <div className="rounded overflow-hidden relative bg-black/20">
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img src={(() => { try { const c = typeof window!== 'undefined' ? sessionStorage.getItem(`ignite:veh:${k}`) : null; if (c) { const obj = JSON.parse(c) as { url?: string }; if (obj?.url) return obj.url; } } catch {} return ''; })()} alt="vehicle" className="w-full h-auto object-contain cursor-pointer" />
+                                        <img src={(() => { try { const c = typeof window!== 'undefined' ? sessionStorage.getItem(`carclout:veh:${k}`) : null; if (c) { const obj = JSON.parse(c) as { url?: string }; if (obj?.url) return obj.url; } } catch {} return ''; })()} alt="vehicle" className="w-full h-auto object-contain cursor-pointer" />
                                         <span className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`} onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSource('vehicle'); setSelectedVehicleKey(k); toggleSelect(k); }}>
                                           <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
                                             {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}

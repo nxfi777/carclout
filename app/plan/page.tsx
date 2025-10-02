@@ -4,10 +4,10 @@ import PlanPageClient from "./_components/plan-page-client";
 
 export const metadata: Metadata = {
   ...createMetadata({
-    title: "Choose your Ignition plan",
-    description: "Compare Ignition plans and pick the subscription that fits your automotive content workflow.",
+    title: "Choose your CarClout plan",
+    description: "Compare CarClout plans and pick the subscription that fits your automotive content workflow.",
     path: "/plan",
-    keywords: ["ignition pricing", "plans", "nytforge subscription"],
+    keywords: ["carclout pricing", "plans", "nytforge subscription"],
     robots: NO_INDEX_ROBOTS,
   }),
 };

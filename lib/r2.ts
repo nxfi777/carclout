@@ -12,7 +12,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const accountId = process.env.R2_ACCOUNT_ID || "";
-const bucket = process.env.R2_BUCKET || "ignite";
+const bucket = process.env.R2_BUCKET || "carclout";
 const endpointFromForge = process.env.R2_ENDPOINT || ""; // distrib-forge style
 const endpoint = endpointFromForge || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
 const accessKeyId = process.env.R2_ACCESS_KEY_ID || process.env.R2_ACCESS_ID || "";

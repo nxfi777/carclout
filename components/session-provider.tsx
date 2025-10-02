@@ -22,7 +22,7 @@ export default function SessionProviderWrapper({ children, session }: { children
   useEffect(() => {
     if (!session) return;
     try {
-      (window as typeof window & { __igniteSessionEmail?: string | null }).__igniteSessionEmail = email ?? null;
+      (window as typeof window & { __carcloutSessionEmail?: string | null }).__carcloutSessionEmail = email ?? null;
     } catch {}
   }, [email, session]);
 

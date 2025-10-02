@@ -35,7 +35,7 @@ export default function HeaderNavLink({ href, children }: HeaderNavLinkProps) {
       onClick={handleClick}
       aria-current={isActive ? "page" : undefined}
       className={clsx(
-        "text-xs sm:text-sm uppercase tracking-widest",
+        "text-xs sm:text-sm uppercase tracking-widest font-medium",
         isActive
           ? "text-[color:var(--primary)]"
           : "text-[color:var(--foreground)]/80 hover:text-[color:var(--primary)]"

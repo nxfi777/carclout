@@ -1,14 +1,26 @@
 "use client";
 
 import { Infinity, Video, Users, Palette } from "lucide-react";
+import Image from "next/image";
+import { type LucideIcon } from "lucide-react";
 
-const features = [
+interface Feature {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  gradient: string;
+  iconColor: string;
+  image?: string;
+}
+
+const features: Feature[] = [
   {
     icon: Infinity,
     title: "Unlimited AI Car Pics",
     description: "Transform any photo into viral edits — no limits, no credits. Upload once, create infinite variations with pro backgrounds and lighting.",
     gradient: "from-purple-500/10 to-pink-500/10",
     iconColor: "text-purple-500",
+    image: "/before_after.webp",
   },
   {
     icon: Video,
@@ -97,14 +109,28 @@ export default function BentoFeatures() {
                   </p>
                 </div>
 
-                {/* Image placeholder - for future images */}
-                <div 
-                  aria-hidden
-                  className="absolute bottom-0 right-0 w-[8rem] h-[8rem] opacity-0 pointer-events-none group-hover:opacity-5 transition-opacity duration-500"
-                  style={{
-                    background: `radial-gradient(circle at center, ${feature.iconColor.replace('text-', 'var(--')}, transparent 70%)`
-                  }}
-                />
+                {/* Feature Image */}
+                {feature.image ? (
+                  <div className="relative z-[1] mt-[1rem] rounded-lg overflow-hidden border border-[color:var(--border)]/50">
+                    <Image
+                      src={feature.image}
+                      alt={feature.title}
+                      width={600}
+                      height={300}
+                      className="w-full h-auto object-cover"
+                      priority={index === 0}
+                    />
+                  </div>
+                ) : (
+                  /* Image placeholder - for future images */
+                  <div 
+                    aria-hidden
+                    className="absolute bottom-0 right-0 w-[8rem] h-[8rem] opacity-0 pointer-events-none group-hover:opacity-5 transition-opacity duration-500"
+                    style={{
+                      background: `radial-gradient(circle at center, ${feature.iconColor.replace('text-', 'var(--')}, transparent 70%)`
+                    }}
+                  />
+                )}
               </article>
             );
           })}

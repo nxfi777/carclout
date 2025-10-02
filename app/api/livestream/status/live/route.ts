@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSurreal } from "@/lib/surrealdb";
 import type { Uuid } from "surrealdb";
 
-const CALL_ID = "ignite-global";
+const CALL_ID = "carclout-global";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {

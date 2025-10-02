@@ -106,7 +106,7 @@ The `leaderboard` channel is auto-created via `ensureLeaderboard()` function.
 ### Recommended Next Steps (Hormozi Framework)
 
 #### Priority 1: Status & Titles
-- Add **named levels** (Ignition Member, Forge Master, Carbon Elite, Platinum Forger)
+- Add **named levels** (CarClout Member, Forge Master, Carbon Elite, Platinum Forger)
 - Display titles in showroom next to usernames
 - "Customers cared MORE about the title than any other bonus"
 
@@ -172,7 +172,7 @@ The `leaderboard` channel is auto-created via `ensureLeaderboard()` function.
 ## Framing for Users
 
 **Current Messaging:**
-- "Earn XP daily by logging in, chatting, and sharing your Ignitions"
+- "Earn XP daily by logging in, chatting, and sharing your CarClout edits"
 - "Every 1,000 XP = 1 free edit"
 - "Hit a 7-day streak for 2× XP rewards"
 - "Grind levels, unlock badges, and get rewarded with credits"

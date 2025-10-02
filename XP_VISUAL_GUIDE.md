@@ -35,7 +35,7 @@
 │                          ↓                                  │
 │   ┌──────────────────────────────────────────┐             │
 │   │  ✨ +50 XP TOAST                         │             │
-│   │  "Ignition edit posted to Showroom"      │             │
+│   │  "CarClout edit posted to Showroom"       │             │
 │   │  [Primary gradient, 4 sec]               │             │
 │   └──────────────────────────────────────────┘             │
 │                                                             │
@@ -145,7 +145,7 @@ Duration: 4 seconds
 ```
 ┌─────────────────────────────────────┐
 │  ✨  +50 XP                          │
-│      Ignition edit posted           │
+│      CarClout edit posted            │
 └─────────────────────────────────────┘
 Border: Primary gradient
 Duration: 4 seconds
@@ -421,7 +421,7 @@ CREATE INDEX idx_xp_log_user_reason ON xp_log(user, reason);
 
 ### 🔜 What's Next (Hormozi-Validated)
 
-1. **Named Levels**: "Ignition Member" → "Forge Master" → "Carbon Elite"
+1. **Named Levels**: "CarClout Member" → "Forge Master" → "Carbon Elite"
    - *"Customers cared MORE about the title than any bonus"*
 
 2. **Variable XP Events**: Surprise 2× XP days

@@ -5,9 +5,9 @@ import SchedulerPageClient from "./_components/scheduler-page-client";
 export const metadata: Metadata = {
   ...createMetadata({
     title: "Schedule social posts",
-    description: "Plan when and where your automotive content goes live with Ignition's social scheduler.",
+    description: "Plan when and where your automotive content goes live with CarClout's social scheduler.",
     path: "/scheduler",
-    keywords: ["social scheduler", "content calendar", "ignition social"],
+    keywords: ["social scheduler", "content calendar", "carclout social"],
   }),
 };
 

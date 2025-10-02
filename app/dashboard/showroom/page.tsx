@@ -183,7 +183,7 @@ function mergePresenceUpdate(previous: PresenceEntry[], incoming: unknown, meEma
   return next;
 }
 
-const R2_PUBLIC_BASE = (process.env.NEXT_PUBLIC_R2_PUBLIC_BASE || "https://r2.ignitecdn.com").replace(/\/$/, "");
+const R2_PUBLIC_BASE = (process.env.NEXT_PUBLIC_R2_PUBLIC_BASE || "https://r2.carcloutcdn.com").replace(/\/$/, "");
 const IMAGE_EXTENSIONS = /\.(apng|avif|gif|jpe?g|jfif|pjpeg|pjp|png|svg|webp|bmp|ico|tiff?|heic|heif)$/i;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const SESSION_PREVIEW_SIZES = "(min-width: 80rem) 16rem, (min-width: 64rem) 14rem, (min-width: 48rem) 12rem, 80vw";
@@ -424,7 +424,7 @@ function DashboardShowroomPageInner() {
             const profs = (bulk?.profiles || {}) as Record<string, unknown>;
             try {
               if (typeof window !== 'undefined') {
-                window.igniteProfileCache = { ...(window.igniteProfileCache || {}), ...profs };
+                window.carcloutProfileCache = { ...(window.carcloutProfileCache || {}), ...profs };
               }
             } catch {}
           }
@@ -824,7 +824,7 @@ function DashboardShowroomPageInner() {
               if (xpData.isFirstPost) {
                 showFirstPostToast(xpData.added);
               } else {
-                showXpBonusToast(xpData.added, 'Ignition edit posted to Showroom', xpData.streakMultiplier);
+                showXpBonusToast(xpData.added, 'CarClout edit posted to Showroom', xpData.streakMultiplier);
               }
               
               if (xpData.streakMultiplier > 1 && xpData.currentStreak >= 7) {
@@ -1251,7 +1251,7 @@ function DashboardShowroomPageInner() {
         return;
       }
       const urls = await getViewUrls(imageKeys);
-      setLibraryItems(imageKeys.map((key) => ({ key, url: urls[key] || (`https://r2.ignitecdn.com/${key}`) })));
+      setLibraryItems(imageKeys.map((key) => ({ key, url: urls[key] || (`https://r2.carcloutcdn.com/${key}`) })));
       libraryLoadedRef.current = true;
     } finally {
       setLibraryLoading(false);
@@ -2424,7 +2424,7 @@ function DashboardShowroomPageInner() {
                     ) : libraryItems.length ? (
                       <ul className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3.5">
                     {libraryItems.map(({ key }) => {
-                      const baseUrl = libraryItems.find((item) => item.key === key)?.url || (`https://r2.ignitecdn.com/${key}`);
+                      const baseUrl = libraryItems.find((item) => item.key === key)?.url || (`https://r2.carcloutcdn.com/${key}`);
                       const url = attachmentPreviewMap[key] || baseUrl;
                       const selected = pendingAttachments.includes(key);
                       const status = attachmentStatusMap[key];
@@ -2502,7 +2502,7 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
         let res: ChatProfile | null | undefined = undefined;
         try {
           if (typeof window !== 'undefined') {
-            const cached = window.igniteProfileCache?.[email.toLowerCase()];
+            const cached = window.carcloutProfileCache?.[email.toLowerCase()];
             if (cached && typeof cached === 'object') {
               res = cached as ChatProfile;
             }

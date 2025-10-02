@@ -13,9 +13,9 @@ export type Announcement = {
 type MissedItem = Announcement & { seenAt?: string };
 
 const STORAGE_KEYS = {
-  lastSeenAt: "ignite.notifications.lastSeenAnnouncementAt",
-  missed: "ignite.notifications.missed",
-  permissionPrompted: "ignite.notifications.permissionPrompted",
+  lastSeenAt: "carclout.notifications.lastSeenAnnouncementAt",
+  missed: "carclout.notifications.missed",
+  permissionPrompted: "carclout.notifications.permissionPrompted",
 } as const;
 
 export function getIsDocumentHidden(): boolean {

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Roboto, Geist_Mono } from "next/font/google";
+import { Roboto, Geist_Mono, Poppins } from "next/font/google";
 import "./globals.css";
 import SiteHeader from "@/components/site-header";
 import HeaderGate from "@/components/header-gate";
@@ -15,8 +15,15 @@ import { createMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
+const poppins = Poppins({
+  variable: "--font-poppins",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
 const roboto = Roboto({
-  variable: "--font-geist-sans",
+  variable: "--font-roboto",
   subsets: ["latin"],
   weight: ["300", "400", "500", "700"],
   style: ["normal", "italic"],
@@ -31,8 +38,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("/", "http://localhost"),
   title: {
-    default: "Ignition — Make Your Car Page Unskippable",
-    template: "%s | Ignition",
+    default: "CarClout — Make Your Car Page Unskippable",
+    template: "%s | CarClout",
   },
   icons: {
     icon: [{ url: "/favicon.ico" }],
@@ -40,7 +47,7 @@ export const metadata: Metadata = {
     apple: [{ url: "/nytforge.png" }],
   },
   ...createMetadata({
-    title: "Ignition — Make Your Car Page Unskippable",
+    title: "CarClout — Make Your Car Page Unskippable",
     description: "The content engine built for car creators.",
     path: "/",
   }),
@@ -50,7 +57,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const session = await auth();
   return (
     <html lang="en">
-      <body className={`${roboto.className} ${roboto.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh min-h-[100svh] bg-background text-foreground overflow-x-hidden`}>
+      <body className={`${poppins.className} ${poppins.variable} ${roboto.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh min-h-[100svh] bg-background text-foreground overflow-x-hidden`}>
         <SessionProviderWrapper session={session}>
           <UmamiTracker session={session} />
           <HeaderGate>

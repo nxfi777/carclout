@@ -1020,7 +1020,7 @@ function TemplatesTab() {
         async function resolveThumb(keyRaw?: string | null): Promise<string | undefined>{
           if (!keyRaw || typeof keyRaw !== 'string') return undefined;
           const key = keyRaw.startsWith('admin/') ? keyRaw : `admin/${keyRaw}`;
-          const cacheKey = `ignite:thumb:${key}`;
+          const cacheKey = `carclout:thumb:${key}`;
           try {
             const cached = typeof window !== 'undefined' ? sessionStorage.getItem(cacheKey) : null;
             if (cached) {

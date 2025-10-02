@@ -1,7 +1,7 @@
 import NextAuth, { type DefaultSession, type NextAuthConfig } from "next-auth";
 import Resend from "next-auth/providers/resend";
 import Facebook from "next-auth/providers/facebook";
-import { IgniteSurrealAdapter } from "@/lib/customAdapter";
+import { CarCloutSurrealAdapter } from "@/lib/customAdapter";
 import { getBaseUrl, getEnvBaseUrl } from "@/lib/base-url";
 
 declare module "next-auth" {
@@ -36,9 +36,9 @@ async function sendVerificationRequest({
     body: JSON.stringify({
       from: provider.from,
       to: email,
-      subject: `Sign in to Nytforge Ignition`,
+      subject: `Sign in to Nytforge CarClout`,
       html: createEmail({ url, email, request }),
-      text: `Sign in to Nytforge Ignition\n\nClick this link to sign in: ${url}\n\nIf you did not request this email, you can ignore it.`,
+      text: `Sign in to Nytforge CarClout\n\nClick this link to sign in: ${url}\n\nIf you did not request this email, you can ignore it.`,
     }),
   });
   if (!res.ok) {
@@ -53,9 +53,9 @@ function createEmail({ url, email, request }: { url: string; email: string; requ
     <div style="font-family:Roboto,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;max-width:36rem;margin:0 auto;background:#111a36;color:#e7ecff;border-radius:0.75rem;border:1px solid #263166;padding:1.5rem;">
       <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;color:#aab4ff;font-size:0.75rem;letter-spacing:.14em;text-transform:uppercase">
         <img src="${baseUrl}/favicon.ico" style="border-radius:0.25rem;width:1.25rem;height:1.25rem" alt="Nytforge" />
-        <span>NYTFORGE IGNITION</span>
+        <span>NYTFORGE CARCLOUT</span>
       </div>
-      <h1 style="font-size:1.375rem;line-height:1.3;margin:0 0 0.5rem">Sign in to Nytforge Ignition</h1>
+      <h1 style="font-size:1.375rem;line-height:1.3;margin:0 0 0.5rem">Sign in to Nytforge CarClout</h1>
       <p style="margin:0 0 1rem;color:#cfd7ff">We received a request to sign in as <b>${email}</b>. Click the button below to continue.</p>
       <a href="${url}" style="display:inline-block;background:#5b6cff;color:#0a0d1a;padding:0.75rem 1rem;border-radius:0.5rem;font-weight:700;text-decoration:none">Sign in</a>
       <p style="margin:1rem 0 0;color:#b8c0ff;font-size:0.8125rem">If you didn’t request this, you can safely ignore this email.</p>
@@ -65,13 +65,13 @@ function createEmail({ url, email, request }: { url: string; email: string; requ
 
 // Create a deferred promise so Surreal connection is only attempted when adapter is actually used
 export const authOptions: NextAuthConfig = {
-  adapter: IgniteSurrealAdapter(),
+  adapter: CarCloutSurrealAdapter(),
   trustHost: true,
   session: { strategy: "jwt" },
   providers: [
     Resend({
       apiKey: process.env.AUTH_RESEND_KEY!,
-      from: process.env.EMAIL_FROM || "support@ignition.nytforge.com",
+      from: process.env.EMAIL_FROM || "support@carclout.nytforge.com",
       sendVerificationRequest,
     }),
     Facebook({

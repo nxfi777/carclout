@@ -23,7 +23,7 @@ export default async function Home() {
             Turn Your Car Pics Into Viral Posts<br />in <span className="text-[color:var(--primary)] font-bold">2 Clicks<span className="text-[color:var(--primary)]">.</span></span>
           </h1>
           <p className="text-[color:var(--foreground)]/85 max-w-[42rem] text-[1.05rem] leading-relaxed mx-auto lg:mx-0">
-          No editing. No skills. Just upload <span className="text-[color:var(--border)]">•</span> generate <span className="text-[color:var(--border)]">•</span> post
+          No editing. No skills. Just upload <span className="text-[color:var(--border)]">•</span> Generate <span className="text-[color:var(--border)]">•</span> Post
           </p>
           <div className="flex items-center gap-[1rem] justify-center lg:justify-start">
             <Button asChild size="lg" className="text-[1.1rem] px-[2.5rem] py-[1.25rem] h-auto font-bold bg-[color:var(--primary)] hover:bg-[color:var(--primary)] rounded-full shadow-[0_0_25px_rgba(91,108,255,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_0_35px_rgba(91,108,255,0.7),inset_0_1px_0_rgba(255,255,255,0.15)] transition-all duration-300 hover:brightness-110">
@@ -79,6 +79,23 @@ export default async function Home() {
         </div>
       </section>
       <FAQSection />
+
+      {/* Final CTA */}
+      <section className="w-full py-[4rem] md:py-[5rem] px-[1rem]">
+        <div className="max-w-[50rem] mx-auto text-center space-y-[1.5rem]">
+          <h2 className="text-[2rem] md:text-[2.75rem] font-bold leading-tight">
+            Ready To Make Your Car Pics Unskippable?
+          </h2>
+          <p className="text-[color:var(--foreground)]/80 text-[1.05rem] md:text-[1.15rem] leading-relaxed max-w-[40rem] mx-auto">
+            Stop scrolling. Stop editing. Start posting viral car content in 2 clicks.
+          </p>
+          <div className="pt-[1rem]">
+            <Button asChild size="lg" className="text-[1.15rem] px-[2.75rem] py-[1.4rem] h-auto font-bold bg-[color:var(--primary)] hover:bg-[color:var(--primary)] rounded-full shadow-[0_0_25px_rgba(91,108,255,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_0_35px_rgba(91,108,255,0.7),inset_0_1px_0_rgba(255,255,255,0.15)] transition-all duration-300 hover:brightness-110">
+              <Link href={ctaHref}>👉 Start For $1 Today</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }

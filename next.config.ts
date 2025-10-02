@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
       // Public CDN domain serving signed previews (NEXT_PUBLIC_R2_PUBLIC_BASE)
       {
         protocol: "https",
-        hostname: "r2.ignitecdn.com",
+        hostname: "r2.carcloutcdn.com",
       },
     ],
   },
