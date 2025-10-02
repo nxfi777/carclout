@@ -55,10 +55,12 @@ function createEmail({ url, email, request }: { url: string; email: string; requ
         <img src="${baseUrl}/favicon.ico" style="border-radius:0.25rem;width:1.25rem;height:1.25rem" alt="CarClout" />
         <span>CARCLOUT</span>
       </div>
-      <h1 style="font-size:1.375rem;line-height:1.3;margin:0 0 0.5rem">Sign in to CarClout</h1>
-      <p style="margin:0 0 1rem;color:#cfd7ff">We received a request to sign in as <b>${email}</b>. Click the button below to continue.</p>
-      <a href="${url}" style="display:inline-block;background:#5b6cff;color:#0a0d1a;padding:0.75rem 1rem;border-radius:0.5rem;font-weight:700;text-decoration:none">Sign in</a>
-      <p style="margin:1rem 0 0;color:#b8c0ff;font-size:0.8125rem">If you didn’t request this, you can safely ignore this email.</p>
+      <h1 style="font-size:1.375rem;line-height:1.3;margin:0 0 0.5rem">You\\'re one click away</h1>
+      <p style="margin:0 0 1rem;color:#cfd7ff">We received a request to sign in as <b>${email}</b>.</p>
+      <p style="margin:0 0 1rem;color:#cfd7ff">Click below to access your builds, credits, and community:</p>
+      <a href="${url}" style="display:inline-block;background:#5b6cff;color:#0a0d1a;padding:0.75rem 1.5rem;border-radius:0.5rem;font-weight:700;text-decoration:none;font-size:1rem">Sign in to CarClout →</a>
+      <p style="margin:1.5rem 0 0;color:#8a94cf;font-size:0.8125rem;line-height:1.4">This link expires in 24 hours for your security.</p>
+      <p style="margin:0.5rem 0 0;color:#8a94cf;font-size:0.8125rem">Didn\\'t request this? You can safely ignore this email.</p>
     </div>
   </div>`;
 }

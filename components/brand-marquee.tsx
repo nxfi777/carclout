@@ -97,12 +97,14 @@ export default function BrandMarquee() {
     const marquee = marqueeRef.current;
     if (!marquee) return;
 
-    // Clone items for seamless loop
+    // Clone items for seamless loop - clone 2 times on mobile for more logos
     const firstSet = marquee.querySelector(".marquee-content");
     if (!firstSet) return;
     
-    const clone = firstSet.cloneNode(true);
-    marquee.appendChild(clone);
+    const clone1 = firstSet.cloneNode(true);
+    const clone2 = firstSet.cloneNode(true);
+    marquee.appendChild(clone1);
+    marquee.appendChild(clone2);
   }, []);
 
   return (
@@ -137,9 +139,12 @@ export default function BrandMarquee() {
         {/* Marquee */}
         <div 
           ref={marqueeRef}
-          className="flex gap-[3rem] md:gap-[4rem] animate-marquee"
+          className="marquee-container flex gap-[2rem] md:gap-[4rem]"
+          style={{ 
+            animation: "marquee 25s linear infinite"
+          }}
         >
-          <div className="marquee-content flex gap-[3rem] md:gap-[4rem] shrink-0">
+          <div className="marquee-content flex gap-[2rem] md:gap-[4rem] shrink-0">
             {displayBrands.map((brand, index) => {
               const Icon = brand.icon;
               return (
@@ -172,16 +177,22 @@ export default function BrandMarquee() {
             transform: translateX(0);
           }
           100% {
-            transform: translateX(-50%);
+            transform: translateX(calc(-100% / 3));
           }
         }
 
-        .animate-marquee {
-          animation: marquee 40s linear infinite;
+        /* Mobile: faster animation */
+        @media (max-width: 768px) {
+          .marquee-container {
+            animation-duration: 20s !important;
+          }
         }
 
-        .animate-marquee:hover {
-          animation-play-state: paused;
+        /* Desktop: slower animation */
+        @media (min-width: 769px) {
+          .marquee-container {
+            animation-duration: 35s !important;
+          }
         }
       `}</style>
     </section>
