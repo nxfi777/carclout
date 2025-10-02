@@ -125,7 +125,14 @@ function reducer(state: LayerEditorState, action: LayerEditorAction): LayerEdito
     case "replace_state":
       return { ...action.next };
     case "set_tool":
-      return { ...state, tool: action.tool, editingLayerId: action.tool === 'text' ? state.editingLayerId : null };
+      return { 
+        ...state, 
+        tool: action.tool, 
+        editingLayerId: action.tool === 'text' ? state.editingLayerId : null,
+        // Clear selection when switching to text tool so first click creates text immediately
+        activeLayerId: action.tool === 'text' ? null : state.activeLayerId,
+        selectedLayerIds: action.tool === 'text' ? [] : state.selectedLayerIds
+      };
     case "set_marquee_mode":
       return { ...state, marqueeMode: action.mode };
     case "add_layer": {

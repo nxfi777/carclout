@@ -44,7 +44,7 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
     {
       key: "pro" as const,
       name: "Pro",
-      price: 25,
+      price: 27,
       features: [
         { text: `≈ ${proPosts} posts`, included: true, highlight: true },
         { text: "Community access", included: true },
@@ -124,7 +124,7 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
                               ≈ <span className="tabular-nums">{proPosts}</span> posts
                             </span>
                             <span className="relative text-[0.625rem] px-[0.5em] py-[0.25em] rounded-full border shadow badge-new">
-                              <span className="shiny-text">2x VALUE</span>
+                              <span className="shiny-text">50x MORE EDITS</span>
                             </span>
                           </span>
                         ) : (

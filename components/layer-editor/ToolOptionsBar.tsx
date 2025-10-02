@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import type { ShapeLayer, TextLayer } from "@/types/designer";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2, Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical, Check, Trash2 } from "lucide-react";
+import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2, Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical, Check, Trash2, Copy } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { BsTransparency } from "react-icons/bs";
@@ -74,7 +74,7 @@ const FONT_OPTIONS: FontFamilyOption[] = FONT_FAMILIES.map((value)=> ({
   label: value.split(",")[0]?.replace(/"/g, "").trim() || value,
 }));
 
-export default function ToolOptionsBar({ className, accessory }: { className?: string; accessory?: React.ReactNode }) {
+export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactNode }) {
   const { state, dispatch, undo, redo, canUndo, canRedo } = useLayerEditor();
   const selectedIds = state.selectedLayerIds && state.selectedLayerIds.length > 0 ? state.selectedLayerIds : (state.activeLayerId ? [state.activeLayerId] : []);
   const selectedLayers = state.layers.filter((l) => selectedIds.includes(l.id));
@@ -90,33 +90,41 @@ export default function ToolOptionsBar({ className, accessory }: { className?: s
 
   return (
     <div className="space-y-1">
-      <div className={cn("relative z-10 flex items-center gap-2 px-2 py-1 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm flex-wrap", className)}>
-        {accessory ? (
-          <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center sm:hidden">
-            <div className="pointer-events-auto">
-              {accessory}
+      <div className="w-full flex justify-center">
+        <div className="relative z-10 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm overflow-x-auto overflow-y-visible scrollbar-thin max-w-[70vw] lg:max-w-[84vw]">
+          <div className="flex items-center gap-2 px-2 py-1 w-max min-w-full">
+            <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
+              <Button size="icon" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" /></Button>
+              <Button size="icon" variant="outline" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)"><Redo2 className="size-4" /></Button>
             </div>
+            {state.tool === 'text' ? <AlignControls /> : null}
+            {state.tool === 'text' && hasTextSelected ? <TextOptions /> : null}
+            {state.tool === 'shape' ? <ShapeOptions /> : null}
+            {hasShapeSelected ? <ShapeStyleOptions /> : null}
+            {state.tool === 'image' ? <ImageOptions /> : null}
+            <RotationOptions />
+            {(['select','shape','image'] as string[]).includes(state.tool) ? (
+              <>
+                <AlignControls />
+                {(['shape','image'] as string[]).includes(state.tool) ? (
+                  <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
+                    <EffectsDropdown />
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+            {(hasSelection || accessory) ? (
+              <div className="flex items-center gap-3 pl-2 ml-auto">
+                {hasSelection ? (
+                  <Button size="icon" variant="outline" onClick={handleDeleteSelected} title="Delete selected" aria-label="Delete selected">
+                    <Trash2 className="size-4" />
+                  </Button>
+                ) : null}
+                {accessory}
+              </div>
+            ) : null}
           </div>
-        ) : null}
-        <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
-          <Button size="icon" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" /></Button>
-          <Button size="icon" variant="outline" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)"><Redo2 className="size-4" /></Button>
         </div>
-        {hasSelection ? (
-          <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
-            <Button size="icon" variant="outline" onClick={handleDeleteSelected} title="Delete selected" aria-label="Delete selected">
-              <Trash2 className="size-4" />
-            </Button>
-          </div>
-        ) : null}
-        {state.tool === 'text' ? <AlignControls /> : null}
-        {state.tool === 'text' && hasTextSelected ? <TextOptions /> : null}
-        {state.tool === 'shape' ? <ShapeOptions /> : null}
-        {hasShapeSelected ? <ShapeStyleOptions /> : null}
-        {state.tool === 'image' ? <ImageOptions /> : null}
-        <RotationOptions />
-        {(['select','shape','image'] as string[]).includes(state.tool) ? <AlignControls /> : null}
-        {(['shape','image'] as string[]).includes(state.tool) ? <EffectsDropdown /> : null}
       </div>
       {state.tool === 'text' ? <TextToolHint /> : null}
     </div>
@@ -545,7 +553,7 @@ function FontFamilyPopover({
             <span className="max-w-36 truncate text-white/80 text-[0.7rem]">{activeLabel}</span>
           </div>
           <CommandInput placeholder="Search fonts" autoFocus />
-          <CommandList className="max-h-[20rem] overflow-y-auto">
+          <CommandList className="max-h-[20rem] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:bg-transparent" onWheel={(e) => e.stopPropagation()}>
             <CommandEmpty>No fonts found.</CommandEmpty>
             <CommandGroup className="px-0">
               {FONT_OPTIONS.map(({ value, label })=> {
@@ -1028,6 +1036,29 @@ function EffectsDropdown({ variant = "default", className }: { variant?: "defaul
   if (!layer) return null;
   const shadow = layer.effects.shadow;
   const glow = layer.effects.glow;
+  
+  // Helper to extract hex color from any color string
+  function hexFromColor(input: string | undefined): string {
+    try {
+      if (!input) return '#ffffff';
+      if (input.startsWith('#')) {
+        if (input.length === 4) {
+          const r = input[1]; const g = input[2]; const b = input[3];
+          return `#${r}${r}${g}${g}${b}${b}`;
+        }
+        return input.slice(0, 7);
+      }
+      const m = input.match(/rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+      if (m) {
+        const r = Math.max(0, Math.min(255, Number(m[1] || 255)))|0;
+        const g = Math.max(0, Math.min(255, Number(m[2] || 255)))|0;
+        const b = Math.max(0, Math.min(255, Number(m[3] || 255)))|0;
+        const toHex = (n: number)=> n.toString(16).padStart(2,'0');
+        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+      }
+      return '#ffffff';
+    } catch { return '#ffffff'; }
+  }
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -1057,8 +1088,37 @@ function EffectsDropdown({ variant = "default", className }: { variant?: "defaul
       <PopoverContent className="p-2 w-64" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
         <div className="text-xs font-medium mb-1">Glow</div>
         <div className="flex items-center gap-2 mb-2">
-          <input type="checkbox" checked={!!glow.enabled} onChange={(e)=> dispatch({ type: 'update_layer', id: layer.id, patch: { effects: { ...layer.effects, glow: { ...glow, enabled: !!e.target.checked } } } })} />
+          <input 
+            type="checkbox" 
+            checked={!!glow.enabled} 
+            onChange={(e)=> {
+              const enabled = !!e.target.checked;
+              // When enabling glow on a text layer, default to text color
+              if (enabled && layer.type === 'text') {
+                const textLayer = layer as TextLayer;
+                const textColorHex = hexFromColor(textLayer.color);
+                dispatch({ type: 'update_layer', id: layer.id, patch: { effects: { ...layer.effects, glow: { ...glow, enabled, color: textColorHex } } } });
+              } else {
+                dispatch({ type: 'update_layer', id: layer.id, patch: { effects: { ...layer.effects, glow: { ...glow, enabled } } } });
+              }
+            }} 
+          />
           <input type="color" className="h-8 w-10 rounded" value={glow.color} onChange={(e)=> dispatch({ type: 'update_layer', id: layer.id, patch: { effects: { ...layer.effects, glow: { ...glow, color: e.target.value } } } })} />
+          {layer.type === 'text' && (
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-8 w-8"
+              title="Copy text color to glow"
+              onClick={()=> {
+                const textLayer = layer as TextLayer;
+                const hex = hexFromColor(textLayer.color);
+                dispatch({ type: 'update_layer', id: layer.id, patch: { effects: { ...layer.effects, glow: { ...glow, color: hex } } } });
+              }}
+            >
+              <Copy className="size-3.5" />
+            </Button>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3 mb-2">
           <div>
@@ -1112,7 +1172,7 @@ function TextToolHint() {
       role="note"
       aria-live="polite"
     >
-      Double-click the canvas to add text.
+      Click the canvas to add text.
     </div>
   );
 }

@@ -11,6 +11,7 @@ export default function TransformControls() {
   const lockAspectRef = useRef(1);
   const lockScaleRef = useRef(1);
   const shiftDownRef = useRef(false);
+  const justFinishedTransformRef = useRef(false);
   const SNAP_RATIOS = useMemo(()=> [1, 4/3, 3/4, 16/9, 9/16, 3/2, 2/3, 5/4, 4/5, 2, 1/2] as const, []);
   const SNAP_THRESHOLD = 0.03;
   const snapAspectRatio = useCallback((r: number): number => {
@@ -183,14 +184,31 @@ export default function TransformControls() {
       dispatch({ type: 'update_layer', id: layer.id, patch: { widthPct: nextW, heightPct: nextH } });
       lastShiftRef.current = shift;
     }
-    function up() { setDrag(null); }
+    function up() { 
+      setDrag(null);
+      // Set flag to prevent immediate deselection
+      justFinishedTransformRef.current = true;
+      // Expose to window for canvas click handler
+      try {
+        (window as unknown as { __justFinishedTransform?: boolean }).__justFinishedTransform = true;
+      } catch {}
+      // Clear the flag after a short delay
+      setTimeout(() => {
+        justFinishedTransformRef.current = false;
+        try {
+          (window as unknown as { __justFinishedTransform?: boolean }).__justFinishedTransform = false;
+        } catch {}
+      }, 100);
+    }
     window.addEventListener('pointermove', move as unknown as EventListener);
     window.addEventListener('pointerup', up as unknown as EventListener, { once: true } as AddEventListenerOptions);
     return () => { window.removeEventListener('pointermove', move as unknown as EventListener); window.removeEventListener('pointerup', up as unknown as EventListener); };
   }, [drag, layer, dispatch, snapAspectRatio]);
 
   const handleRotatePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
     e.stopPropagation();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
     if (!layer) return;
     const el = ref.current?.parentElement as HTMLElement | null;
     const r = el?.getBoundingClientRect();
@@ -211,7 +229,8 @@ export default function TransformControls() {
         <div
           title="Rotate"
           onPointerDown={handleRotatePointerDown}
-          className="relative z-10 size-4 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
+          style={{ touchAction: 'none' }}
+          className="relative z-10 size-4 md:size-4 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
         />
       </div>
       {/* Rotate handle antenna at bottom-center */}
@@ -220,18 +239,20 @@ export default function TransformControls() {
         <div
           title="Rotate"
           onPointerDown={handleRotatePointerDown}
-          className="relative z-10 size-4 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
+          style={{ touchAction: 'none' }}
+          className="relative z-10 size-4 md:size-4 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
         />
       </div>
       {(['tl','tr','bl','br'] as const).map((h)=> (
         <div
           key={h}
-          onPointerDown={(e)=>{ e.stopPropagation(); try { const canvas = ref.current?.parentElement?.parentElement as HTMLElement | null; const rect = canvas?.getBoundingClientRect(); const isImage = layer.type === 'image'; if (isImage && rect && rect.width > 0 && rect.height > 0) { const img = layer as ImageLayer; const nw = Number(img.naturalWidth || 0); const nh = Number(img.naturalHeight || 0); if (nw > 0 && nh > 0) { const pixelR = nw / nh; const percentR = pixelR * (rect.height / rect.width); lockAspectRef.current = percentR || 1; } else { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } } else { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } } catch { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } { const sx = layer.scaleX || 1; const sy = layer.scaleY || 1; lockScaleRef.current = sy !== 0 ? (sx / sy) : 1; } lastShiftRef.current = e.shiftKey; setDrag({ type: 'resize', x: e.clientX, y: e.clientY, w: layer.widthPct, h: layer.heightPct, sx: layer.scaleX || 1, sy: layer.scaleY || 1, handle: h }); }}
+          onPointerDown={(e)=>{ e.preventDefault(); e.stopPropagation(); (e.target as HTMLElement).setPointerCapture(e.pointerId); try { const canvas = ref.current?.parentElement?.parentElement as HTMLElement | null; const rect = canvas?.getBoundingClientRect(); const isImage = layer.type === 'image'; if (isImage && rect && rect.width > 0 && rect.height > 0) { const img = layer as ImageLayer; const nw = Number(img.naturalWidth || 0); const nh = Number(img.naturalHeight || 0); if (nw > 0 && nh > 0) { const pixelR = nw / nh; const percentR = pixelR * (rect.height / rect.width); lockAspectRef.current = percentR || 1; } else { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } } else { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } } catch { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } { const sx = layer.scaleX || 1; const sy = layer.scaleY || 1; lockScaleRef.current = sy !== 0 ? (sx / sy) : 1; } lastShiftRef.current = e.shiftKey; setDrag({ type: 'resize', x: e.clientX, y: e.clientY, w: layer.widthPct, h: layer.heightPct, sx: layer.scaleX || 1, sy: layer.scaleY || 1, handle: h }); }}
+          style={{ touchAction: 'none' }}
           className={
-            h==='tl' ? 'absolute -left-0.5 -top-0.5 size-2.5 rounded-sm bg-white border pointer-events-auto' :
-            h==='tr' ? 'absolute -right-0.5 -top-0.5 size-2.5 rounded-sm bg-white border pointer-events-auto' :
-            h==='bl' ? 'absolute -left-0.5 -bottom-0.5 size-2.5 rounded-sm bg-white border pointer-events-auto' :
-                       'absolute -right-0.5 -bottom-0.5 size-2.5 rounded-sm bg-white border pointer-events-auto'
+            h==='tl' ? 'absolute -left-0.5 -top-0.5 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nwse-resize' :
+            h==='tr' ? 'absolute -right-0.5 -top-0.5 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nesw-resize' :
+            h==='bl' ? 'absolute -left-0.5 -bottom-0.5 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nesw-resize' :
+                       'absolute -right-0.5 -bottom-0.5 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-nwse-resize'
           }
         />
       ))}
@@ -239,11 +260,12 @@ export default function TransformControls() {
         (['ml','mr'] as const).map((h)=> (
           <div
             key={h}
-            onPointerDown={(e)=>{ e.stopPropagation(); try { const canvas = ref.current?.parentElement?.parentElement as HTMLElement | null; canvas?.getBoundingClientRect(); lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } catch { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } { const sx = layer.scaleX || 1; const sy = layer.scaleY || 1; lockScaleRef.current = sy !== 0 ? (sx / sy) : 1; } lastShiftRef.current = e.shiftKey; setDrag({ type: 'resize', x: e.clientX, y: e.clientY, w: layer.widthPct, h: layer.heightPct, sx: layer.scaleX || 1, sy: layer.scaleY || 1, handle: h }); }}
+            onPointerDown={(e)=>{ e.preventDefault(); e.stopPropagation(); (e.target as HTMLElement).setPointerCapture(e.pointerId); try { const canvas = ref.current?.parentElement?.parentElement as HTMLElement | null; canvas?.getBoundingClientRect(); lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } catch { lockAspectRef.current = (layer.heightPct > 0 ? (layer.widthPct / layer.heightPct) : 1) || 1; } { const sx = layer.scaleX || 1; const sy = layer.scaleY || 1; lockScaleRef.current = sy !== 0 ? (sx / sy) : 1; } lastShiftRef.current = e.shiftKey; setDrag({ type: 'resize', x: e.clientX, y: e.clientY, w: layer.widthPct, h: layer.heightPct, sx: layer.scaleX || 1, sy: layer.scaleY || 1, handle: h }); }}
+            style={{ touchAction: 'none' }}
             className={
               h==='ml'
-                ? 'absolute -left-0.5 top-1/2 -translate-y-1/2 size-2.5 rounded-sm bg-white border pointer-events-auto'
-                : 'absolute -right-0.5 top-1/2 -translate-y-1/2 size-2.5 rounded-sm bg-white border pointer-events-auto'
+                ? 'absolute -left-0.5 top-1/2 -translate-y-1/2 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-ew-resize'
+                : 'absolute -right-0.5 top-1/2 -translate-y-1/2 size-3 md:size-2.5 rounded-sm bg-white border pointer-events-auto cursor-ew-resize'
             }
           />
         ))

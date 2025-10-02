@@ -38,16 +38,16 @@ export default function ProUpsellDialog() {
               </CardHeader>
               <CardContent className="flex flex-col gap-2">
                 <div className="text-2xl font-semibold">
-                  $25/mo
+                  $27/mo
                 </div>
                 <ul className="text-sm list-disc pl-5">
                   <li>
                     <span className="inline-flex items-center gap-2">
                       <span>
-                        ≈ <span className="tabular-nums">357</span> posts
+                        ≈ <span className="tabular-nums">250</span> posts
                       </span>
                       <span className="relative text-[0.625rem] px-[0.5em] py-[0.25em] rounded-full border shadow badge-new">
-                        <span className="shiny-text">2x VALUE</span>
+                        <span className="shiny-text">50x MORE EDITS</span>
                       </span>
                     </span>
                   </li>

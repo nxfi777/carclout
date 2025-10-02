@@ -3,13 +3,14 @@ import React, { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
-import ElectricBorder from "@/components/electric-border";
 import carLoadAnimation from "@/public/carload.json";
-import { LayerEditorProvider } from "@/components/layer-editor/LayerEditorProvider";
+import downloadAnimation from "@/public/download.json";
+import { LayerEditorProvider, useLayerEditor } from "@/components/layer-editor/LayerEditorProvider";
 import LayerEditorShell from "@/components/layer-editor/LayerEditorShell";
-import { DesignerActionsProvider } from "@/components/designer/DesignerActionsContext";
-import { composeLayersToBlob } from "@/lib/layer-export";
+import { DesignerActionsProvider } from "@/components/layer-editor/DesignerActionsContext";
+import { composeLayersToBlob, exportDesignerState } from "@/lib/layer-export";
 import { getViewUrl } from "@/lib/view-url-client";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type RembgConfig = {
   enabled?: boolean;
@@ -22,29 +23,74 @@ type RembgConfig = {
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate }: {
+function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate, projectState, sourceImageKey, closeOnDownload }: {
   bgKey: string;
   rembg?: RembgConfig;
   onClose?: () => void;
-  onSave?: (blob: Blob) => Promise<void> | void;
+  onSave?: (blob: Blob, projectState?: string) => Promise<void> | void;
   saveLabel?: string;
   aspectRatio?: number;
   onReplaceBgKey?: (newKey: string, newUrl?: string) => void;
   onTryAgain?: () => void;
   showAnimate?: boolean;
   onAnimate?: (getBlob: () => Promise<Blob | null>) => Promise<void> | void;
+  projectState?: import("@/lib/layer-export").DesignerProjectState | null;
+  sourceImageKey?: string | null; // Original source image (for templates), used as backgroundKey when saving
+  closeOnDownload?: boolean; // If true, close designer after download completes
 }){
-  const [busy, setBusy] = useState(true);
-  const [bgUrl, setBgUrl] = useState<string | null>(null);
-  const [fgUrl, setFgUrl] = useState<string | null>(null);
+  console.log('[Designer] Initialized with:', {
+    bgKey,
+    sourceImageKey,
+    hasProjectState: !!projectState,
+    projectStateBackgroundKey: projectState?.backgroundKey
+  });
+  
+  const [busy, setBusy] = useState(!projectState); // Skip loading if we have project state
+  const [bgUrl, setBgUrl] = useState<string | null>(projectState?.backgroundUrl || null);
+  const [fgUrl, setFgUrl] = useState<string | null>(projectState?.carMaskUrl || null);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [_dirty, setDirty] = useState(false);
   const dirtyCommitRef = React.useRef<(() => void) | null>(null);
+  const stateRef = React.useRef<import("@/types/layer-editor").LayerEditorState | null>(null);
   void aspectRatio; void onClose; void saveLabel; // accepted for API compatibility
 
+  const initializedRef = React.useRef(!!projectState); // Already initialized if we have project state
+  const initialBgKeyRef = React.useRef(bgKey);
+  
   useEffect(()=>{
+    // If projectState was provided, we already have everything - skip rembg
+    if (projectState) {
+      initializedRef.current = true;
+      initialBgKeyRef.current = bgKey;
+      // Ensure we're not stuck in busy state
+      setBusy(false);
+      return;
+    }
+    
+    // Only initialize once to prevent canvas reset
+    // Don't reinitialize when bgKey changes from upscale - that's handled separately
+    if (initializedRef.current && bgKey !== initialBgKeyRef.current) {
+      // bgKey changed (e.g., from upscale) - just update the URL without reinitializing
+      setBgUrl(`/api/storage/file?key=${encodeURIComponent(bgKey)}`);
+      initialBgKeyRef.current = bgKey;
+      return;
+    }
+    
+    if (initializedRef.current) return;
+    
+    // Skip rembg if it's disabled (e.g., when loading project state)
+    if (rembg && rembg.enabled === false) {
+      // Just set URLs and mark as initialized
+      const url = `/api/storage/file?key=${encodeURIComponent(bgKey)}`;
+      setBgUrl(url);
+      initializedRef.current = true;
+      initialBgKeyRef.current = bgKey;
+      setBusy(false);
+      return;
+    }
+    
     let cancelled = false;
     (async()=>{
       try {
@@ -69,23 +115,51 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
         const fg = res?.image?.url || null;
         if (!fg) throw new Error('fg');
         setFgUrl(fg);
+        initializedRef.current = true;
+        initialBgKeyRef.current = bgKey;
       } catch {
       } finally { if (!cancelled) { setBusy(false); } }
     })();
     return ()=>{ cancelled = true; };
-  }, [bgKey, rembg]);
+  }, [bgKey, rembg, projectState]);
 
   const exportCompositeBlob = useCallback(async (): Promise<Blob | null> => {
     if (!bgUrl) return null;
     try {
-      const getState = (window as unknown as { getLayerEditorSnapshot?: ()=>{ backgroundUrl: string; carMaskUrl?: string | null; layers: import("@/types/layer-editor").Layer[] } }).getLayerEditorSnapshot;
-      const snap = getState ? getState() : { backgroundUrl: bgUrl, carMaskUrl: fgUrl || null, layers: [] as import("@/types/layer-editor").Layer[] };
-      const blob = await composeLayersToBlob({ backgroundUrl: snap.backgroundUrl, carMaskUrl: snap.carMaskUrl, layers: snap.layers });
+      // Try ref first (more reliable), fall back to window global
+      const snap = stateRef.current || (window as unknown as { getLayerEditorSnapshot?: ()=> import("@/types/layer-editor").LayerEditorState }).getLayerEditorSnapshot?.();
+      if (!snap) {
+        console.error('[Designer] Layer editor state not available');
+        return null;
+      }
+      console.log('[Designer] Exporting with state:', {
+        layerCount: snap.layers?.length || 0,
+        maskOffset: { x: snap.maskTranslateXPct, y: snap.maskTranslateYPct },
+        backgroundUrl: snap.backgroundUrl?.substring(0, 50),
+        carMaskUrl: snap.carMaskUrl?.substring(0, 50),
+        layers: snap.layers?.map(l => ({
+          type: l.type,
+          tiltX: l.tiltXDeg,
+          tiltY: l.tiltYDeg,
+          rotation: l.rotationDeg,
+          aboveMask: l.aboveMask
+        }))
+      });
+      const blob = await composeLayersToBlob({ 
+        backgroundUrl: snap.backgroundUrl || bgUrl, 
+        carMaskUrl: snap.carMaskUrl || fgUrl || null, 
+        layers: snap.layers || [],
+        maskTranslateXPct: snap.maskTranslateXPct || 0,
+        maskTranslateYPct: snap.maskTranslateYPct || 0
+      });
       return blob;
-    } catch { return null; }
+    } catch (err) { 
+      console.error('[Designer] Export error:', err);
+      return null; 
+    }
   }, [bgUrl, fgUrl]);
 
-  const saveComposite = useCallback(async (): Promise<boolean> => {
+  const _saveComposite = useCallback(async (): Promise<boolean> => {
     if (!onSave || !bgUrl) return false;
     if (saving) return false;
     setSaving(true);
@@ -103,31 +177,98 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
         ]);
         if (md5Bg && md5Out && md5Bg === md5Out) return false;
       } catch {}
-      await onSave(blob);
+      
+      // Export project state to save alongside the image
+      const snap = stateRef.current;
+      // Use sourceImageKey if provided (for templates), otherwise use bgKey
+      const keyToSave = sourceImageKey || bgKey;
+      const projectJson = snap ? exportDesignerState({
+        backgroundUrl: snap.backgroundUrl || bgUrl || '',
+        carMaskUrl: snap.carMaskUrl || fgUrl,
+        layers: snap.layers || [],
+        maskTranslateXPct: snap.maskTranslateXPct,
+        maskTranslateYPct: snap.maskTranslateYPct,
+        backgroundKey: keyToSave, // Save the original source key for re-opening (vehicle photo for templates)
+      }) : undefined;
+      
+      console.log('[Designer] Saving with backgroundKey:', keyToSave, '(sourceImageKey:', sourceImageKey, ', bgKey:', bgKey, ')');
+      
+      await onSave(blob, projectJson);
       return true;
     } finally { setSaving(false); }
-  }, [bgUrl, exportCompositeBlob, onSave, saving]);
+  }, [bgKey, bgUrl, exportCompositeBlob, fgUrl, onSave, saving, sourceImageKey]);
 
   const downloadComposite = useCallback(async () => {
     if (downloading || saving || !bgUrl) return;
     setDownloading(true);
     try {
-      if (onSave && dirty) {
-        const saved = await saveComposite();
-        if (saved && dirtyCommitRef.current) {
-          dirtyCommitRef.current();
-        }
-      }
+      // Download directly without saving to workspace library
       const blob = await exportCompositeBlob();
-      if (!blob) return;
+      if (!blob) {
+        console.warn('[Designer] Failed to export composite blob');
+        return;
+      }
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
+      a.href = blobUrl;
       a.download = `design-${Date.now()}.png`;
+      a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
-      setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
-    } finally { setDownloading(false); }
-  }, [bgUrl, dirty, downloading, exportCompositeBlob, onSave, saveComposite, saving]);
+      // Clean up after download
+      setTimeout(()=>{ 
+        try { 
+          URL.revokeObjectURL(blobUrl); 
+          document.body.removeChild(a);
+        } catch {}
+      }, 1000);
+      
+      // Close designer if requested (e.g., for template-generated images)
+      if (closeOnDownload && onClose) {
+        // Small delay to ensure download starts before closing
+        setTimeout(() => {
+          onClose();
+        }, 500);
+      }
+    } catch (err) {
+      console.error('[Designer] Download error:', err);
+    } finally { 
+      setDownloading(false); 
+    }
+  }, [bgUrl, downloading, saving, exportCompositeBlob, closeOnDownload, onClose]);
+
+  const downloadProject = useCallback(async () => {
+    try {
+      const snap = stateRef.current;
+      if (!snap) return;
+      
+      const projectJson = exportDesignerState({
+        backgroundUrl: snap.backgroundUrl || bgUrl || '',
+        carMaskUrl: snap.carMaskUrl || fgUrl,
+        layers: snap.layers || [],
+        maskTranslateXPct: snap.maskTranslateXPct,
+        maskTranslateYPct: snap.maskTranslateYPct,
+        backgroundKey: bgKey,
+      });
+      
+      const blob = new Blob([projectJson], { type: 'application/json' });
+      const a = document.createElement('a');
+      const blobUrl = URL.createObjectURL(blob);
+      a.href = blobUrl;
+      a.download = `project-${Date.now()}.carclout`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{ 
+        try { 
+          URL.revokeObjectURL(blobUrl); 
+          document.body.removeChild(a);
+        } catch {}
+      }, 1000);
+    } catch (err) {
+      console.error('[Designer] Project download error:', err);
+    }
+  }, [bgKey, bgUrl, fgUrl]);
 
   const upscaleBackground = useCallback(async () => {
     if (upscaling) return;
@@ -154,7 +295,7 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
   }, [bgKey, onReplaceBgKey, upscaling]);
 
   const actions = React.useMemo(() => {
-    const list: import("@/components/designer/DesignerActionsContext").DesignerActionDescriptor[] = [];
+    const list: import("@/components/layer-editor/DesignerActionsContext").DesignerActionDescriptor[] = [];
     if (onTryAgain) {
       list.push({
         key: "try-again",
@@ -188,6 +329,14 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
       });
     }
     list.push({
+      key: "save-project",
+      label: "Save Project",
+      onSelect: downloadProject,
+      variant: "outline",
+      srLabel: "Save project file",
+      section: "desktop-only",
+    });
+    list.push({
       key: "download",
       label: downloading || saving ? "Downloading…" : "Download",
       onSelect: downloadComposite,
@@ -198,7 +347,7 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
       section: "desktop-only",
     });
     return list;
-  }, [onTryAgain, showAnimate, onAnimate, downloading, saving, upscaling, downloadComposite, upscaleBackground, exportCompositeBlob]);
+  }, [onTryAgain, showAnimate, onAnimate, downloading, saving, upscaling, downloadComposite, downloadProject, upscaleBackground, exportCompositeBlob]);
 
   if (busy) {
     return (
@@ -217,13 +366,33 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 relative">
+      {/* Loading overlay during download */}
+      {(downloading || saving) && (
+        <div 
+          className="fixed inset-0 z-50 bg-[var(--background)]/95 flex items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-32 h-32">
+              <Lottie animationData={downloadAnimation as unknown as object} loop style={{ width: '100%', height: '100%' }} />
+            </div>
+            <div className="text-white text-sm font-medium">
+              {downloading ? "Preparing your download..." : "Saving..."}
+            </div>
+          </div>
+        </div>
+      )}
+      
       <DesignerActionsProvider value={{ actions }}>
         <LayerEditorProvider
           initial={{
             backgroundUrl: bgUrl,
             carMaskUrl: fgUrl,
-            layers: [],
+            layers: projectState?.layers || [],
+            maskTranslateXPct: projectState?.maskTranslateXPct,
+            maskTranslateYPct: projectState?.maskTranslateYPct,
             editingLayerId: undefined,
           }}
           onDirtyChange={(next, commit) => {
@@ -231,7 +400,7 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
             setDirty(next);
           }}
         >
-          <ExposeLayerState />
+          <ExposeLayerState stateRef={stateRef} />
           <LayerEditorShell
             mobileHeaderAccessory={(
               <Button
@@ -248,50 +417,25 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
                 <span className="sr-only">{downloading || saving ? "Downloading" : "Download"}</span>
               </Button>
             )}
+            toolbarDownloadButton={(
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={downloadComposite}
+                    disabled={downloading || saving}
+                    className="flex items-center justify-center rounded-md focus-visible:outline-hidden shrink-0 bg-transparent hover:bg-white/10 h-12 w-12"
+                    aria-label={downloading || saving ? "Downloading" : "Download"}
+                  >
+                    <Download className="size-5" aria-hidden />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="px-2 py-1 text-xs">
+                  Download
+                </TooltipContent>
+              </Tooltip>
+            )}
           />
-          <div className="pt-2">
-            <div className={`hidden sm:flex flex-wrap items-center ${onTryAgain ? 'justify-between' : 'justify-end'} gap-2`}
-              aria-label="Designer actions"
-              role="toolbar"
-            >
-              {onTryAgain ? (
-                <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={onTryAgain}>Try again</Button>
-              ) : null}
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {showAnimate ? (
-                  <ElectricBorder color="#ff6a00" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
-                    <Button type="button" className="w-full sm:w-auto" variant="secondary" onClick={async()=>{
-                      try {
-                        if (typeof onAnimate === 'function') {
-                          await onAnimate(exportCompositeBlob);
-                        }
-                      } catch {}
-                    }}>Animate</Button>
-                  </ElectricBorder>
-                ) : null}
-                <ElectricBorder color="#ff6a00" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
-                  <Button type="button" className="w-full sm:w-auto" variant="outline" onClick={upscaleBackground} disabled={upscaling}>
-                    {upscaling ? 'Upscaling…' : 'Upscale'}
-                  </Button>
-                </ElectricBorder>
-                <Button
-                  type="button"
-                  className="w-full sm:w-auto flex items-center justify-center"
-                  onClick={downloadComposite}
-                  disabled={downloading || saving}
-                  title="Download"
-                  aria-label={downloading || saving ? 'Downloading' : 'Download'}
-                >
-                  {downloading || saving ? 'Downloading…' : (
-                    <>
-                      <Download className="size-4" aria-hidden />
-                      <span className="sr-only">Download</span>
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
         </LayerEditorProvider>
       </DesignerActionsProvider>
     </div>
@@ -310,7 +454,9 @@ export const Designer = React.memo(DesignerComponent, (prevProps, nextProps) => 
     prevProps.onReplaceBgKey === nextProps.onReplaceBgKey &&
     prevProps.onTryAgain === nextProps.onTryAgain &&
     prevProps.showAnimate === nextProps.showAnimate &&
-    prevProps.onAnimate === nextProps.onAnimate
+    prevProps.onAnimate === nextProps.onAnimate &&
+    JSON.stringify(prevProps.projectState) === JSON.stringify(nextProps.projectState) &&
+    prevProps.closeOnDownload === nextProps.closeOnDownload
   );
 });
 
@@ -319,8 +465,11 @@ Designer.displayName = 'Designer';
 export default Designer;
 
 // Expose a snapshot getter so the compose function can read current layers
-function ExposeLayerState(){
-  // The provider attaches a snapshot getter globally; nothing to do here now.
+function ExposeLayerState({ stateRef }: { stateRef: React.MutableRefObject<import("@/types/layer-editor").LayerEditorState | null> }){
+  const { state } = useLayerEditor();
+  React.useEffect(() => {
+    stateRef.current = state;
+  }, [state, stateRef]);
   return null;
 }
 

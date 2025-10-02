@@ -24,7 +24,7 @@ import SparkMD5 from "spark-md5";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
-import Designer from "@/components/designer/designer";
+import Designer from "@/components/layer-editor/designer";
 import { SHOW_MANAGED_FOLDERS, isManagedRoot, isManagedPath as isManagedPathUtil } from "@/lib/workspace-visibility";
 import { ChevronLeft, List as ListIcon, LayoutGrid, MoreHorizontal, RefreshCcw, Download } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -106,6 +106,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [usage, setUsage] = useState<{ usedBytes: number; limitBytes: number | null; percentUsed: number | null } | null>(null);
   const [designOpen, setDesignOpen] = useState(false);
   const [designKey, setDesignKey] = useState<string | null>(null);
+  const [designProjectState, setDesignProjectState] = useState<import("@/lib/layer-export").DesignerProjectState | null>(null);
   const [upscaleBusy, setUpscaleBusy] = useState(false);
   const [previewVariants, setPreviewVariants] = useState<{ key?: string; name: string; url: string }[]>([]);
   const [activePreviewVariantIndex, setActivePreviewVariantIndex] = useState(0);
@@ -232,6 +233,58 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   }, [scope, treeVersion]);
   useEffect(() => { setSelectedKeys(new Set()); }, [path]);
 
+  // Load project state when designKey is set
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!designKey || !designOpen) {
+        setDesignProjectState(null);
+        return;
+      }
+      
+      // Try to find and load the corresponding project state from managed folder
+      try {
+        // Use SHA1 hash of the designKey to find the project state
+        const { default: SparkMD5 } = await import('spark-md5');
+        const hash = SparkMD5.hash(designKey);
+        const root = scope === 'admin' ? 'admin' : `users/${designKey.split('/')[1]}`; // Extract user from key
+        const projectKey = `${root}/designer_states/${hash}.json`;
+        
+        console.log('[workspace] Looking for project state:', {
+          designKey,
+          hash,
+          projectKey
+        });
+        
+        const scopeParam = scope === 'admin' ? '&scope=admin' : '';
+        const res = await fetch(`/api/storage/file?key=${encodeURIComponent(projectKey)}${scopeParam}`, { cache: 'no-store' });
+        
+        if (res.ok) {
+          const json = await res.text();
+          const { importDesignerState } = await import('@/lib/layer-export');
+          const projectState = importDesignerState(json);
+          if (!cancelled && projectState) {
+            console.log('[workspace] Loaded project state:', projectState);
+            setDesignProjectState(projectState);
+          } else {
+            if (!cancelled) {
+              console.log('[workspace] Failed to parse project state');
+              setDesignProjectState(null);
+            }
+          }
+        } else {
+          // No project file found - that's ok, just start fresh
+          console.log('[workspace] No project state found (status:', res.status, ')');
+          if (!cancelled) setDesignProjectState(null);
+        }
+      } catch (err) {
+        console.warn('[workspace] Failed to load project state:', err);
+        if (!cancelled) setDesignProjectState(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [designKey, designOpen, scope]);
+
   // When preview opens (or tree changes), discover upscaled variants saved to /library and prepare a dropdown
   useEffect(() => {
     let cancelled = false;
@@ -283,6 +336,28 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       if (clean && clean !== path) setPath(clean);
     } catch {}
   }, [searchParams, path, scope]);
+
+  // Auto-open preview from query param (?preview=key)
+  useEffect(() => {
+    const previewKey = searchParams?.get('preview');
+    if (!previewKey || preview?.key === previewKey) return;
+    
+    (async () => {
+      try {
+        const url = await getViewUrl(previewKey, scope);
+        if (url) {
+          const name = previewKey.split('/').pop() || 'image';
+          setPreview({ url, name, key: previewKey });
+          // Clean up the URL by removing the preview param
+          const newUrl = new URL(window.location.href);
+          newUrl.searchParams.delete('preview');
+          window.history.replaceState({}, '', newUrl.toString());
+        }
+      } catch (err) {
+        console.warn('[workspace] Failed to auto-open preview:', err);
+      }
+    })();
+  }, [searchParams, scope, preview?.key]);
 
   const itemStorageKey = useCallback((it: Item) => (
     it.key || `${path ? `${path}/` : ""}${it.name}${it.type === 'folder' ? '/' : ''}`
@@ -711,7 +786,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
 
   async function onDelete(it: Item) {
     // Prevent deletes inside managed folders
-    const managedPath = path === 'vehicles' || (path || '').startsWith('vehicles/') || path === 'designer_masks' || (path || '').startsWith('designer_masks/');
+    const managedPath = path === 'vehicles' || (path || '').startsWith('vehicles/') || path === 'designer_masks' || (path || '').startsWith('designer_masks/') || path === 'designer_states' || (path || '').startsWith('designer_states/');
     if (managedPath) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
     if (it.type === 'folder') {
       const ok = await confirmToast({ title: `Delete folder "${it.name}"?`, message: 'All contents will be deleted.' });
@@ -719,7 +794,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     }
     const key = it.key || `${path ? `${path}/` : ""}${it.name}${it.type==='folder'?'/':''}`;
     const normalizedKey = String(key).replace(/^\/+/, '');
-    if (normalizedKey.startsWith('vehicles/') || normalizedKey.startsWith('designer_masks/')) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
+    if (normalizedKey.startsWith('vehicles/') || normalizedKey.startsWith('designer_masks/') || normalizedKey.startsWith('designer_states/')) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
     const cacheKey = `${scope === 'admin' ? 'admin' : 'user'}:${path}`;
     const prevItems = items;
     // Optimistic UI: remove immediately and update cache
@@ -1065,10 +1140,13 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedKeys, onBulkDelete]);
 
-  async function saveDesignToWorkspace(blob: Blob) {
+  async function saveDesignToWorkspace(blob: Blob, projectState?: string) {
     try {
       const targetPath = path === 'vehicles' ? 'library' : (path || 'library');
-      const filename = `design-${Date.now()}.png`;
+      const timestamp = Date.now();
+      const filename = `design-${timestamp}.png`;
+      
+      // Upload the PNG image
       const form = new FormData();
       const file = new File([blob], filename, { type: 'image/png' });
       form.append('file', file, filename);
@@ -1084,23 +1162,84 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         }
         return;
       }
+      
+      // Get the uploaded file's key to save project state with matching hash
+      const uploadData = await res.json().catch(() => ({}));
+      const uploadedKey = uploadData?.key as string | undefined;
+      
+      // Also save the project state if provided - store in managed designer_states folder
+      if (projectState && uploadedKey) {
+        try {
+          const { default: SparkMD5 } = await import('spark-md5');
+          const hash = SparkMD5.hash(uploadedKey);
+          const projectFilename = `${hash}.json`;
+          
+          console.log('[saveDesignToWorkspace] Saving project state:', {
+            uploadedKey,
+            hash,
+            projectFilename,
+            projectStateLength: projectState.length
+          });
+          
+          const projectForm = new FormData();
+          const projectFile = new File([projectState], projectFilename, { type: 'application/json' });
+          projectForm.append('file', projectFile, projectFilename);
+          projectForm.append('path', 'designer_states'); // Managed folder
+          if (scope === 'admin') projectForm.append('scope', 'admin');
+          const projectRes = await fetch('/api/storage/upload', { method: 'POST', body: projectForm });
+          
+          if (!projectRes.ok) {
+            console.error('[saveDesignToWorkspace] Project state upload failed:', await projectRes.text());
+          } else {
+            const projectData = await projectRes.json();
+            console.log('[saveDesignToWorkspace] Project state saved successfully:', projectData);
+          }
+        } catch (err) {
+          console.warn('[saveDesignToWorkspace] Failed to save project state:', err);
+        }
+      }
+      
       await refresh(undefined, { force: true });
       setTreeVersion(v=>v+1);
       const message = path === 'vehicles' ? 'Saved to your library folder' : 'Saved to your library';
+      
+      // Close designer and open preview of the saved image
+      setDesignOpen(false);
+      setDesignKey(null);
+      setDesignProjectState(null);
+      
+      // Auto-open the preview of the saved image
+      if (uploadedKey) {
+        try {
+          const url = await getViewUrl(uploadedKey, scope);
+          if (url) {
+            setPreview({ url, name: filename, key: uploadedKey });
+          }
+        } catch (err) {
+          console.warn('[saveDesignToWorkspace] Failed to open preview:', err);
+        }
+      }
+      
       try {
         toast.success(message, {
           action: {
-            label: 'Open',
+            label: 'View',
             onClick: () => {
               try {
-                window.open('/dashboard?view=forge&tab=workspace&path=library', '_blank');
+                // If we're already on the workspace page, just open the preview directly
+                if (uploadedKey && window.location.pathname.includes('/dashboard')) {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('preview', uploadedKey);
+                  window.location.href = url.toString();
+                } else {
+                  // Navigate to workspace with preview param
+                  window.location.href = `/dashboard?view=forge&tab=workspace&path=library&preview=${encodeURIComponent(uploadedKey || '')}`;
+                }
               } catch {}
             },
           },
         });
       } catch {}
-      setDesignOpen(false);
-      setDesignKey(null);
     } catch {}
   }
 
@@ -1174,7 +1313,6 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          {refreshing ? <div className="text-xs text-white/50 animate-pulse">Refreshing…</div> : null}
           {path === 'vehicles' || path.startsWith('vehicles/') ? (
             <div className="ml-2 text-xs px-2 py-1 rounded-md bg-white/5 border border-red-500 text-red-400">
               Managed folder. Add photos via Edit Profile &rarr; select a vehicle.
@@ -1226,7 +1364,6 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
               <Button size="sm" variant="outline" onClick={clearSelection}>Clear</Button>
             </div>
           ) : null}
-          {refreshing ? <div className="text-xs text-white/50 animate-pulse">Refreshing…</div> : null}
           {path === 'vehicles' || path.startsWith('vehicles/') ? (
             <div className="ml-2 text-xs px-2 py-1 rounded-md bg-white/5 border border-red-500 text-red-400">
               Managed folder. Add photos via Edit Profile → select a vehicle.
@@ -1698,17 +1835,18 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           </div>
         </div>
       ) : null}
-      <Dialog open={designOpen} onOpenChange={(o)=>{ setDesignOpen(o); if (!o) setDesignKey(null); }}>
-        <DialogContent className="sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
+      <Dialog open={designOpen} onOpenChange={(o)=>{ setDesignOpen(o); if (!o) { setDesignKey(null); setDesignProjectState(null); setPreview(null); } }}>
+        <DialogContent className="p-2 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
           <DialogHeader>
             <DialogTitle>Designer</DialogTitle>
           </DialogHeader>
           <div className="mt-2">
             {designKey ? (
               <Designer
-                bgKey={designKey}
-                rembg={{ enabled: true }}
-                onClose={()=> setDesignOpen(false)}
+                bgKey={designProjectState?.backgroundKey || designKey}
+                rembg={{ enabled: !designProjectState }} // Skip rembg if we have project state
+                projectState={designProjectState}
+                onClose={()=> { setDesignOpen(false); setPreview(null); }}
                 onSave={saveDesignToWorkspace}
                 onReplaceBgKey={(newKey)=>{ try { if (newKey) { setDesignKey(newKey); } } catch {} }}
                 showAnimate={(() => { try { const name = (designKey || '').split('/').pop() || ''; return /^[0-9T\-:.]+-[a-z0-9\-]+/i.test(name); } catch { return false; } })()}

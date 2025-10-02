@@ -54,6 +54,103 @@ export async function adjustCredits(email: string, delta: number, reason: string
      CREATE credit_txn SET user = $rid, delta = $delta, reason = $reason, ref = $ref, created_at = d"${nowIso}";`,
     { rid, delta, reason, ref: ref || null }
   );
+  
+  // Check if auto-reload should be triggered after credit deduction
+  if (delta < 0) {
+    try {
+      await checkAndTriggerAutoReload(email);
+    } catch (e) {
+      console.error("Auto-reload check failed:", e);
+      // Don't throw - auto-reload failure shouldn't block the main operation
+    }
+  }
+}
+
+export async function checkAndTriggerAutoReload(email: string): Promise<void> {
+  const db = await getSurreal();
+  
+  // Get user's auto-reload settings and current balance
+  const res = await db.query(
+    "SELECT credits_balance, auto_reload_enabled, auto_reload_threshold, auto_reload_amount FROM user WHERE email = $email LIMIT 1;",
+    { email }
+  );
+  const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as Record<string, unknown>) : null;
+  
+  if (!row) return;
+  
+  const enabled = row.auto_reload_enabled === true;
+  const balance = typeof row.credits_balance === "number" ? row.credits_balance : 0;
+  const threshold = typeof row.auto_reload_threshold === "number" ? row.auto_reload_threshold : 100;
+  const amount = typeof row.auto_reload_amount === "number" ? row.auto_reload_amount : 10;
+  
+  // Only proceed if auto-reload is enabled and balance is below threshold
+  if (!enabled || balance >= threshold || amount < 5) return;
+  
+  // Import stripe here to avoid circular dependencies
+  const { stripe } = await import("@/lib/stripe");
+  
+  // Get plan for differential credit rates
+  const planRes = await db.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email });
+  const planRow = Array.isArray(planRes) && Array.isArray(planRes[0]) ? (planRes[0][0] as { plan?: string }) : null;
+  const currentPlan = planRow?.plan as "minimum" | "basic" | "pro" | null;
+  
+  const ratePerDollar = currentPlan === "pro" ? CREDITS_PER_DOLLAR : Math.floor(2500 / 5); // 1000 or 500
+  const credits = amount * ratePerDollar;
+  
+  try {
+    // Create payment intent for auto-reload
+    // We'll use Stripe's automatic payment with saved payment method
+    const customers = await stripe.customers.list({ email, limit: 1 });
+    
+    if (customers.data.length === 0) {
+      console.log(`No Stripe customer found for ${email}, skipping auto-reload`);
+      return;
+    }
+    
+    const customer = customers.data[0];
+    
+    // Get default payment method
+    const paymentMethods = await stripe.paymentMethods.list({
+      customer: customer.id,
+      type: "card",
+      limit: 1,
+    });
+    
+    if (paymentMethods.data.length === 0) {
+      console.log(`No payment method found for ${email}, skipping auto-reload`);
+      return;
+    }
+    
+    // Create payment intent with automatic confirmation
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // Convert to cents
+      currency: "usd",
+      customer: customer.id,
+      payment_method: paymentMethods.data[0].id,
+      confirm: true,
+      automatic_payment_methods: {
+        enabled: true,
+        allow_redirects: "never",
+      },
+      metadata: {
+        intent: "auto_reload",
+        credits: String(credits),
+        amount_usd: String(amount),
+        userEmail: email,
+        planAtPurchase: currentPlan || "minimum",
+      },
+      description: `Auto-reload: ${credits} credits`,
+    });
+    
+    // If payment succeeded immediately, add credits
+    if (paymentIntent.status === "succeeded") {
+      await adjustCredits(email, credits, "auto_reload", paymentIntent.id);
+      console.log(`Auto-reload succeeded for ${email}: ${credits} credits added`);
+    }
+  } catch (e) {
+    console.error("Failed to process auto-reload:", e);
+    // Don't throw - we don't want to interrupt the user's workflow
+  }
 }
 
 export async function requireAndReserveCredits(email: string, cost: number, reason: string, ref?: string | null) {

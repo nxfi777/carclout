@@ -28,6 +28,10 @@ export async function POST(req: Request) {
     if (normalized === `${root}/designer_masks/`) {
       return NextResponse.json({ error: "Cannot delete reserved folder 'designer_masks'" }, { status: 400 });
     }
+    // Protect designer_states root
+    if (normalized === `${root}/designer_states/`) {
+      return NextResponse.json({ error: "Cannot delete reserved folder 'designer_states'" }, { status: 400 });
+    }
     // Protect admin templates root
     if (normalized === `${root}/templates/`) {
       return NextResponse.json({ error: "Cannot delete reserved folder 'templates'" }, { status: 400 });
@@ -42,13 +46,15 @@ export async function POST(req: Request) {
         if (!isAdminScope) {
           const userRoot = `users/${sanitizeUserId(user.email)}`;
           const maskPrefix = `${userRoot}/designer_masks/`;
-          // Only attempt cascade when deleting non-mask user files
-          if (!fullKey.startsWith(maskPrefix)) {
+          const statesPrefix = `${userRoot}/designer_states/`;
+          // Only attempt cascade when deleting non-managed user files
+          if (!fullKey.startsWith(maskPrefix) && !fullKey.startsWith(statesPrefix)) {
             const digest = createHash("sha1").update(fullKey).digest("hex");
-            // Remove both foreground and mask variants if present
+            // Remove masks and project states if present
             await Promise.allSettled([
               deleteObject(`${maskPrefix}${digest}.png`),
-              deleteObject(`${maskPrefix}${digest}.mask.png`)
+              deleteObject(`${maskPrefix}${digest}.mask.png`),
+              deleteObject(`${statesPrefix}${digest}.json`)
             ]);
           }
         }

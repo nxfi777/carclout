@@ -7,7 +7,7 @@ import MusicSuggestions from '@/components/music/music-suggestions';
 // import { createViewUrl, listAllObjects } from '@/lib/r2';
 import { useMemo } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import Designer from '@/components/designer/designer';
+import Designer from '@/components/layer-editor/designer';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -940,7 +940,7 @@ export function TemplatesTabContent(){
     </div>
   );
 
-  const saveDesignToGenerations = useCallback(async (blob: Blob) => {
+  const saveDesignToGenerations = useCallback(async (blob: Blob, projectState?: string) => {
     try {
       const filename = `design-${Date.now()}.png`;
       const file = new File([blob], filename, { type: 'image/png' });
@@ -952,21 +952,45 @@ export function TemplatesTabContent(){
         try { const d = await res.json(); toast.error(d?.error || 'Failed to save'); } catch { toast.error('Failed to save'); }
         return;
       }
+      
+      const uploadData = await res.json();
+      const uploadedKey = uploadData?.key as string | undefined;
+      
+      // Save the project state if provided - store in managed designer_states folder
+      if (projectState && uploadedKey) {
+        try {
+          const { default: SparkMD5 } = await import('spark-md5');
+          const hash = SparkMD5.hash(uploadedKey);
+          const projectFilename = `${hash}.json`;
+          
+          const projectForm = new FormData();
+          const projectFile = new File([projectState], projectFilename, { type: 'application/json' });
+          projectForm.append('file', projectFile, projectFilename);
+          projectForm.append('path', 'designer_states'); // Managed folder
+          await fetch('/api/storage/upload', { method: 'POST', body: projectForm });
+        } catch (err) {
+          console.warn('[saveDesignToGenerations] Failed to save project state:', err);
+        }
+      }
+      
+      // Close designer first
+      setDesignOpen(false);
+      setSelectedImageKeys([]);
+      
       try {
         toast.success('Saved to your library', {
           action: {
-            label: 'Open',
+            label: 'View',
             onClick: () => {
               try {
-                window.open('/dashboard?view=forge&tab=workspace&path=library', '_blank');
+                // Navigate to workspace and trigger preview
+                const url = `/dashboard?view=forge&tab=workspace&path=library&preview=${encodeURIComponent(uploadedKey || '')}`;
+                window.location.href = url;
               } catch {}
             },
           },
         });
       } catch {}
-      setDesignOpen(false);
-      // Clear selected images so next use starts fresh
-      setSelectedImageKeys([]);
     } catch {}
   }, []);
 
@@ -1380,7 +1404,7 @@ export function TemplatesTabContent(){
       </div>
       {grid}
       <Dialog open={open} onOpenChange={(v)=>{ setOpen(v); if (!v) { resetTemplateSession(); setVarState({}); } }}>
-        <DialogContent className="p-4 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
+        <DialogContent className="p-2 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>{designOpen ? 'Designer' : (active?.name || 'Template')}</span>
@@ -1473,6 +1497,7 @@ export function TemplatesTabContent(){
                   <Designer
                     bgKey={String((activeKey || resultKey) || '')}
                     rembg={{ enabled: true }}
+                    closeOnDownload={true}
                     onClose={handleDesignerClose}
                     onTryAgain={handleDesignerTryAgain}
                     onSave={saveDesignToGenerations}
@@ -1728,7 +1753,7 @@ export function TemplatesTabContent(){
                           <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
                           <div className="flex items-center gap-2">
                             {selectedImageKeys.length >= requiredImages ? (
-                              <span className="text-xs text-white/70 whitespace-nowrap">Costs 7 credits</span>
+                              <span className="text-xs text-white/70 whitespace-nowrap">Costs 100 credits</span>
                             ) : null}
                             <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="text-base">
                               {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}

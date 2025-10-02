@@ -143,6 +143,23 @@ export async function POST(req: Request) {
       }
       break;
     }
+    case "payment_intent.succeeded": {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      try {
+        const intent = paymentIntent.metadata?.intent || null;
+        if (intent === "auto_reload") {
+          const email = paymentIntent.metadata?.userEmail;
+          const credits = Number(paymentIntent.metadata?.credits || 0);
+          if (email && credits > 0) {
+            await adjustCredits(email, credits, "auto_reload", paymentIntent.id);
+            console.log(`Auto-reload webhook processed for ${email}: ${credits} credits added`);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to process payment_intent.succeeded for auto-reload:", e);
+      }
+      break;
+    }
     default:
       break;
   }

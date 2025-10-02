@@ -1,18 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { listAllObjects } from "@/lib/r2";
+import { getStorageLimitBytes, getStorageUsageBytes } from "@/lib/storage";
 import { getSurreal } from "@/lib/surrealdb";
 
 export const runtime = "nodejs";
-
-function bytesForPlan(plan: string | null | undefined): number {
-  const GB = 1024 ** 3;
-  const TB = 1024 ** 4;
-  const p = (plan || "base").toLowerCase();
-  if (p === "ultra") return 1 * TB;
-  if (p === "premium") return 100 * GB;
-  return 1 * GB; // base/default
-}
 
 export async function GET(req: Request) {
   const user = await getSessionUser();
@@ -35,15 +27,28 @@ export async function GET(req: Request) {
     if (row && "plan" in row) effectivePlan = row.plan || effectivePlan || null;
   } catch {}
 
-  const objects = await listAllObjects(normalized);
-  const usedBytes = objects.reduce((acc, o) => acc + (o.Size || 0), 0);
+  // For admin scope, use old logic (no limits)
+  if (isAdminScope) {
+    const objects = await listAllObjects(normalized);
+    const usedBytes = objects.reduce((acc, o) => acc + (o.Size || 0), 0);
+    return NextResponse.json({
+      scope: "admin",
+      plan: effectivePlan,
+      usedBytes,
+      limitBytes: null,
+      remainingBytes: null,
+      percentUsed: null,
+    });
+  }
 
-  const limitBytes = isAdminScope ? null : bytesForPlan(effectivePlan);
-  const remainingBytes = limitBytes === null ? null : Math.max(0, limitBytes - usedBytes);
-  const percentUsed = limitBytes === null || limitBytes === 0 ? null : Math.min(100, Math.round((usedBytes / limitBytes) * 100));
+  // For user scope, use new helper functions that include add-ons
+  const usedBytes = await getStorageUsageBytes(user.email);
+  const limitBytes = await getStorageLimitBytes(user.email, effectivePlan);
+  const remainingBytes = Math.max(0, limitBytes - usedBytes);
+  const percentUsed = limitBytes === 0 ? null : Math.min(100, Math.round((usedBytes / limitBytes) * 100));
 
   return NextResponse.json({
-    scope: isAdminScope ? "admin" : "user",
+    scope: "user",
     plan: effectivePlan,
     usedBytes,
     limitBytes,

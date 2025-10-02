@@ -4,7 +4,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useDesignerActions } from "@/components/designer/DesignerActionsContext";
+import { useDesignerActions } from "@/components/layer-editor/DesignerActionsContext";
 import ElectricBorder from "@/components/electric-border";
 import { cn } from "@/lib/utils";
 
@@ -79,7 +79,7 @@ export default function MobileActions({
   );
 }
 
-function ActionButton({ action, wide }: { action: import("@/components/designer/DesignerActionsContext").DesignerActionDescriptor; wide?: boolean }) {
+function ActionButton({ action, wide }: { action: import("@/components/layer-editor/DesignerActionsContext").DesignerActionDescriptor; wide?: boolean }) {
   const content = (
     <Button
       type="button"

@@ -37,6 +37,7 @@ import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sd
 import { fal } from "@fal-ai/client";
 import { RecordId } from "surrealdb";
 import { GENERATION_CREDITS_PER_IMAGE, chargeCreditsOnce } from "@/lib/credits";
+import { validateStorageSpace } from "@/lib/storage";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
@@ -326,6 +327,22 @@ export async function POST(req: Request) {
     const safeSlug = (String(template?.slug || template?.name || "template").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")) || "template";
     const fileName = `${createdIso.replace(/[:.]/g, "-")}-${safeSlug}.${ext}`;
     const outKey = `${userKeyPrefix}${fileName}`;
+    
+    // Resolve user plan for storage validation
+    let effectivePlan: string | null = user.plan ?? null;
+    try {
+      const dbForPlan = await getSurreal();
+      const resPlan = await dbForPlan.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email: user.email });
+      const rowPlan = Array.isArray(resPlan) && Array.isArray(resPlan[0]) ? (resPlan[0][0] as { plan?: string | null } | undefined) : undefined;
+      if (rowPlan && "plan" in rowPlan) effectivePlan = rowPlan.plan || effectivePlan || null;
+    } catch {}
+    
+    // Validate storage space before saving
+    const validation = await validateStorageSpace(user.email, arrayBuffer.byteLength, effectivePlan);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error || "Storage limit exceeded" }, { status: 413 });
+    }
+    
     await r2.send(new PutObjectCommand({ Bucket: bucket, Key: outKey, Body: new Uint8Array(arrayBuffer), ContentType: fileRes.headers.get("content-type") || "image/jpeg" }));
 
     // Charge credits idempotently now that we have a successful generation and stored artifact

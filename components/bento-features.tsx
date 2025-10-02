@@ -42,6 +42,7 @@ const features: Feature[] = [
     description: "Pro members get daily requests + exclusive templates. Access features weeks before everyone else. Your ideas shape the product.",
     gradient: "from-green-500/10 to-emerald-500/10",
     iconColor: "text-green-500",
+    image: "/DesignerPreview.webp",
   },
 ];
 

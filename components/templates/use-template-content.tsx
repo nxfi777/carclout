@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 // import { R2FileTree } from "@/components/ui/file-tree";
 import FixedAspectCropper from "@/components/ui/fixed-aspect-cropper";
-import Designer from "@/components/designer/designer";
+import Designer from "@/components/layer-editor/designer";
 import { Dialog as AppDialog, DialogContent as AppDialogContent, DialogHeader as AppDialogHeader, DialogTitle as AppDialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DropZone } from "@/components/ui/drop-zone";
@@ -78,6 +78,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   const [cropUrl, setCropUrl] = useState<string | null>(null);
   const [pendingKeys, setPendingKeys] = useState<string[] | null>(null);
   const [varState, setVarState] = useState<Record<string, string>>({});
+  const [sourceVehicleKey, setSourceVehicleKey] = useState<string | null>(null); // Track original vehicle photo for designer backgroundKey
   const requiredImages = ((): number => {
     try {
       const n = Number((template as { maxUploadImages?: number })?.maxUploadImages || 1);
@@ -100,6 +101,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       setActiveUrl(null);
       setUpscaleBusy(false);
       setCropOpen(false);
+      setSourceVehicleKey(null);
       setCropUrl(null);
       setPendingKeys(null);
       setVarState({});
@@ -488,6 +490,12 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       const selected = Array.from(new Set(selectedImageKeys));
       if (selected.length < requiredImages) { setRequiredShake(true); setTimeout(()=> setRequiredShake(false), 700); return; }
       const selectedFullKey = selected[0] || null;
+      
+      // Store the source vehicle key for use as backgroundKey in designer
+      if (selectedFullKey) {
+        setSourceVehicleKey(selectedFullKey);
+      }
+      
       const userImageKeys: string[] = selected.map((k)=>{
         const m = k.match(/^users\/[^/]+\/(.+)$/);
         const rel = m ? m[1] : k.replace(/^users\//, "");
@@ -726,7 +734,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
             </div>
           ) : null}
           <AppDialog open={designOpen} onOpenChange={setDesignOpen}>
-            <AppDialogContent className="sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
+            <AppDialogContent className="p-2 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
             <AppDialogHeader>
               <AppDialogTitle className="flex items-center justify-between">
                 <span>Designer</span>
@@ -764,34 +772,14 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                     ))}
                   </div>
                 ) : null}
+                {/* TODO: Re-enable save to library functionality by adding onSave prop */}
                 <Designer
                   bgKey={String((activeKey || resultKey) || "")}
+                  sourceImageKey={sourceVehicleKey}
                   rembg={{ enabled: true }}
-                  onClose={() => { setDesignOpen(false); setSelectedImageKeys([]); }}
-                  onTryAgain={() => { try { setDesignOpen(false); setResultUrl(null); } catch {} }}
-                  onSave={async (blob) => {
-                    try {
-                      const filename = `design-${Date.now()}.png`;
-                      const file = new File([blob], filename, { type: "image/png" });
-                      const form = new FormData();
-                      form.append("file", file, filename);
-                      form.append("path", "library");
-                      const res = await fetch("/api/storage/upload", { method: "POST", body: form });
-                      if (!res.ok) {
-                        try {
-                          const d = await res.json();
-                          toast.error(d?.error || "Failed to save");
-                        } catch {
-                          toast.error("Failed to save");
-                        }
-                        return;
-                      }
-                      try { toast.success("Saved to your library", { action: { label: "Open", onClick: () => { try { window.open('/dashboard?view=forge&tab=workspace&path=library', '_blank'); } catch {} } } }); } catch {}
-                      setDesignOpen(false);
-                      // Clear selections so a subsequent template use is fresh
-                      setSelectedImageKeys([]);
-                    } catch {}
-                  }}
+                  closeOnDownload={false}
+                  onClose={() => { setDesignOpen(false); setSelectedImageKeys([]); setSourceVehicleKey(null); }}
+                  onTryAgain={() => { try { setDesignOpen(false); setResultUrl(null); setSourceVehicleKey(null); } catch {} }}
                   aspectRatio={typeof template?.aspectRatio === "number" ? Number(template.aspectRatio) : undefined}
                   onReplaceBgKey={(newKey, newUrl) => {
                     try {

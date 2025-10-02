@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { fal } from "@fal-ai/client";
-import { r2, bucket, ensureFolder, createViewUrl } from "@/lib/r2";
+import { r2, bucket, ensureFolder } from "@/lib/r2";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { requireAndReserveCredits, REMBG_CREDITS_PER_CALL } from "@/lib/credits";
 import { createHash } from "crypto";
+import { validateStorageSpace } from "@/lib/storage";
+import { getSurreal } from "@/lib/surrealdb";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
@@ -46,19 +48,22 @@ export async function POST(req: Request) {
       try {
         const obj = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: fgKey }));
         if (obj && obj.Body) {
-          // Compute signed view URLs
-          const { url: fgUrl } = await createViewUrl(fgKey, 60 * 10);
+          // Use same-origin proxy URLs to avoid CORS issues in canvas
+          const fgUrl = `/api/storage/file?key=${encodeURIComponent(fgKey)}`;
           // Mask is optional
           let maskUrl: string | null = null;
           try {
             const maskObj = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: maskKey }));
             if (maskObj && maskObj.Body) {
-              const { url } = await createViewUrl(maskKey, 60 * 10);
-              maskUrl = url;
+              maskUrl = `/api/storage/file?key=${encodeURIComponent(maskKey)}`;
             }
           } catch {}
           // Return cached response in the same shape as FAL
-          return NextResponse.json({ image: { url: fgUrl }, mask_image: maskUrl ? { url: maskUrl } : null, requestId: "cache" });
+          return NextResponse.json({ 
+            image: { url: fgUrl }, 
+            mask_image: maskUrl ? { url: maskUrl } : null, 
+            requestId: "cache" 
+          });
         }
       } catch {}
     } catch {}
@@ -167,30 +172,68 @@ export async function POST(req: Request) {
         const digest = createHash("sha1").update(normalizedSourceKey).digest("hex");
         const fgKey = `${maskPrefix}${digest}.png`;
         const maskKey = `${maskPrefix}${digest}.mask.png`;
-        try {
-          await ensureFolder(maskPrefix);
-        } catch {}
-        // Save foreground
+        
+        // Fetch the images first to know their size
+        let fgArrayBuffer: ArrayBuffer | null = null;
+        let fgContentType: string = "image/png";
+        let maskArrayBuffer: ArrayBuffer | null = null;
+        let maskContentType: string = "image/png";
+        
         try {
           const resp = await fetch(String(out.image.url));
           if (resp.ok) {
-            const ab = await resp.arrayBuffer();
-            const ct = resp.headers.get("content-type") || "image/png";
-            await r2.send(new PutObjectCommand({ Bucket: bucket, Key: fgKey, Body: new Uint8Array(ab), ContentType: ct }));
+            fgArrayBuffer = await resp.arrayBuffer();
+            fgContentType = resp.headers.get("content-type") || "image/png";
           }
         } catch {}
-        // Save mask if provided
-        try {
-          const mUrl = out?.mask_image?.url ? String(out.mask_image.url) : null;
-          if (mUrl) {
-            const resp = await fetch(mUrl);
+        
+        if (out?.mask_image?.url) {
+          try {
+            const resp = await fetch(String(out.mask_image.url));
             if (resp.ok) {
-              const ab = await resp.arrayBuffer();
-              const ct = resp.headers.get("content-type") || "image/png";
-              await r2.send(new PutObjectCommand({ Bucket: bucket, Key: maskKey, Body: new Uint8Array(ab), ContentType: ct }));
+              maskArrayBuffer = await resp.arrayBuffer();
+              maskContentType = resp.headers.get("content-type") || "image/png";
             }
-          }
+          } catch {}
+        }
+        
+        // Calculate total incoming size
+        const incomingSize = (fgArrayBuffer?.byteLength || 0) + (maskArrayBuffer?.byteLength || 0);
+        
+        // Resolve user plan for storage validation
+        let effectivePlan: string | null = user.plan ?? null;
+        try {
+          const db = await getSurreal();
+          const res = await db.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email: userEmail });
+          const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { plan?: string | null } | undefined) : undefined;
+          if (row && "plan" in row) effectivePlan = row.plan || effectivePlan || null;
         } catch {}
+        
+        // Validate storage space before saving
+        const validation = await validateStorageSpace(userEmail, incomingSize, effectivePlan);
+        if (!validation.ok) {
+          return NextResponse.json({ error: validation.error || "Storage limit exceeded" }, { status: 413 });
+        }
+        
+        // Storage check passed, now save the files
+        try {
+          await ensureFolder(maskPrefix);
+        } catch {}
+        
+        // Save foreground
+        if (fgArrayBuffer) {
+          try {
+            await r2.send(new PutObjectCommand({ Bucket: bucket, Key: fgKey, Body: new Uint8Array(fgArrayBuffer), ContentType: fgContentType }));
+          } catch {}
+        }
+        
+        // Save mask if provided
+        if (maskArrayBuffer) {
+          try {
+            await r2.send(new PutObjectCommand({ Bucket: bucket, Key: maskKey, Body: new Uint8Array(maskArrayBuffer), ContentType: maskContentType }));
+          } catch {}
+        }
+        
         // Replace outgoing URLs with our same-origin proxy URLs to avoid CORS in canvas
         try {
           const fgSigned = `/api/storage/file?key=${encodeURIComponent(fgKey)}`;

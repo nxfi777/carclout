@@ -15,10 +15,30 @@ export default function LayerCanvas({ className }: { className?: string }) {
   const [dragStart, setDragStart] = useState<{ x: number; y: number; lx: number; ly: number; id: string } | null>(null);
   const [selectRect, setSelectRect] = useState<null | { x: number; y: number; w: number; h: number }>(null);
   const [maskDrag, setMaskDrag] = useState<null | { x: number; y: number; tx: number; ty: number }>(null);
+  
+  // Track when we just exited editing mode to prevent immediate new text creation
+  const justExitedEditingRef = useRef(false);
+  const stateRef = useRef({ activeLayerId: state.activeLayerId, editingLayerId: state.editingLayerId });
+  
+  // Keep ref synchronized with current state
+  useEffect(() => {
+    stateRef.current = { activeLayerId: state.activeLayerId, editingLayerId: state.editingLayerId };
+  }, [state.activeLayerId, state.editingLayerId]);
+  
+  // Reset justExitedEditing flag when switching to text tool
+  useEffect(() => {
+    if (state.tool === 'text') {
+      justExitedEditingRef.current = false;
+    }
+  }, [state.tool]);
 
   const onPointerDownLayer = useCallback((e: React.PointerEvent, layer: Layer) => {
     e.stopPropagation();
     if (layer.locked) return;
+    
+    // Reset exit editing flag when interacting with a layer
+    justExitedEditingRef.current = false;
+    
     // Allow additive selection with Ctrl/Cmd
     if (e.ctrlKey || e.metaKey) {
       dispatch({ type: 'toggle_select_layer', id: layer.id });
@@ -66,29 +86,94 @@ export default function LayerCanvas({ className }: { className?: string }) {
   }, [maskDrag, dispatch]);
 
   const onCanvasClick = useCallback((e: React.MouseEvent) => {
-    // Only clear selection if background itself is clicked
+    // Only handle clicks on the canvas background itself
     if (e.target !== e.currentTarget) return;
+    
+    // Don't deselect if we just finished a transform operation (scaling, rotating, etc.)
+    try {
+      if ((window as unknown as { __justFinishedTransform?: boolean }).__justFinishedTransform) {
+        return;
+      }
+    } catch {}
+    
     if (state.tool === 'select') {
       dispatch({ type: 'select_layer', id: null });
+      return;
     }
-  }, [dispatch, state.tool]);
+    
+    if (state.tool === 'text') {
+      // Synchronously update stateRef to ensure we have current values
+      stateRef.current = { activeLayerId: state.activeLayerId, editingLayerId: state.editingLayerId };
+      
+      // Use !! to properly handle both null and undefined
+      const hasSelection = !!state.activeLayerId;
+      const isEditing = !!state.editingLayerId;
+      
+      // If we just exited editing mode (via blur), don't create new text yet
+      if (justExitedEditingRef.current) {
+        justExitedEditingRef.current = false;
+        // Also deselect if something is still selected
+        if (hasSelection || isEditing) {
+          if (isEditing) {
+            dispatch({ type: 'stop_edit_text' });
+          }
+          dispatch({ type: 'select_layer', id: null });
+        }
+        return;
+      }
+      
+      // If something is selected or editing, deselect only
+      if (hasSelection || isEditing) {
+        if (isEditing) {
+          dispatch({ type: 'stop_edit_text' });
+        }
+        dispatch({ type: 'select_layer', id: null });
+        return;
+      }
+      
+      // Nothing selected - create new text box and enter edit mode immediately
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      
+      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+      const newLayer = createDefaultText(xPct, yPct);
+      
+      // add_layer already sets activeLayerId and editingLayerId for text layers
+      // when tool is 'text', so we don't need additional dispatches
+      dispatch({ type: 'add_layer', layer: newLayer, atTop: true });
+    }
+  }, [dispatch, state.tool, state.activeLayerId, state.editingLayerId]);
 
   const onCanvasDblClick = useCallback((e: React.MouseEvent) => {
     const rect = (containerRef.current as HTMLDivElement).getBoundingClientRect();
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
     const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-    if (state.tool === 'text') {
-      const target = e.target as HTMLElement | null;
-      const layerEl = target?.closest('[data-layer-id]') as HTMLElement | null;
-      if (layerEl?.dataset.layerId) {
-        dispatch({ type: 'start_edit_text', id: layerEl.dataset.layerId });
+    
+    const target = e.target as HTMLElement | null;
+    const layerEl = target?.closest('[data-layer-id]') as HTMLElement | null;
+    const layerId = layerEl?.dataset.layerId;
+    
+    if (state.tool === 'select') {
+      // Double-click on a text layer in select mode: switch to text tool and start editing
+      if (layerId) {
+        const layer = state.layers.find(l => l.id === layerId);
+        if (layer && layer.type === 'text') {
+          dispatch({ type: 'set_tool', tool: 'text' });
+          dispatch({ type: 'start_edit_text', id: layerId });
+          return;
+        }
+      }
+    } else if (state.tool === 'text') {
+      if (layerId) {
+        dispatch({ type: 'start_edit_text', id: layerId });
         return;
       }
-      dispatch({ type: 'add_layer', layer: createDefaultText(xPct, yPct), atTop: true });
+      // Single click already handles text creation
     } else if (state.tool === 'shape') {
       dispatch({ type: 'add_layer', layer: createDefaultRect(xPct, yPct), atTop: true });
     }
-  }, [dispatch, state.tool]);
+  }, [dispatch, state.tool, state.layers]);
 
   const selectionId = state.activeLayerId;
   const selectedIdsSet = new Set(state.selectedLayerIds && state.selectedLayerIds.length > 0 ? state.selectedLayerIds : (selectionId ? [selectionId] : []));
@@ -146,7 +231,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
           }}
           onClick={onCanvasClick}
           onDoubleClick={onCanvasDblClick}
-          className={cn("relative w-full h-[60vh] sm:h-[65vh] rounded-xl border border-[var(--border)] bg-[var(--muted)] overflow-hidden select-none touch-none", className)}
+          className={cn("relative w-full h-[45vh] sm:h-[55vh] rounded-xl border border-[var(--border)] bg-[var(--muted)] overflow-hidden select-none touch-none", className)}
         >
           {state.backgroundUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -155,9 +240,12 @@ export default function LayerCanvas({ className }: { className?: string }) {
             <div className="absolute inset-0 grid place-items-center text-sm text-white/50">Tap to add content</div>
           )}
 
-          {state.layers.filter(l=> !l.aboveMask).map((layer)=> (
-            <LayerView key={layer.id} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} />
-          ))}
+          {state.layers.filter(l=> !l.aboveMask).map((layer)=> {
+            const tiltKey = layer.type === 'text' 
+              ? `${layer.id}-${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}-${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}`
+              : layer.id;
+            return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} />;
+          })}
 
           {state.carMaskUrl && !state.maskHidden ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -180,9 +268,12 @@ export default function LayerCanvas({ className }: { className?: string }) {
             />
           ) : null}
 
-          {state.layers.filter(l=> !!l.aboveMask).map((layer)=> (
-            <LayerView key={layer.id} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} />
-          ))}
+          {state.layers.filter(l=> !!l.aboveMask).map((layer)=> {
+            const tiltKey = layer.type === 'text' 
+              ? `${layer.id}-${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}-${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}`
+              : layer.id;
+            return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} />;
+          })}
 
           {state.activeLayerId === '::mask::' ? (
             <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-[var(--primary)]/70" />
@@ -209,7 +300,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
   );
 }
 
-function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected: boolean; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void }){
+function LayerView({ layer, selected, onPointerDown, justExitedEditingRef }: { layer: Layer; selected: boolean; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void; justExitedEditingRef: React.MutableRefObject<boolean> }){
   const { state, dispatch } = useLayerEditor();
   const editableRef = React.useRef<HTMLDivElement | null>(null);
   const seededRef = React.useRef<string | null>(null);
@@ -298,29 +389,29 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
   })();
   const resolvedGlowColor = layer.effects.glow.enabled ? multiplyColorAlpha(layer.effects.glow.color, baseAlpha || 0, '#ffffff') : '';
   const resolvedShadowColor = layer.effects.shadow.enabled ? multiplyColorAlpha(layer.effects.shadow.color, baseAlpha || 0, '#000000') : '';
+  const tiltXDeg = (layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0;
+  const tiltYDeg = (layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0;
+  
   const style: React.CSSProperties = {
     position: 'absolute',
     left: `${layer.xPct}%`,
     top: `${layer.yPct}%`,
-    transform: `translate(-50%, -50%) rotate(${layer.rotationDeg}deg) scale(${layer.scaleX}, ${layer.scaleY})`,
+    transform: `translate(-50%, -50%) perspective(1200px) rotateX(${tiltXDeg}deg) rotateY(${tiltYDeg}deg) rotate(${layer.rotationDeg}deg) scale(${layer.scaleX}, ${layer.scaleY})`,
     transformOrigin: 'center',
+    transformStyle: 'preserve-3d',
     width: `${layer.widthPct}%`,
     height: `${layer.heightPct}%`,
     pointerEvents: layer.locked ? 'none' : 'auto',
     filter: `${(layer.type !== 'text' && layer.effects.glow.enabled) ? `drop-shadow(${layer.effects.glow.offsetX || 0}px ${layer.effects.glow.offsetY || 0}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${resolvedGlowColor || layer.effects.glow.color || '#ffffff'})` : ''}`,
   };
-  // Add 3D perspective and rotateY tilt using a wrapper, so scale/rotateZ remain separate
+  // Wrapper no longer needs perspective since it's in main transform
   const wrapperStyle: React.CSSProperties = {
     position: 'absolute',
     inset: 0,
-    perspective: '1200px',
-    transformStyle: 'preserve-3d',
   };
   const inner3DStyle: React.CSSProperties = {
     width: '100%',
     height: '100%',
-    transform: `rotateX(${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}deg) rotateY(${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}deg)`,
-    transformStyle: 'preserve-3d',
   };
   let rendered: React.ReactNode = null;
   if (layer.type === 'text') {
@@ -343,7 +434,22 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
     if (isEditing) {
       rendered = (
         <div
-          ref={editableRef}
+          ref={(node) => {
+            editableRef.current = node;
+            // Immediate focus without delay
+            if (node) {
+              node.focus();
+              // Move cursor to end
+              const range = document.createRange();
+              const sel = window.getSelection();
+              if (sel && node.childNodes.length > 0) {
+                range.selectNodeContents(node);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            }
+          }}
           contentEditable
           suppressContentEditableWarning
           autoFocus
@@ -397,11 +503,18 @@ function LayerView({ layer, selected, onPointerDown }: { layer: Layer; selected:
             }
             const nextHtml = el.innerHTML;
             const nextText = (el.innerText || el.textContent || '').replace(/\r\n|\r/g, '\n');
-            const patch: { html: string; text: string } = { html: nextHtml, text: nextText };
-            if (nextText !== t.text || nextHtml !== t.html) {
-              dispatch({ type: 'update_layer', id: layer.id, patch });
+            // If the text is empty, remove the layer
+            if (!nextText.trim()) {
+              dispatch({ type: 'remove_layer', id: layer.id });
+            } else {
+              const patch: { html: string; text: string } = { html: nextHtml, text: nextText };
+              if (nextText !== t.text || nextHtml !== t.html) {
+                dispatch({ type: 'update_layer', id: layer.id, patch });
+              }
             }
             dispatch({ type: 'stop_edit_text' });
+            // Mark that we just exited editing to prevent immediate new text box creation
+            justExitedEditingRef.current = true;
           }}
         style={{
             ...textStyle,

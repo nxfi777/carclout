@@ -96,7 +96,7 @@ export default function FAQSection() {
                 How do credits work and will I run out?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                Credits meter generation and processing so you only pay for what you actually use. A single image generation is typically about 6 credits. The Minimum plan ($1) gives you 5 generations to try it out risk-free. Pro users get significantly more value per dollar and can create consistently. You&apos;ll always see your credit balance before generating, so there are never any surprises.
+                Credits meter generation and processing so you only pay for what you actually use. A single image generation is typically about 100 credits. The Minimum plan ($1) gives you 5 generations to try it out risk-free. Pro users get significantly more value per dollar and can create consistently. You&apos;ll always see your credit balance before generating, so there are never any surprises.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="topups" className="border-none">
@@ -104,7 +104,7 @@ export default function FAQSection() {
                 What if I need more credits but don&apos;t want to upgrade?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                No problem. Top-ups start at just $5 and work with any plan. On Minimum, $5 gets you about 250 credits. On Pro, that same $5 gets you roughly 500 credits—2× more value per dollar.
+                No problem. Top-ups start at just $5 and work with any plan. On Minimum, $5 gets you 2,500 credits (25 image edits). On Pro, that same $5 gets you 5,000 credits (50 image edits)—2× more value per dollar.
                 <div className="mt-2 text-xs rounded px-2 py-1 inline-block bg-[rgba(255,106,0,0.12)] text-[#ff6a00] border border-[#ff6a00]/30">
                   Pro members get 2× more credits per dollar across all purchases.
                 </div>

@@ -177,7 +177,7 @@ export default function BrandMarquee() {
         }
 
         .animate-marquee {
-          animation: marquee 80s linear infinite;
+          animation: marquee 40s linear infinite;
         }
 
         .animate-marquee:hover {

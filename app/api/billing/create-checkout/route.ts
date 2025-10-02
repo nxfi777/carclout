@@ -44,13 +44,43 @@ export async function POST(req: Request) {
       if (!Number.isFinite(amountUsd) || amountUsd < minUsd) {
         return NextResponse.json({ error: `Minimum top-up is $${minUsd}` }, { status: 400 });
       }
-      // Base rate: 1000 credits per $1 (CREDITS_PER_DOLLAR, 10x scale)
-      // Special rule for $5 top-ups:
-      // - minimum plan: 2,500 credits for $5 (500 cr/$)
-      // - pro plan: 5,000 credits for $5 (1000 cr/$)
-      // For amounts > $5, keep the same per-dollar rate as $5 case for simplicity.
-      const ratePerDollar = currentPlan === "pro" ? CREDITS_PER_DOLLAR : Math.floor(2500 / 5); // 1000 or 500
-      const credits = amountUsd * ratePerDollar;
+      
+      // Tiered pricing structure that scales to exactly 1:1000
+      // Based on Hormozi's pricing psychology: anchor high, volume incentives, psychological pricing
+      let credits: number;
+      let ratePerDollar = 0;
+      
+      if (currentPlan === "pro") {
+        // Pro plan: Tiered topups that scale progressively better
+        // Designed to encourage larger purchases while rewarding bulk buyers
+        if (amountUsd >= 199) {
+          // Tier 6: $199+ = 1,060 cr/$ (6% bonus for bulk commitment)
+          credits = Math.floor(amountUsd * 1060);
+        } else if (amountUsd >= 99) {
+          // Tier 5: $99+ = 1,030 cr/$ (3% bonus, "BULK VALUE")
+          credits = Math.floor(amountUsd * 1030);
+        } else if (amountUsd >= 50) {
+          // Tier 4: $50+ = 1,000 cr/$ (EXACTLY 1:1000 - "BEST VALUE")
+          credits = Math.floor(amountUsd * 1000);
+        } else if (amountUsd >= 27) {
+          // Tier 3: $27+ = 926 cr/$ (requested anchor tier, "POPULAR")
+          credits = Math.floor((amountUsd / 27) * 25000);
+        } else if (amountUsd >= 20) {
+          // Tier 2: $20+ = 950 cr/$ (better than base but not optimal)
+          credits = Math.floor(amountUsd * 950);
+        } else if (amountUsd >= 10) {
+          // Tier 1: $10-19 = 900 cr/$ (entry tier, encourages going bigger)
+          credits = Math.floor(amountUsd * 900);
+        } else {
+          // Minimum $5-9: 850 cr/$ (intentionally least attractive to drive upgrades)
+          credits = Math.floor(amountUsd * 850);
+        }
+      } else {
+        // Minimum plan: Half the pro rate (maintains 2:1 differential)
+        // - minimum plan: 2,500 credits for $5 (500 cr/$)
+        ratePerDollar = Math.floor(2500 / 5); // 500
+        credits = amountUsd * ratePerDollar;
+      }
       const origin = resolveOrigin(req);
       const upgradeHint = currentPlan === "minimum" && ratePerDollar < CREDITS_PER_DOLLAR;
       const session = await stripe.checkout.sessions.create({

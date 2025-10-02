@@ -28,6 +28,7 @@ export async function GET(req: Request) {
   if (!path && !isAdminScope) {
     try { await ensureFolder(`${root}/vehicles/`); } catch {}
     try { await ensureFolder(`${root}/designer_masks/`); } catch {}
+    try { await ensureFolder(`${root}/designer_states/`); } catch {}
     // Unified workspace folder for user uploads and generations
     try { await ensureFolder(`${root}/library/`); } catch {}
   }

@@ -11,6 +11,9 @@ export interface UserDoc {
   plan?: "base" | "premium" | "ultra" | null;
   xp?: number;
   created_at?: string;
+  auto_reload_enabled?: boolean;
+  auto_reload_threshold?: number; // credits balance threshold to trigger reload
+  auto_reload_amount?: number; // USD amount to reload
 }
 
 
