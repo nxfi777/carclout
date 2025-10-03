@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback, useMemo, Fragment } from "react";
 import Image from "next/image";
+import { BlurhashImage } from "@/components/ui/blurhash-image";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { DropZone } from "@/components/ui/drop-zone";
@@ -34,7 +35,7 @@ import ElectricBorder from "@/components/electric-border";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-type Item = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string };
+type Item = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string; blurhash?: string };
 type ItemWithTag = Item & { etag?: string };
 
 // Simple in-memory + session cache for workspace items, keyed by scope:path
@@ -953,7 +954,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     }
   }
 
-  function ImageThumb({ storageKey, alt, url: providedUrl }: { storageKey: string; alt: string; url?: string | null }) {
+  function ImageThumb({ storageKey, alt, url: providedUrl, blurhash }: { storageKey: string; alt: string; url?: string | null; blurhash?: string }) {
     const [url, setUrl] = useState<string | null>(providedUrl || null);
     useEffect(() => {
       let cancelled = false;
@@ -972,6 +973,19 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     if (!url) return (
       <Skeleton className="w-full h-full rounded-none" />
     );
+    if (blurhash) {
+      return (
+        <BlurhashImage
+          src={url}
+          alt={alt}
+          fill
+          sizes="(max-width: 768px) 50vw, 12rem"
+          blurhash={blurhash}
+          className="object-cover"
+          showSkeleton={false}
+        />
+      );
+    }
     return (
       <Image
         src={url}
@@ -1683,7 +1697,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                 ) : (
                                   <div className="aspect-square w-full rounded-md bg-black/20 grid place-items-center overflow-hidden">
                                     {isImage ? (
-                                      <div className="w-full h-full"><ImageThumb storageKey={it.key || `${path ? `${path}/` : ''}${it.name}`} alt={it.name} url={viewUrls[(it.key || `${path ? `${path}/` : ''}${it.name}`)] || null} /></div>
+                                      <div className="w-full h-full"><ImageThumb storageKey={it.key || `${path ? `${path}/` : ''}${it.name}`} alt={it.name} url={viewUrls[(it.key || `${path ? `${path}/` : ''}${it.name}`)] || null} blurhash={it.blurhash} /></div>
                                     ) : (
                                       <svg className="size-10 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeWidth="2" d="M7 21h10a2 2 0 0 0 2-2V9.5L12.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z"/></svg>
                                     )}

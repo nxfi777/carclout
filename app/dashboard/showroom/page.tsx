@@ -28,6 +28,7 @@ import Chevron from "@/components/ui/chevron";
 import { getViewUrls } from "@/lib/view-url-client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from "next/image";
+import { BlurhashImage } from "@/components/ui/blurhash-image";
 
 import { uploadFilesToChat } from "@/lib/r2-upload";
 
@@ -237,7 +238,7 @@ function DashboardShowroomPageInner() {
   const sendingAttachmentsRef = useRef(false);
   const maxAttachments = 6;
   const [selectedAttachmentTab, setSelectedAttachmentTab] = useState<'upload' | 'library'>('upload');
-  const [libraryItems, setLibraryItems] = useState<Array<{ key: string; url: string }>>([]);
+  const [libraryItems, setLibraryItems] = useState<Array<{ key: string; url: string; blurhash?: string }>>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [imageDimensions, setImageDimensions] = useState<Record<string, { width: number; height: number }>>({});
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
@@ -388,15 +389,15 @@ function DashboardShowroomPageInner() {
       return mutated ? next : prev;
     });
   }, []);
-  // Helper to show desktop notification
+  // Helper to show notification (desktop or in-app toast)
   const showNotification = useCallback((chatId: string, userName: string, text: string, isDm: boolean) => {
     // Don't show notifications for feature-request or leaderboard channels
     if (!isDm && (chatId === 'request-a-feature' || chatId === 'leaderboard')) {
       return;
     }
     
-    // Don't show if window is focused, chat is muted, or notifications not granted
-    if (isWindowFocusedRef.current || mutedChats.has(chatId) || notificationPermission !== 'granted') {
+    // Don't show if chat is muted
+    if (mutedChats.has(chatId)) {
       return;
     }
 
@@ -405,24 +406,73 @@ function DashboardShowroomPageInner() {
       return;
     }
 
-    try {
-      const title = isDm ? `${userName} (DM)` : `${userName} in #${chatId}`;
-      const body = text.length > 100 ? text.substring(0, 100) + '...' : text;
-      const notification = new Notification(title, {
-        body,
-        icon: '/icon-192.png',
-        badge: '/icon-192.png',
-        tag: chatId, // Replace previous notification from same chat
-      });
+    // Determine if this notification is for the currently active chat
+    const isActiveChat = isDm 
+      ? (activeChatType === 'dm' && activeDm?.email === chatId.replace('dm:', ''))
+      : (activeChatType === 'channel' && active === chatId);
 
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
-    } catch (err) {
-      console.error('Failed to show notification:', err);
+    // If user is viewing this chat and window is focused, don't notify at all
+    if (isWindowFocusedRef.current && isActiveChat) {
+      return;
     }
-  }, [isWindowFocusedRef, mutedChats, notificationPermission, me?.email]);
+
+    const displayText = text.length > 100 ? text.substring(0, 100) + '...' : text;
+    const title = isDm ? `${userName} (DM)` : `${userName} in #${chatId}`;
+
+    // If window is focused but user is NOT viewing this chat, show in-app toast
+    if (isWindowFocusedRef.current && !isActiveChat) {
+      toast(title, {
+        description: displayText,
+        duration: 5000,
+        action: {
+          label: 'View',
+          onClick: () => {
+            if (isDm) {
+              const email = chatId.replace('dm:', '');
+              setActiveChatType('dm');
+              setActiveDm({ email, name: userName });
+              setShowroomView('showroom');
+            } else {
+              setActiveChatType('channel');
+              setActive(chatId);
+              setShowroomView('showroom');
+            }
+          },
+        },
+      });
+      return;
+    }
+
+    // If window is unfocused, show desktop notification (requires permission)
+    if (!isWindowFocusedRef.current && notificationPermission === 'granted') {
+      try {
+        const notification = new Notification(title, {
+          body: displayText,
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
+          tag: chatId, // Replace previous notification from same chat
+        });
+
+        notification.onclick = () => {
+          window.focus();
+          // Navigate to the chat
+          if (isDm) {
+            const email = chatId.replace('dm:', '');
+            setActiveChatType('dm');
+            setActiveDm({ email, name: userName });
+            setShowroomView('showroom');
+          } else {
+            setActiveChatType('channel');
+            setActive(chatId);
+            setShowroomView('showroom');
+          }
+          notification.close();
+        };
+      } catch (err) {
+        console.error('Failed to show notification:', err);
+      }
+    }
+  }, [isWindowFocusedRef, mutedChats, notificationPermission, me?.email, activeChatType, active, activeDm?.email, setActiveChatType, setActiveDm, setActive, setShowroomView]);
 
   // Helper to show streak warning notification
   const showStreakNotification = useCallback((type: 'warning' | 'lost', streak: number, hoursLeft?: number) => {
@@ -1464,7 +1514,7 @@ function DashboardShowroomPageInner() {
     try {
       const res = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
-      const files: Array<{ key?: string; type?: string; lastModified?: string }> = Array.isArray(data?.items) ? data.items : [];
+      const files: Array<{ key?: string; type?: string; lastModified?: string; blurhash?: string }> = Array.isArray(data?.items) ? data.items : [];
       const imageFiles = files.filter((it) => {
         if (String(it?.type) !== 'file') return false;
         const basename = (it.key || '').split('?')[0]?.split('/').pop() || '';
@@ -1483,7 +1533,11 @@ function DashboardShowroomPageInner() {
         return;
       }
       const urls = await getViewUrls(imageKeys);
-      setLibraryItems(imageKeys.map((key) => ({ key, url: urls[key] || (`https://r2.carcloutcdn.com/${key}`) })));
+      setLibraryItems(imageFiles.map((file) => ({ 
+        key: file.key || '', 
+        url: urls[file.key || ''] || (`https://r2.carcloutcdn.com/${file.key}`),
+        blurhash: file.blurhash
+      })));
       libraryLoadedRef.current = true;
     } finally {
       setLibraryLoading(false);
@@ -2738,7 +2792,7 @@ function DashboardShowroomPageInner() {
                       <div className="text-xs text-white/60">Loading library…</div>
                     ) : libraryItems.length ? (
                       <ul className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3.5">
-                    {libraryItems.map(({ key }) => {
+                    {libraryItems.map(({ key, blurhash }) => {
                       const baseUrl = libraryItems.find((item) => item.key === key)?.url || (`https://r2.carcloutcdn.com/${key}`);
                       const url = attachmentPreviewMap[key] || baseUrl;
                       const selected = pendingAttachments.includes(key);
@@ -2760,14 +2814,29 @@ function DashboardShowroomPageInner() {
                             disabled={atCapacity}
                           >
                             {url ? (
-                              <Image
-                                src={url}
-                                alt="Library"
-                                fill
-                                className="object-contain"
-                                sizes={LIBRARY_PREVIEW_SIZES}
-                                onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
-                              />
+                              blurhash ? (
+                                <BlurhashImage
+                                  src={url}
+                                  alt="Library"
+                                  fill
+                                  className="object-contain"
+                                  sizes={LIBRARY_PREVIEW_SIZES}
+                                  blurhash={blurhash}
+                                  onLoad={(e)=> {
+                                    const img = e.currentTarget;
+                                    updateImageDimensions(key, img.naturalWidth, img.naturalHeight);
+                                  }}
+                                />
+                              ) : (
+                                <Image
+                                  src={url}
+                                  alt="Library"
+                                  fill
+                                  className="object-contain"
+                                  sizes={LIBRARY_PREVIEW_SIZES}
+                                  onLoadingComplete={(img)=> updateImageDimensions(key, img.naturalWidth, img.naturalHeight)}
+                                />
+                              )
                             ) : (
                               <div className="flex h-full items-center justify-center text-xs text-white/50">No preview</div>
                             )}

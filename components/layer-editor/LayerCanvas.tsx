@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
 import { useLayerEditor } from "@/components/layer-editor/LayerEditorProvider";
 import { getColorAlpha, multiplyColorAlpha } from "@/lib/color";
 import type { Layer } from "@/types/layer-editor";
@@ -8,6 +8,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import TransformControls from "@/components/layer-editor/TransformControls";
 // import MarqueeOverlay from "@/components/layer-editor/MarqueeOverlay";
 import { createDefaultRect, createDefaultText } from "@/types/layer-editor";
+import { blurHashToDataURLCached, BLUR_DATA_URLS } from "@/lib/blur-placeholder";
 
 export default function LayerCanvas({ className }: { className?: string }) {
   const { state, dispatch } = useLayerEditor();
@@ -16,6 +17,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
   const [selectRect, setSelectRect] = useState<null | { x: number; y: number; w: number; h: number }>(null);
   const [maskDrag, setMaskDrag] = useState<null | { x: number; y: number; tx: number; ty: number }>(null);
   const [canvasHeight, setCanvasHeight] = useState(600); // Track canvas height for font sizing
+  const [backgroundLoaded, setBackgroundLoaded] = useState(false);
   
   // Track when we just exited editing mode to prevent immediate new text creation
   const justExitedEditingRef = useRef(false);
@@ -25,6 +27,19 @@ export default function LayerCanvas({ className }: { className?: string }) {
   useEffect(() => {
     stateRef.current = { activeLayerId: state.activeLayerId, editingLayerId: state.editingLayerId };
   }, [state.activeLayerId, state.editingLayerId]);
+  
+  // Reset loaded state when background URL changes
+  useEffect(() => {
+    setBackgroundLoaded(false);
+  }, [state.backgroundUrl]);
+  
+  // Decode blurhash to data URL (memoized for performance)
+  const blurDataURL = useMemo(() => {
+    if (state.backgroundBlurhash) {
+      return blurHashToDataURLCached(state.backgroundBlurhash, 32, 32);
+    }
+    return BLUR_DATA_URLS.black;
+  }, [state.backgroundBlurhash]);
   
   // Reset justExitedEditing flag when switching to text tool
   useEffect(() => {
@@ -251,8 +266,31 @@ export default function LayerCanvas({ className }: { className?: string }) {
           className={cn("relative w-full h-[45vh] sm:h-[55vh] rounded-xl border border-[var(--border)] bg-[var(--muted)] overflow-hidden select-none touch-none", className)}
         >
           {state.backgroundUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img alt="bg" src={state.backgroundUrl} className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none" draggable={false} />
+            <>
+              {/* Blurhash placeholder - shows while loading */}
+              {!backgroundLoaded && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img 
+                  alt="bg-blur" 
+                  src={blurDataURL} 
+                  className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none" 
+                  draggable={false}
+                  aria-hidden="true"
+                />
+              )}
+              {/* Actual background image */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img 
+                alt="bg" 
+                src={state.backgroundUrl} 
+                className={cn(
+                  "absolute inset-0 w-full h-full object-contain pointer-events-none select-none transition-opacity duration-700",
+                  backgroundLoaded ? "opacity-100" : "opacity-0"
+                )}
+                draggable={false}
+                onLoad={() => setBackgroundLoaded(true)}
+              />
+            </>
           ) : (
             <div className="absolute inset-0 grid place-items-center text-sm text-white/50">Tap to add content</div>
           )}

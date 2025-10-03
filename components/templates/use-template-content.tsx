@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import NextImage from "next/image";
+import { BlurhashImage } from "@/components/ui/blurhash-image";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -86,7 +87,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
     } catch { return 1; }
   })();
   const [selectedImageKeys, setSelectedImageKeys] = useState<string[]>([]);
-  const [workspaceItems, setWorkspaceItems] = useState<Array<{ key: string; url: string; name: string }>>([]);
+  const [workspaceItems, setWorkspaceItems] = useState<Array<{ key: string; url: string; name: string; blurhash?: string }>>([]);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [requiredShake, setRequiredShake] = useState(false);
 
@@ -137,7 +138,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
         setWorkspaceLoading(true);
         const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
         const obj = await listRes.json().catch(() => ({}));
-        const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+        const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string; blurhash?: string }> = Array.isArray(obj?.items) ? obj.items : [];
         const files = arr.filter((it) => String(it?.type) === 'file');
         const imageFiles = files.filter((it) => {
           const s = String(it?.key || it?.name || '').toLowerCase();
@@ -152,7 +153,12 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
         const keys = imageFiles.map((it) => it.key || `library/${String(it?.name || '')}`);
         if (!keys.length) { if (!aborted) setWorkspaceItems([]); return; }
         const urls = await getViewUrls(keys);
-        const out = keys.map((k) => ({ key: k, name: k.split('/').pop() || 'file', url: urls[k] || '' }));
+        const out = imageFiles.map((it) => ({ 
+          key: it.key || `library/${String(it?.name || '')}`, 
+          name: (it.key || '').split('/').pop() || 'file', 
+          url: urls[it.key || ''] || '',
+          blurhash: it.blurhash
+        }));
         if (!aborted) setWorkspaceItems(out);
       } finally {
         if (!aborted) setWorkspaceLoading(false);
@@ -166,7 +172,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       setWorkspaceLoading(true);
       const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
       const obj = await listRes.json().catch(() => ({}));
-      const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+      const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string; blurhash?: string }> = Array.isArray(obj?.items) ? obj.items : [];
       const files = arr.filter((it) => String(it?.type) === 'file');
       const imageFiles = files.filter((it) => {
         const s = String(it?.key || it?.name || '').toLowerCase();
@@ -181,7 +187,12 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       const keys = imageFiles.map((it) => it.key || `library/${String(it?.name || '')}`);
       if (!keys.length) { setWorkspaceItems([]); return; }
       const urls = await getViewUrls(keys);
-      const out = keys.map((k) => ({ key: k, name: k.split('/').pop() || 'file', url: urls[k] || '' }));
+      const out = imageFiles.map((it) => ({ 
+        key: it.key || `library/${String(it?.name || '')}`, 
+        name: (it.key || '').split('/').pop() || 'file', 
+        url: urls[it.key || ''] || '',
+        blurhash: it.blurhash
+      }));
       setWorkspaceItems(out);
     } finally {
       setWorkspaceLoading(false);
@@ -1066,9 +1077,21 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                         <ContextMenuTrigger asChild>
                           <li className={`relative rounded-md overflow-hidden border ${selectedImageKeys.includes(it.key) ? 'ring-2 ring-primary' : 'border-[color:var(--border)]'}`}>
                             <button type="button" className="block w-full h-full cursor-pointer" onClick={()=> toggleSelectKey(it.key)}>
-                              <div className="bg-black/20">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={it.url} alt={it.name} className="w-full h-auto object-contain cursor-pointer" loading="lazy" />
+                              <div className="bg-black/20 aspect-square">
+                                {it.blurhash ? (
+                                  <BlurhashImage
+                                    src={it.url}
+                                    alt={it.name}
+                                    width={400}
+                                    height={400}
+                                    className="w-full h-full object-contain cursor-pointer"
+                                    blurhash={it.blurhash}
+                                    showSkeleton={false}
+                                  />
+                                ) : (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={it.url} alt={it.name} className="w-full h-full object-contain cursor-pointer" loading="lazy" />
+                                )}
                               </div>
                             </button>
                             <button

@@ -69,7 +69,7 @@ export default function FAQSection() {
                 Why do I have to pay $1 to join the waitlist?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                CarClout isn&apos;t a free toy — it&apos;s an exclusive platform for real car enthusiasts. The $1 proves you&apos;re serious and locks you in as a Founder. Once you claim your spot, your price will never increase.
+                It keeps the bots and tire kickers out. This is for builders who actually care about their rides, not people chasing free stuff. The $1 locks in your spot and guarantees your price stays at $1 forever — no increases as long as you stay active.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="after-1000-spots" className="border-none">
@@ -93,7 +93,7 @@ export default function FAQSection() {
                 When do I get access?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                As soon as CarClout opens. Founders will be first in line to use the platform and unlock perks before anyone else.
+                Instantly. As soon as you claim your spot, you&apos;re in. Start editing your builds the same day and stack up XP before the rest of the crew shows up.
               </AccordionContent>
             </AccordionItem>
           </Accordion>

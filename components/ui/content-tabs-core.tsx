@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import NextImage from 'next/image';
+import { BlurhashImage } from '@/components/ui/blurhash-image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import MusicSuggestions from '@/components/music/music-suggestions';
@@ -591,7 +592,7 @@ export function TemplatesTabContent(){
   const [_browsePath] = useState<string>("");
   const [browseSelected, setBrowseSelected] = useState<string | null>(null);
   const [selectedImageKeys, setSelectedImageKeys] = useState<string[]>([]);
-  const [libraryItems, setLibraryItems] = useState<Array<{ key: string; url: string; name: string }>>([]);
+  const [libraryItems, setLibraryItems] = useState<Array<{ key: string; url: string; name: string; blurhash?: string }>>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [_requiredShake, setRequiredShake] = useState(false);
   const [requiredImages, setRequiredImages] = useState<number>(1);
@@ -813,7 +814,7 @@ export function TemplatesTabContent(){
         setLibraryLoading(true);
         const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache:'no-store' });
         const obj = await listRes.json().catch(()=>({}));
-        const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+        const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string; blurhash?: string }> = Array.isArray(obj?.items) ? obj.items : [];
         const files = arr.filter((it)=> String(it?.type) === 'file');
         const imageFiles = files.filter((it)=> { const s = String(it?.key || it?.name || '').toLowerCase(); return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s); });
         // Sort by most recent first
@@ -825,7 +826,12 @@ export function TemplatesTabContent(){
         const keys = imageFiles.map((it)=> it.key || `library/${String(it?.name || '')}`);
         if (!keys.length) { if (!aborted) setLibraryItems([]); return; }
         const urls: Record<string,string> = await getViewUrls(keys);
-        const out = keys.map((k)=> ({ key:k, name: k.split('/').pop() || 'file', url: urls[k] || '' }));
+        const out = imageFiles.map((it)=> ({ 
+          key: it.key || `library/${String(it?.name || '')}`, 
+          name: (it.key || '').split('/').pop() || 'file', 
+          url: urls[it.key || ''] || '',
+          blurhash: it.blurhash
+        }));
         if (!aborted) setLibraryItems(out);
       } finally { if (!aborted) setLibraryLoading(false); }
     })();
@@ -837,7 +843,7 @@ export function TemplatesTabContent(){
       setLibraryLoading(true);
       const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache:'no-store' });
       const obj = await listRes.json().catch(()=>({}));
-      const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+      const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string; blurhash?: string }> = Array.isArray(obj?.items) ? obj.items : [];
       const files = arr.filter((it)=> String(it?.type) === 'file');
       const imageFiles = files.filter((it)=> { const s = String(it?.key || it?.name || '').toLowerCase(); return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s); });
       // Sort by most recent first
@@ -849,7 +855,12 @@ export function TemplatesTabContent(){
       const keys = imageFiles.map((it)=> it.key || `library/${String(it?.name || '')}`);
       if (!keys.length) { setLibraryItems([]); return; }
       const urls: Record<string,string> = await getViewUrls(keys);
-      const out = keys.map((k)=> ({ key:k, name: k.split('/').pop() || 'file', url: urls[k] || '' }));
+      const out = imageFiles.map((it)=> ({ 
+        key: it.key || `library/${String(it?.name || '')}`, 
+        name: (it.key || '').split('/').pop() || 'file', 
+        url: urls[it.key || ''] || '',
+        blurhash: it.blurhash
+      }));
       setLibraryItems(out);
     } finally { setLibraryLoading(false); }
   }
@@ -1569,7 +1580,7 @@ export function TemplatesTabContent(){
                   <Designer
                     bgKey={String((activeKey || resultKey) || '')}
                     rembg={{ enabled: true }}
-                    closeOnDownload={true}
+                    closeOnDownload={false}
                     onClose={handleDesignerClose}
                     onTryAgain={handleDesignerTryAgain}
                     onSave={saveDesignToGenerations}
@@ -1974,9 +1985,21 @@ export function TemplatesTabContent(){
                                       <li className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
                                         <button type="button" className="block w-full h-full" onClick={()=> { setSource('upload'); toggleSelect(it.key); }}>
                                           <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(it.key) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
-                                            <div className="rounded overflow-hidden relative bg-black/20">
-                                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                                              <img src={it.url} alt={it.name} className="w-full h-auto object-contain cursor-pointer" />
+                                            <div className="rounded overflow-hidden relative bg-black/20 aspect-square">
+                                              {it.blurhash ? (
+                                                <BlurhashImage
+                                                  src={it.url}
+                                                  alt={it.name}
+                                                  width={400}
+                                                  height={400}
+                                                  className="w-full h-full object-contain cursor-pointer"
+                                                  blurhash={it.blurhash}
+                                                  showSkeleton={false}
+                                                />
+                                              ) : (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={it.url} alt={it.name} className="w-full h-auto object-contain cursor-pointer" />
+                                              )}
                                               <span
                                                 className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(it.key)?'text-green-400':'text-white'} p-1`}
                                                 onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSource('upload'); toggleSelect(it.key); }}

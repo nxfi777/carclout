@@ -1,55 +1,110 @@
 "use client";
 
-import { Infinity, Video, Users, Palette } from "lucide-react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
-import { type LucideIcon } from "lucide-react";
 import { getClientBlurDataURL } from "@/lib/blur-placeholder";
+import { getViewUrls } from "@/lib/view-url-client";
 
-interface Feature {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  gradient: string;
-  iconColor: string;
-  image?: string;
+interface TemplateItem {
+  id?: string;
+  name?: string;
+  thumbnailKey?: string;
+  thumbUrl?: string;
+  blurhash?: string;
 }
 
-const features: Feature[] = [
-  {
-    icon: Infinity,
-    title: "Unlimited AI Car Pics",
-    description: "Transform any photo into viral edits — no limits, no credits. Upload once, create infinite variations with pro backgrounds and lighting.",
-    gradient: "from-purple-500/10 to-pink-500/10",
-    iconColor: "text-purple-500",
-    image: "/before_after.webp",
-  },
-  {
-    icon: Video,
-    title: "AI Video Generator",
-    description: "Turn basic car clips into cinematic reels instantly. Your followers think you hired a whole production team. You just clicked a button.",
-    gradient: "from-blue-500/10 to-cyan-500/10",
-    iconColor: "text-blue-500",
-  },
-  {
-    icon: Users,
-    title: "Pro Showroom + Community",
-    description: "Flex your builds, connect with 25,000 car creators, climb leaderboards. Get featured, get followers, get noticed.",
-    gradient: "from-orange-500/10 to-red-500/10",
-    iconColor: "text-orange-500",
-  },
-  {
-    icon: Palette,
-    title: "Designer Mode + Feature Requests",
-    description: "Pro members get daily requests + exclusive templates. Access features weeks before everyone else. Your ideas shape the product.",
-    gradient: "from-green-500/10 to-emerald-500/10",
-    iconColor: "text-green-500",
-    image: "/DesignerPreview.webp",
-  },
-];
-
 export default function BentoFeatures() {
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        // Fetch templates
+        const res = await fetch('/api/templates?limit=50', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        const all = Array.isArray(data?.templates) ? data.templates as TemplateItem[] : [];
+        
+        // Shuffle and pick templates
+        const pool = [...all];
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j]!, pool[i]!];
+        }
+        const pick = pool.slice(0, 15); // Pick more templates
+        
+        // Resolve thumbnail URLs
+        const keysToResolve: string[] = [];
+        for (const t of pick) {
+          const keyRaw = t?.thumbnailKey;
+          if (keyRaw && typeof keyRaw === 'string') {
+            const key = keyRaw.startsWith('admin/') ? keyRaw : `admin/${keyRaw}`;
+            keysToResolve.push(key);
+          }
+        }
+        
+        let urlsMap: Record<string, string> = {};
+        if (keysToResolve.length > 0) {
+          try {
+            urlsMap = await getViewUrls(keysToResolve, 'admin');
+          } catch {}
+        }
+        
+        const resolved = pick.map((t) => {
+          const keyRaw = t?.thumbnailKey;
+          const key = keyRaw && typeof keyRaw === 'string' ? 
+            (keyRaw.startsWith('admin/') ? keyRaw : `admin/${keyRaw}`) : 
+            undefined;
+          return {
+            ...t,
+            thumbUrl: key ? urlsMap[key] : undefined,
+          };
+        }).filter((t) => !!t.thumbUrl); // Only keep templates with valid thumbnails
+        
+        if (!cancelled) setTemplates(resolved);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Add static videos from bento-vids folder
+  const bentoVideos = [
+    '/bento-vids/1.mp4',
+    '/bento-vids/2.mp4',
+    '/bento-vids/3.mp4',
+    '/bento-vids/4.mp4',
+  ];
+
+  // Randomly intersperse videos, logos, and templates
+  const gridItems: Array<{ type: 'template' | 'logo' | 'video'; data?: TemplateItem; videoSrc?: string }> = [];
+  
+  let videoIndex = 0;
+  let logoCount = 0;
+  
+  templates.forEach((template, index) => {
+    gridItems.push({ type: 'template', data: template });
+    
+    // Add video every 3-4 items (randomly distributed)
+    const shouldAddVideo = videoIndex < bentoVideos.length && (index + 1) % 3 === 0;
+    if (shouldAddVideo) {
+      gridItems.push({ type: 'video', videoSrc: bentoVideos[videoIndex] });
+      videoIndex++;
+    }
+    
+    // Add logo squares every 5-6 items (but not right after a video)
+    const shouldAddLogo = !shouldAddVideo && (index + 1) % 5 === 0 && logoCount < 2;
+    if (shouldAddLogo) {
+      gridItems.push({ type: 'logo' });
+      logoCount++;
+    }
+  });
+
   return (
-    <section className="w-full py-[3rem] md:py-[4rem] px-[1rem] sm:px-[1.75rem] relative">
+    <section className="w-full py-[3rem] md:py-[4rem] relative overflow-hidden">
       {/* Background gradient */}
       <div 
         aria-hidden 
@@ -60,94 +115,155 @@ export default function BentoFeatures() {
       />
 
       <div className="max-w-7xl mx-auto relative z-[1]">
-        {/* Bento grid - 2x2 on all screen sizes */}
-        <div className="grid grid-cols-2 gap-[0.75rem] md:gap-[1.25rem] lg:gap-[1.5rem]">
-          {features.map((feature, index) => {
-            const Icon = feature.icon;
-            return (
-              <article
-                key={index}
-                className={`
-                  group relative overflow-hidden rounded-2xl border border-[color:var(--border)] 
-                  bg-gradient-to-br ${feature.gradient}
-                  p-[1rem] md:p-[2rem] 
-                  transition-all duration-300 
-                  hover:shadow-lg hover:shadow-primary/5
-                  hover:border-primary/30
-                  flex flex-col
-                  min-h-[14rem] md:min-h-[18rem]
-                `}
-              >
-                {/* Background pattern overlay */}
-                <div 
-                  aria-hidden
-                  className="absolute inset-0 opacity-[0.03] pointer-events-none"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
-                  }}
-                />
-
-                {/* Icon */}
-                <div className={`
-                  w-[2.5rem] h-[2.5rem] md:w-[3.5rem] md:h-[3.5rem] 
-                  rounded-xl 
-                  bg-background/80 backdrop-blur-sm
-                  border border-[color:var(--border)]
-                  flex items-center justify-center 
-                  mb-[0.75rem] md:mb-[1.5rem]
-                  group-hover:scale-110 transition-transform duration-300
-                  relative z-[1]
-                `}>
-                  <Icon className={`w-[1.25rem] h-[1.25rem] md:w-[1.75rem] md:h-[1.75rem] ${feature.iconColor}`} />
-                </div>
-
-                {/* Content */}
-                <div className="relative z-[1] flex-1 flex flex-col">
-                  <h3 className="text-base md:text-xl font-semibold mb-[0.5rem] md:mb-[0.75rem] text-foreground">
-                    {feature.title}
-                  </h3>
-                  <p className="text-xs md:text-base text-muted-foreground leading-relaxed">
-                    {feature.description}
-                  </p>
-                </div>
-
-                {/* Feature Image */}
-                {feature.image ? (
-                  <div className={`relative z-[1] mt-[1rem] rounded-lg overflow-hidden border border-[color:var(--border)]/50 max-w-full mx-auto ${
-                    feature.image === '/DesignerPreview.webp' ? 'md:max-w-[32rem]' : 'md:max-w-[24rem]'
-                  }`}>
-                    <Image
-                      src={feature.image}
-                      alt={feature.title}
-                      width={600}
-                      height={300}
-                      className="w-full h-auto object-cover"
-                      priority={index === 0}
-                      placeholder="blur"
-                      blurDataURL={getClientBlurDataURL('#111a36')}
-                      loading={index === 0 ? 'eager' : 'lazy'}
-                    />
-                  </div>
-                ) : (
-                  /* Image placeholder - for future images */
-                  <div 
-                    aria-hidden
-                    className="absolute bottom-0 right-0 w-[8rem] h-[8rem] opacity-0 pointer-events-none group-hover:opacity-5 transition-opacity duration-500"
+        {/* Horizontally scrolling masonry grid - 2 rows */}
+        <div 
+          className="overflow-x-auto overflow-y-hidden pb-[1rem] px-[1rem] sm:px-[1.75rem]"
+          style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgba(255,255,255,0.2) transparent',
+          }}
+        >
+          <div 
+            className="grid gap-[1rem]"
+            style={{
+              gridTemplateRows: 'repeat(2, 11rem)',
+              gridAutoFlow: 'column',
+              gridAutoColumns: 'auto',
+            }}
+          >
+            {loading ? (
+              // Loading skeletons with same portrait aspect ratios
+              Array.from({ length: 10 }).map((_, i) => {
+                const seed = i % 7;
+                const widths = ['8.25rem', '7.33rem', '8.8rem', '11rem', '9.17rem', '6.19rem', '8.25rem'];
+                return (
+                  <div
+                    key={`skeleton-${i}`}
+                    className="relative overflow-hidden rounded-xl border border-[color:var(--border)] bg-gradient-to-br from-purple-500/10 to-pink-500/10 animate-pulse"
                     style={{
-                      background: `radial-gradient(circle at center, ${feature.iconColor.replace('text-', 'var(--')}, transparent 70%)`
+                      gridRow: (i % 2) + 1,
+                      width: widths[seed],
+                      height: '11rem',
                     }}
-                  />
-                )}
-              </article>
-            );
-          })}
-        </div>
+                  >
+                    <div className="w-full h-full bg-background/20" />
+                  </div>
+                );
+              })
+            ) : (
+              (() => {
+                // Pre-calculate which column each item belongs to
+                // Most templates are portrait, so use portrait aspect ratios (narrower widths)
+                const aspectRatios = [
+                  (11 * 3/4).toFixed(2),    // 8.25rem - classic portrait (most common)
+                  (11 * 2/3).toFixed(2),    // ~7.33rem - taller portrait
+                  (11 * 4/5).toFixed(2),    // 8.8rem - slightly wider portrait
+                  (11 * 3/4).toFixed(2),    // 8.25rem - classic portrait (repeat for frequency)
+                  (11 * 5/6).toFixed(2),    // ~9.17rem - wider portrait
+                  (11 * 9/16).toFixed(2),   // ~6.19rem - very tall portrait
+                  (11 * 3/4).toFixed(2),    // 8.25rem - classic portrait (repeat again)
+                ];
+                
+                let currentColumn = 0;
+                let itemsInCurrentColumn = 0;
+                const itemColumns: number[] = [];
+                
+                gridItems.forEach((item) => {
+                  // All items (templates, videos, and logos) are single-row items
+                  // Each column holds 2 items
+                  itemColumns.push(currentColumn);
+                  itemsInCurrentColumn++;
+                  if (itemsInCurrentColumn === 2) {
+                    currentColumn++;
+                    itemsInCurrentColumn = 0;
+                  }
+                });
+                
+                return gridItems.map((item, index) => {
+                  const column = itemColumns[index] || 0;
+                  
+                  if (item.type === 'logo') {
+                    // Logo - true 1:1 square (11rem × 11rem)
+                    return (
+                      <div
+                        key={`logo-${index}`}
+                        className="relative overflow-hidden rounded-xl border border-[color:var(--border)] bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center p-[1.5rem]"
+                        style={{
+                          width: '11rem',
+                          height: '11rem',
+                        }}
+                      >
+                        <Image
+                          src="/carcloutfilled.webp"
+                          alt="Carclout"
+                          width={100}
+                          height={100}
+                          className="w-full h-auto object-contain opacity-50"
+                          placeholder="blur"
+                          blurDataURL={getClientBlurDataURL('#111a36')}
+                        />
+                      </div>
+                    );
+                  }
 
-        {/* Bottom CTA text */}
-        <div className="text-center mt-[2rem] md:mt-[2.5rem]">
-          <p className="text-xs md:text-sm text-muted-foreground">
-            Join thousands of car enthusiasts creating content that gets noticed
-          </p>
+                  if (item.type === 'video') {
+                    // Video - use similar sizing to templates
+                    const columnWidth = aspectRatios[column % aspectRatios.length];
+                    return (
+                      <div
+                        key={`video-${index}`}
+                        className="relative overflow-hidden rounded-xl border border-[color:var(--border)] group transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30"
+                        style={{
+                          width: `${columnWidth}rem`,
+                          height: '11rem',
+                        }}
+                      >
+                        <video
+                          src={item.videoSrc}
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    );
+                  }
+
+                  const template = item.data!;
+                  const columnWidth = aspectRatios[column % aspectRatios.length];
+                  
+                  return (
+                    <div
+                      key={template.id || `template-${index}`}
+                      className="relative overflow-hidden rounded-xl border border-[color:var(--border)] group transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30 cursor-pointer"
+                      style={{
+                        width: `${columnWidth}rem`,
+                        height: '11rem',
+                      }}
+                    >
+                      {template.thumbUrl ? (
+                        <Image
+                          src={template.thumbUrl}
+                          alt={template.name || 'Template'}
+                          width={400}
+                          height={300}
+                          className="w-full h-full object-cover"
+                          placeholder="blur"
+                          blurDataURL={template.blurhash ? getClientBlurDataURL(template.blurhash) : getClientBlurDataURL('#111a36')}
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-purple-500/10 to-pink-500/10 flex items-center justify-center">
+                          <span className="text-muted-foreground text-sm">No preview</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()
+            )}
+          </div>
         </div>
       </div>
     </section>

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { listAllObjects, listObjectsShallow, bucket, ensureFolder } from "@/lib/r2";
+import { getSurreal } from "@/lib/surrealdb";
 import { createHash } from "crypto";
 export const runtime = "nodejs";
 type BundleEntry = { name: string; key: string; thumbKey?: string; videoKey?: string; videoEtag?: string };
+type ListItem = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string; etag?: string; blurhash?: string };
 
 export async function GET(req: Request) {
   const user = await getSessionUser();
@@ -34,7 +36,7 @@ export async function GET(req: Request) {
   }
 
   // Prefer shallow list for user scope to avoid deep scans; use deep list only where needed
-  const childrenMap = new Map<string, { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string; etag?: string }>();
+  const childrenMap = new Map<string, ListItem>();
   let objectsForBundles: Array<{ Key?: string; Size?: number; LastModified?: Date; ETag?: string }> = [];
   if (!isAdminScope) {
     const { files, folders } = await listObjectsShallow(normalized);
@@ -76,6 +78,44 @@ export async function GET(req: Request) {
     if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
+
+  // Fetch blurhash from database for library images
+  const isLibraryPath = path === 'library' || path.startsWith('library/');
+  if (isLibraryPath) {
+    try {
+      const db = await getSurreal();
+      const imageKeys = items
+        .filter(item => item.type === 'file' && item.key && /\.(jpe?g|png|webp|gif|bmp)$/i.test(item.key))
+        .map(item => item.key!);
+
+      if (imageKeys.length > 0) {
+        // Fetch all blurhashes for these keys in one query
+        const blurhashRes = await db.query(
+          "SELECT key, blurhash FROM library_image WHERE key IN $keys AND email = $email;",
+          { keys: imageKeys, email: user.email }
+        );
+
+        const blurhashMap = new Map<string, string>();
+        const records = Array.isArray(blurhashRes) && Array.isArray(blurhashRes[0]) ? blurhashRes[0] : [];
+        for (const record of records) {
+          const r = record as { key?: string; blurhash?: string };
+          if (r.key && r.blurhash) {
+            blurhashMap.set(r.key, r.blurhash);
+          }
+        }
+
+        // Add blurhash to items
+        for (const item of items) {
+          if (item.key && blurhashMap.has(item.key)) {
+            item.blurhash = blurhashMap.get(item.key);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch blurhash data (non-fatal):", error);
+      // Continue without blurhash if database fails
+    }
+  }
 
   // If admin is listing inside hooks, flatten bundle folders into pseudo entries
   const isHooksBundleView = isAdminScope && (path === 'hooks' || path.startsWith('hooks/'));

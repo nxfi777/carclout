@@ -14,6 +14,7 @@ const initialState: LayerEditorState = {
   layers: [],
   selectedLayerIds: [],
   backgroundUrl: null,
+  backgroundBlurhash: undefined,
   carMaskUrl: null,
   maskHidden: false,
   maskLocked: false,

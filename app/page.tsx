@@ -11,12 +11,14 @@ const PhoneWithCarParallax = dynamic(() => import("@/components/phone-with-car")
   loading: () => <div className="min-h-[22rem] sm:min-h-[26rem] md:min-h-[28rem]" />,
 });
 const BrandMarquee = dynamic(() => import("@/components/brand-marquee"), { ssr: true });
+const HowItWorksCarousel = dynamic(() => import("@/components/how-it-works-carousel"), { ssr: true });
 const BentoFeatures = dynamic(() => import("@/components/bento-features"), { ssr: true });
 const PlatformsMarquee = dynamic(() => import("@/components/platforms-marquee"), { ssr: true });
 const TestimonialsSection = dynamic(() => import("@/components/testimonials-section"), { ssr: true });
 const PaymentProcessorsMarquee = dynamic(() => import("@/components/payment-processors-marquee"), { ssr: true });
 const FAQSection = dynamic(() => import("@/components/faq-section"), { ssr: true });
 const PlanSelector = dynamic(() => import("@/components/plan-selector"), { ssr: true });
+const FoundersGuarantee = dynamic(() => import("@/components/founders-guarantee"), { ssr: true });
 
 // ISR: Regenerate page every 10 minutes
 export const revalidate = 600;
@@ -118,11 +120,14 @@ export default async function Home() {
       {/* Brand Marquee */}
       <BrandMarquee />
 
-      {/* Bento Features */}
-      <BentoFeatures />
+      {/* How It Works */}
+      <HowItWorksCarousel />
 
       {/* Platforms Marquee */}
       <PlatformsMarquee />
+
+      {/* Bento Features */}
+      <BentoFeatures />
 
       {/* Testimonials */}
       <TestimonialsSection />
@@ -140,6 +145,9 @@ export default async function Home() {
         </div>
       </section>
       <FAQSection />
+
+      {/* Founders Guarantee */}
+      <FoundersGuarantee />
 
       {/* Final CTA */}
       <section className="w-full py-[4rem] md:py-[5rem] px-[1rem]">

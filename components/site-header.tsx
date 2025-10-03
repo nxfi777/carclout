@@ -47,14 +47,14 @@ export default async function SiteHeader() {
 
   return (
     <header className="py-4">
-      <div className="px-2 md:px-3 relative">
+      <div className="px-2 lg:px-3 relative">
         {/* Desktop floating dock */}
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
           <Suspense fallback={null}>
             <HeaderDock />
           </Suspense>
         </div>
-        <div className="w-full h-16 rounded-full border border-[color:var(--border)] bg-[var(--popover)]/70 backdrop-blur grid grid-cols-[auto_1fr_auto] items-center px-3 md:px-4 relative overflow-visible">
+        <div className="w-full h-16 rounded-full border border-[color:var(--border)] bg-[var(--popover)]/70 backdrop-blur grid grid-cols-[auto_1fr_auto] items-center px-3 lg:px-4 relative overflow-visible">
           {/* subtle primary-tinted gradient wash */}
           <div
             aria-hidden
@@ -70,7 +70,7 @@ export default async function SiteHeader() {
               <span className="text-xs sm:text-sm uppercase tracking-widest text-[color:var(--foreground)]/80 font-semibold">CARCLOUT</span>
             </Link>
           </div>
-          <div className="justify-self-center hidden sm:flex items-center gap-3 md:gap-4">
+          <div className="justify-self-center hidden sm:flex items-center gap-3 lg:gap-4">
             <HeaderNavLink href="/pricing">PRICING</HeaderNavLink>
             <HeaderNavLink href="/contact">CONTACT</HeaderNavLink>
           </div>
@@ -85,13 +85,13 @@ export default async function SiteHeader() {
               </DashboardCta>
             ) : (
               <>
-                <div className="hidden md:block">
+                <div className="hidden lg:block">
                   <div className="flex items-center gap-2">
                     <Link href="/auth/signup"><Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70">Get Started</Button></Link>
                     <Link href="/auth/signin"><Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70">Sign in</Button></Link>
                   </div>
                 </div>
-                <div className="block md:hidden">
+                <div className="block lg:hidden">
                   <HeaderMarketingMenu />
                 </div>
               </>
@@ -101,17 +101,17 @@ export default async function SiteHeader() {
                 {/* Notifications bell */}
                 <HeaderNotifications />
                 {/* Mobile burger to open vertical dock */}
-                <div className="block md:hidden">
+                <div className="block lg:hidden">
                   <Suspense fallback={null}>
                     <HeaderDockMenu />
                   </Suspense>
                 </div>
                 {/* Credits are shown inside the profile dropdown on all breakpoints */}
-                {/* Single profile trigger across breakpoints; dialogs only on md+ */}
+                {/* Single profile trigger across breakpoints; dialogs only on lg+ */}
                 <div className="flex items-center gap-2">
                   <HeaderUser name={displayName} email={user.email!} image={displayImage} plan={displayPlan} />
                 </div>
-                <div className="hidden md:flex items-center gap-2">
+                <div className="hidden lg:flex items-center gap-2">
                   <BillingDialog />
                 </div>
               </>

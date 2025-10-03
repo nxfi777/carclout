@@ -4,6 +4,8 @@ import { r2, bucket, listAllObjects } from "@/lib/r2";
 import { getSurreal } from "@/lib/surrealdb";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { generateBlurHash } from "@/lib/blurhash-server";
+import type { LibraryImage } from "@/lib/library-image";
+import sharp from "sharp";
 
 export async function POST(req: Request) {
   const user = await getSessionUser();
@@ -83,14 +85,69 @@ export async function POST(req: Request) {
 
     // Generate blurhash for images (async, don't block response)
     let blurhash: string | undefined;
+    let width: number | undefined;
+    let height: number | undefined;
     const isImage = /\.(jpe?g|png|webp|gif|bmp)$/i.test(file.name);
     
     if (isImage) {
       try {
         blurhash = await generateBlurHash(buffer, 4, 3);
+        // Get image dimensions
+        const metadata = await sharp(buffer).metadata();
+        width = metadata.width;
+        height = metadata.height;
       } catch (error) {
         console.error('BlurHash generation failed (non-fatal):', error);
         // Don't fail upload if blurhash fails
+      }
+    }
+
+    // Store metadata in database for library images
+    const isLibraryImage = folder === 'library' || folder.startsWith('library/');
+    if (isLibraryImage && isImage && blurhash) {
+      try {
+        const db = await getSurreal();
+        const libraryImageData: Omit<LibraryImage, 'id'> = {
+          key,
+          email: user.email,
+          blurhash,
+          width,
+          height,
+          size: file.size,
+          created: new Date().toISOString(),
+          lastModified: new Date().toISOString(),
+        };
+        
+        // Check if record exists, update or create
+        const existing = await db.query(
+          "SELECT id FROM library_image WHERE key = $key AND email = $email LIMIT 1;",
+          { key, email: user.email }
+        );
+        
+        const existingId = Array.isArray(existing) && Array.isArray(existing[0]) && existing[0][0]
+          ? (existing[0][0] as { id?: string }).id
+          : null;
+
+        if (existingId) {
+          await db.query(
+            "UPDATE $id SET blurhash = $blurhash, width = $width, height = $height, size = $size, lastModified = $lastModified;",
+            { 
+              id: existingId,
+              blurhash: libraryImageData.blurhash,
+              width: libraryImageData.width,
+              height: libraryImageData.height,
+              size: libraryImageData.size,
+              lastModified: libraryImageData.lastModified
+            }
+          );
+        } else {
+          await db.create('library_image', libraryImageData);
+        }
+        
+        console.log(`Stored library image metadata for ${key}`);
+      } catch (error) {
+        console.error('Failed to store library image metadata (non-fatal):', error);
+        // Don't fail upload if database fails
       }
     }
 

@@ -98,6 +98,7 @@ export type LayerEditorState = {
   // Multi-selection support: when empty, falls back to [activeLayerId] if set
   selectedLayerIds?: string[];
   backgroundUrl?: string | null;
+  backgroundBlurhash?: string; // Optional blurhash for background image
   carMaskUrl?: string | null;
   // Car cutout visibility/lock state
   maskHidden?: boolean;

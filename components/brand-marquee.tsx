@@ -108,7 +108,7 @@ export default function BrandMarquee() {
   }, []);
 
   return (
-    <section className="w-full py-[3rem] md:py-[4rem] overflow-hidden relative">
+    <section data-marquee-section className="w-full py-[3rem] md:py-[4rem] overflow-hidden relative">
       {/* Background gradient */}
       <div 
         aria-hidden 

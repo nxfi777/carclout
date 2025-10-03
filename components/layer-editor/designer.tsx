@@ -23,8 +23,9 @@ type RembgConfig = {
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate, projectState, sourceImageKey, closeOnDownload }: {
+function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate, projectState, sourceImageKey, closeOnDownload }: {
   bgKey: string;
+  bgBlurhash?: string | null; // Optional blurhash for smooth loading
   rembg?: RembgConfig;
   onClose?: () => void;
   onSave?: (blob: Blob, projectState?: string) => Promise<void> | void;
@@ -46,6 +47,7 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
   });
   
   const [busy, setBusy] = useState(!projectState); // Skip loading if we have project state
+  const [isGeneratingMask, setIsGeneratingMask] = useState(true); // Track if we're generating vs loading cached
   const [bgUrl, setBgUrl] = useState<string | null>(projectState?.backgroundUrl || null);
   const [fgUrl, setFgUrl] = useState<string | null>(projectState?.carMaskUrl || null);
   const [saving, setSaving] = useState(false);
@@ -95,6 +97,7 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
     (async()=>{
       try {
         setBusy(true);
+        setIsGeneratingMask(true); // Assume generating until we know otherwise
         const url = `/api/storage/file?key=${encodeURIComponent(bgKey)}`;
         if (cancelled) return; setBgUrl(url);
         const input = {
@@ -114,6 +117,10 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
         const res = await fetch('/api/tools/rembg', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(input) }).then(r=>r.json()).catch(()=>({}));
         const fg = res?.image?.url || null;
         if (!fg) throw new Error('fg');
+        // Check if this was a cache hit
+        if (res?.requestId === 'cache') {
+          setIsGeneratingMask(false); // Was from cache, not generating
+        }
         setFgUrl(fg);
         initializedRef.current = true;
         initialBgKeyRef.current = bgKey;
@@ -145,12 +152,17 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
           aboveMask: l.aboveMask
         }))
       });
+      // Get the actual designer canvas height for accurate scaling
+      const canvasEl = document.querySelector('[data-canvas-root]') as HTMLElement | null;
+      const referenceViewportHeight = canvasEl?.getBoundingClientRect().height || 600;
+      
       const blob = await composeLayersToBlob({ 
         backgroundUrl: snap.backgroundUrl || bgUrl, 
         carMaskUrl: snap.carMaskUrl || fgUrl || null, 
         layers: snap.layers || [],
         maskTranslateXPct: snap.maskTranslateXPct || 0,
-        maskTranslateYPct: snap.maskTranslateYPct || 0
+        maskTranslateYPct: snap.maskTranslateYPct || 0,
+        referenceViewportHeight
       });
       return blob;
     } catch (err) { 
@@ -356,7 +368,9 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
           <div className="w-[14rem] h-[8rem] sm:w-[17.5rem] sm:h-[10.5rem]">
             <Lottie animationData={carLoadAnimation as unknown as object} loop style={{ width: '100%', height: '100%' }} />
           </div>
-          <div className="text-sm text-white/80 text-center px-2">Cutting out your car — this may take a moment</div>
+          <div className="text-sm text-white/80 text-center px-2">
+            {isGeneratingMask ? 'Cutting out your car — this may take a moment' : 'Loading designer...'}
+          </div>
         </div>
       </div>
     );
@@ -389,6 +403,7 @@ function DesignerComponent({ bgKey, rembg, onClose, onSave, saveLabel, aspectRat
         <LayerEditorProvider
           initial={{
             backgroundUrl: bgUrl,
+            backgroundBlurhash: projectState?.backgroundBlurhash || bgBlurhash || undefined,
             carMaskUrl: fgUrl,
             layers: projectState?.layers || [],
             maskTranslateXPct: projectState?.maskTranslateXPct,

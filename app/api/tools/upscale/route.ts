@@ -4,6 +4,10 @@ import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { createViewUrl, ensureFolder, r2, bucket } from "@/lib/r2";
 import { chargeCreditsOnce } from "@/lib/credits";
 import { PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { generateBlurHash } from "@/lib/blurhash-server";
+import { getSurreal } from "@/lib/surrealdb";
+import type { LibraryImage } from "@/lib/library-image";
+import sharp from "sharp";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
@@ -145,6 +149,55 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
     }
     await r2.send(new PutObjectCommand({ Bucket: bucket, Key: outKey, Body: buf, ContentType: ct }));
+
+    // Generate and store blurhash for upscaled image
+    try {
+      const buffer = Buffer.from(buf);
+      const blurhash = await generateBlurHash(buffer, 4, 3);
+      const metadata = await sharp(buffer).metadata();
+      
+      const db = await getSurreal();
+      const libraryImageData: Omit<LibraryImage, 'id'> = {
+        key: outKey,
+        email: user.email,
+        blurhash,
+        width: metadata.width || width,
+        height: metadata.height || height,
+        size: buf.length,
+        created: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+      };
+      
+      // Check if record exists, update or create
+      const existing = await db.query(
+        "SELECT id FROM library_image WHERE key = $key AND email = $email LIMIT 1;",
+        { key: outKey, email: user.email }
+      );
+      
+      const existingId = Array.isArray(existing) && Array.isArray(existing[0]) && existing[0][0]
+        ? (existing[0][0] as { id?: string }).id
+        : null;
+
+      if (existingId) {
+        await db.query(
+          "UPDATE $id SET blurhash = $blurhash, width = $width, height = $height, size = $size, lastModified = $lastModified;",
+          { 
+            id: existingId,
+            blurhash: libraryImageData.blurhash,
+            width: libraryImageData.width,
+            height: libraryImageData.height,
+            size: libraryImageData.size,
+            lastModified: libraryImageData.lastModified
+          }
+        );
+      } else {
+        await db.create('library_image', libraryImageData);
+      }
+      
+      console.log(`Stored library image metadata for upscaled image ${outKey}`);
+    } catch (error) {
+      console.error('Failed to store upscaled image metadata (non-fatal):', error);
+    }
 
     const { url } = await createViewUrl(outKey);
     return NextResponse.json({ key: outKey, url, credits_charged: finalCost });

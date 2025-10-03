@@ -39,19 +39,20 @@ async function loadImageSafe(url: string): Promise<HTMLImageElement> {
   }
 }
 
-function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: number, ch: number) {
+function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: number, ch: number, referenceViewportHeight: number) {
   const widthPx = (layer.widthPct / 100) * cw;
-  const heightPx = (layer.heightPct / 100) * ch;
+  const _heightPx = (layer.heightPct / 100) * ch;
   const xCenter = (layer.xPct / 100) * cw;
   const yCenter = (layer.yPct / 100) * ch;
   const rotationRad = (layer.rotationDeg * Math.PI) / 180;
+  
   // Calculate font size to match viewport rendering exactly
-  // fontSizeEm represents the desired size in ems (1em = 16px)
-  // Convert to pixels based on layer height percentage
-  const fontSizePercent = layer.fontSizeEm && heightPx > 0
-    ? Math.max(10, Math.min(200, ((layer.fontSizeEm * 16) / heightPx) * 100))
-    : 50; // Match viewport default: 50% of layer height
-  const fontSize = Math.max(8, Math.round(heightPx * (fontSizePercent / 100)));
+  // In the UI, text is rendered at fontSizeEm * 16 pixels
+  // We need to scale this proportionally based on canvas height
+  // referenceViewportHeight is the actual designer canvas height at time of export
+  const scaleFactor = ch / referenceViewportHeight;
+  const baseFontSizePx = layer.fontSizeEm ? layer.fontSizeEm * 16 : 57.6; // 3.6em * 16px = 57.6px default
+  const fontSize = Math.max(8, Math.round(baseFontSizePx * scaleFactor));
 
   // Debug logging for text transforms
   const tiltXDeg = layer.tiltXDeg || 0;
@@ -70,13 +71,20 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
     text: layer.text?.substring(0, 20),
     position: { xCenter, yCenter },
     fontSize,
+    baseFontSizePx,
+    scaleFactor,
     fontSizeEm: layer.fontSizeEm,
-    heightPx,
+    canvasHeight: ch,
+    referenceViewportHeight,
     rotation: layer.rotationDeg,
     tilt: { x: tiltXDeg, y: tiltYDeg },
     scale: { x: layer.scaleX, y: layer.scaleY },
     aboveMask: layer.aboveMask,
-    opacity: globalAlpha
+    opacity: globalAlpha,
+    effects: {
+      glowEnabled: layer.effects?.glow?.enabled,
+      shadowEnabled: layer.effects?.shadow?.enabled
+    }
   });
 
   ctx.save();
@@ -90,8 +98,8 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
       const tiltYRad = (tiltYDeg * Math.PI) / 180;
       
       // CSS 3D transforms: perspective(1200px) rotateX() rotateY()
-      // Properly compute perspective projection to 2D
-      const perspective = 1200; // Match CSS perspective value
+      // Scale perspective proportionally to match the export resolution
+      const perspective = 1200 * scaleFactor; // Scale perspective with canvas size
       const cosX = Math.cos(tiltXRad);
       const sinX = Math.sin(tiltXRad);
       const cosY = Math.cos(tiltYRad);
@@ -115,6 +123,7 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
       const m22 = cosX;
       
       ctx.transform(m11, m12, m21, m22, 0, 0);
+      console.log('[drawTextLayer] 3D Transform:', { tiltXDeg, tiltYDeg, perspective, scaleFactor });
     }
     
     // Apply rotation AFTER tilt to match CSS order
@@ -176,35 +185,48 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
       }
     };
 
-    // Apply text color opacity separately from shadow effects
-    ctx.globalAlpha = globalAlpha;
+    // Apply text and shadows exactly as they appear in UI, just scaled uniformly
+    // Canvas can only apply one shadow at a time, so we draw multiple passes for CSS text-shadow effect
     ctx.fillStyle = layer.color || '#ffffff';
+    ctx.globalAlpha = globalAlpha;
     
-    // Glow first (with full opacity for the effect)
-    if (layer.effects?.glow?.enabled) {
-      ctx.save();
-      ctx.globalAlpha = 1; // Glow at full opacity regardless of text opacity
-      ctx.shadowColor = layer.effects.glow.color || '#ffffff';
-      ctx.shadowBlur = ((layer.effects.glow.blur || 0) + ((layer.effects.glow as unknown as { size?: number }).size || 0)) || 0;
-      ctx.shadowOffsetX = layer.effects.glow.offsetX || 0;
-      ctx.shadowOffsetY = layer.effects.glow.offsetY || 0;
-      ctx.fillStyle = 'transparent'; // Don't draw the text itself, just the shadow
-      drawOnce();
-      ctx.restore();
-    }
-    // Shadow second (with full opacity for the effect)
+    // First pass: draw drop shadow if enabled
     if (layer.effects?.shadow?.enabled) {
+      const shadowBlur = (((layer.effects.shadow.blur || 0) + ((layer.effects.shadow as unknown as { size?: number }).size || 0)) || 0) * scaleFactor;
+      const shadowOffsetX = (layer.effects.shadow.offsetX || 0) * scaleFactor;
+      const shadowOffsetY = ((layer.effects.shadow.offsetY || 0) || 8) * scaleFactor;
+      
       ctx.save();
-      ctx.globalAlpha = 1; // Shadow at full opacity regardless of text opacity
       ctx.shadowColor = layer.effects.shadow.color || '#000000';
-      ctx.shadowBlur = ((layer.effects.shadow.blur || 0) + ((layer.effects.shadow as unknown as { size?: number }).size || 0)) || 0;
-      ctx.shadowOffsetX = layer.effects.shadow.offsetX || 0;
-      ctx.shadowOffsetY = layer.effects.shadow.offsetY || 8;
-      ctx.fillStyle = 'transparent'; // Don't draw the text itself, just the shadow
+      ctx.shadowBlur = shadowBlur;
+      ctx.shadowOffsetX = shadowOffsetX;
+      ctx.shadowOffsetY = shadowOffsetY;
+      console.log('[drawTextLayer] Shadow:', { blur: shadowBlur, offsetX: shadowOffsetX, offsetY: shadowOffsetY });
       drawOnce();
       ctx.restore();
     }
-    // Actual text with its proper opacity
+    
+    // Second pass: draw glow if enabled
+    if (layer.effects?.glow?.enabled) {
+      const glowBlur = (((layer.effects.glow.blur || 0) + ((layer.effects.glow as unknown as { size?: number }).size || 0)) || 0) * scaleFactor;
+      const glowOffsetX = (layer.effects.glow.offsetX || 0) * scaleFactor;
+      const glowOffsetY = (layer.effects.glow.offsetY || 0) * scaleFactor;
+      
+      ctx.save();
+      ctx.shadowColor = layer.effects.glow.color || '#ffffff';
+      ctx.shadowBlur = glowBlur;
+      ctx.shadowOffsetX = glowOffsetX;
+      ctx.shadowOffsetY = glowOffsetY;
+      console.log('[drawTextLayer] Glow:', { blur: glowBlur, offsetX: glowOffsetX, offsetY: glowOffsetY });
+      drawOnce();
+      ctx.restore();
+    }
+    
+    // Final pass: draw the actual text without shadows
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
     drawOnce();
   } finally {
     ctx.restore();
@@ -370,6 +392,7 @@ function drawImageLayer(ctx: CanvasRenderingContext2D, layer: ImageLayer, cw: nu
 export interface DesignerProjectState {
   version: number;
   backgroundUrl: string;
+  backgroundBlurhash?: string; // Optional blurhash for smooth loading
   carMaskUrl?: string | null;
   layers: Layer[];
   maskTranslateXPct?: number;
@@ -380,6 +403,7 @@ export interface DesignerProjectState {
 
 export function exportDesignerState(state: {
   backgroundUrl: string;
+  backgroundBlurhash?: string;
   carMaskUrl?: string | null;
   layers: Layer[];
   maskTranslateXPct?: number;
@@ -389,6 +413,7 @@ export function exportDesignerState(state: {
   const projectState: DesignerProjectState = {
     version: 1,
     backgroundUrl: state.backgroundUrl,
+    backgroundBlurhash: state.backgroundBlurhash,
     carMaskUrl: state.carMaskUrl,
     layers: state.layers,
     maskTranslateXPct: state.maskTranslateXPct || 0,
@@ -416,12 +441,14 @@ export async function composeLayersToBlob({
   layers,
   maskTranslateXPct,
   maskTranslateYPct,
+  referenceViewportHeight = 600,
 }: {
   backgroundUrl: string;
   carMaskUrl?: string | null;
   layers: Layer[];
   maskTranslateXPct?: number;
   maskTranslateYPct?: number;
+  referenceViewportHeight?: number;
 }): Promise<Blob | null> {
   try {
     console.log('[composeLayersToBlob] Starting composition:', {
@@ -429,7 +456,8 @@ export async function composeLayersToBlob({
       layersBelowMask: layers.filter(l => !l.aboveMask).length,
       layersAboveMask: layers.filter(l => l.aboveMask).length,
       hasMask: !!carMaskUrl,
-      maskOffset: { x: maskTranslateXPct, y: maskTranslateYPct }
+      maskOffset: { x: maskTranslateXPct, y: maskTranslateYPct },
+      referenceViewportHeight
     });
     
     const bgImg = await loadImageSafe(backgroundUrl);
@@ -460,7 +488,7 @@ export async function composeLayersToBlob({
       }
       if (layer.type === 'text') {
         console.log('[composeLayersToBlob] Drawing text layer below mask:', (layer as import("@/types/layer-editor").TextLayer).text);
-        drawTextLayer(ctx, layer, canvas.width, canvas.height);
+        drawTextLayer(ctx, layer, canvas.width, canvas.height, referenceViewportHeight);
       }
       else if (layer.type === 'shape') drawShapeLayer(ctx, layer, canvas.width, canvas.height);
       else if (layer.type === 'image') {
@@ -499,7 +527,7 @@ export async function composeLayersToBlob({
       }
       if (layer.type === 'text') {
         console.log('[composeLayersToBlob] Drawing text layer above mask:', (layer as import("@/types/layer-editor").TextLayer).text);
-        drawTextLayer(ctx, layer, canvas.width, canvas.height);
+        drawTextLayer(ctx, layer, canvas.width, canvas.height, referenceViewportHeight);
       }
       else if (layer.type === 'shape') drawShapeLayer(ctx, layer, canvas.width, canvas.height);
       else if (layer.type === 'image') {
