@@ -3,7 +3,7 @@ import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { createViewUrl } from "@/lib/r2";
 
 const ALLOWED_SHARED_USER_FOLDERS = new Set(["vehicles", "car-photos", "chat-profile", "chat-uploads", "library"]);
-const CHAT_ATTACHMENT_FOLDERS = new Set(["chat-uploads", "car-photos", "vehicles"]);
+const CHAT_ATTACHMENT_FOLDERS = new Set(["chat-uploads"]);
 
 function normalizeKey(input: unknown): string {
   return String(input || "").replace(/^\/+/u, "");
