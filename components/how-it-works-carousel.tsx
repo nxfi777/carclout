@@ -23,8 +23,36 @@ const videos = [
   },
 ];
 
-function VideoCard({ video, index, videoRef }: { video: typeof videos[0]; index: number; videoRef: (el: HTMLVideoElement | null) => void }) {
+function VideoCard({ 
+  video, 
+  index, 
+  videoRef, 
+  currentIndex 
+}: { 
+  video: typeof videos[0]; 
+  index: number; 
+  videoRef: (el: HTMLVideoElement | null) => void;
+  currentIndex: number;
+}) {
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  
+  // Calculate preload strategy based on proximity to current slide
+  // Current video: "auto" (full preload)
+  // Adjacent videos (next/prev): "auto" (prefetch for smooth navigation)
+  // Other videos: "metadata" (minimal preload)
+  const getPreloadStrategy = () => {
+    const distance = Math.abs(index - currentIndex);
+    if (distance === 0) return "auto"; // Current video
+    if (distance === 1) return "auto"; // Adjacent videos (next/prev)
+    // For looping carousel with 3 items, check wraparound distance
+    const loopDistance = Math.min(
+      Math.abs(index - currentIndex),
+      Math.abs(index - currentIndex + videos.length),
+      Math.abs(index - currentIndex - videos.length)
+    );
+    if (loopDistance === 1) return "auto"; // Adjacent when wrapping
+    return "metadata"; // Far videos
+  };
 
   return (
     <Card className="border-[color:var(--border)] bg-[var(--card)] overflow-hidden h-full">
@@ -42,7 +70,7 @@ function VideoCard({ video, index, videoRef }: { video: typeof videos[0]; index:
           muted
           playsInline
           autoPlay
-          preload="auto"
+          preload={getPreloadStrategy()}
           onLoadedData={() => setIsVideoLoaded(true)}
           suppressHydrationWarning
         >
@@ -60,22 +88,12 @@ function VideoCard({ video, index, videoRef }: { video: typeof videos[0]; index:
 
       {/* Content */}
       <div className="p-[1.25rem] md:p-[1.5rem] space-y-[0.5rem]">
-        {isVideoLoaded ? (
-          <>
-            <h3 className="text-[1.1rem] md:text-[1.2rem] font-semibold">
-              {video.title}
-            </h3>
-            <p className="text-[color:var(--foreground)]/70 text-[0.9rem] md:text-[0.95rem]">
-              {video.description}
-            </p>
-          </>
-        ) : (
-          <>
-            <Skeleton className="h-[1.2rem] w-[60%] mb-[0.5rem]" />
-            <Skeleton className="h-[0.95rem] w-full" />
-            <Skeleton className="h-[0.95rem] w-[80%]" />
-          </>
-        )}
+        <h3 className="text-[1.1rem] md:text-[1.2rem] font-semibold">
+          {video.title}
+        </h3>
+        <p className="text-[color:var(--foreground)]/70 text-[0.9rem] md:text-[0.95rem]">
+          {video.description}
+        </p>
       </div>
     </Card>
   );
@@ -103,6 +121,9 @@ export default function HowItWorksCarousel() {
       
       // Play the selected video
       playVideo(index);
+      
+      // Prefetch adjacent videos for smooth navigation
+      prefetchAdjacentVideos(index);
     });
   }, [api]);
 
@@ -116,14 +137,76 @@ export default function HowItWorksCarousel() {
     }
   };
 
-  // Play initial video when component mounts (mobile only)
+  // Prefetch adjacent videos when current video changes
+  const prefetchAdjacentVideos = (currentIndex: number) => {
+    const totalVideos = videos.length;
+    
+    // Calculate next and previous indices (with looping)
+    const nextIndex = (currentIndex + 1) % totalVideos;
+    const prevIndex = (currentIndex - 1 + totalVideos) % totalVideos;
+    
+    // Trigger load on adjacent videos
+    [nextIndex, prevIndex].forEach((idx) => {
+      const video = videoRefs.current[idx];
+      if (video && video.readyState < 2) {
+        // If video hasn't loaded enough data, trigger load
+        video.load();
+      }
+    });
+  };
+
+  // Play initial video when component mounts
   useEffect(() => {
     // Small delay to ensure ref is set
     const timer = setTimeout(() => {
       playVideo(0);
+      // Prefetch adjacent videos on mount
+      prefetchAdjacentVideos(0);
     }, 100);
     return () => clearTimeout(timer);
   }, []);
+
+  // Dynamically add prefetch link tags to document head for adjacent videos
+  useEffect(() => {
+    const prefetchLinks: HTMLLinkElement[] = [];
+    
+    videos.forEach((video, index) => {
+      // Calculate if this video should be prefetched
+      const distance = Math.abs(index - current);
+      const loopDistance = Math.min(
+        distance,
+        Math.abs(index - current + videos.length),
+        Math.abs(index - current - videos.length)
+      );
+      
+      // Prefetch current and adjacent videos
+      if (loopDistance <= 1) {
+        // Check if link already exists
+        const existingLink = document.querySelector(
+          `link[rel="prefetch"][href="${video.mp4}"]`
+        );
+        
+        if (!existingLink) {
+          const link = document.createElement("link");
+          link.rel = "prefetch";
+          link.href = video.mp4;
+          link.as = "video";
+          link.type = "video/mp4";
+          document.head.appendChild(link);
+          prefetchLinks.push(link);
+        }
+      }
+    });
+
+    // Cleanup: remove prefetch links when component unmounts or current changes
+    return () => {
+      prefetchLinks.forEach((link) => {
+        if (link.parentNode) {
+          link.parentNode.removeChild(link);
+        }
+      });
+    };
+  }, [current]);
 
   return (
     <section className="w-full py-[3rem] md:py-[4rem] px-[1rem]">
@@ -151,6 +234,7 @@ export default function HowItWorksCarousel() {
                 <VideoCard
                   video={video}
                   index={index}
+                  currentIndex={current}
                   videoRef={(el) => {
                     videoRefs.current[index] = el;
                   }}

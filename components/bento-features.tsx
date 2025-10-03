@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { getClientBlurDataURL } from "@/lib/blur-placeholder";
 import { getViewUrls } from "@/lib/view-url-client";
@@ -13,9 +13,25 @@ interface TemplateItem {
   blurhash?: string;
 }
 
+// Helper to determine if an item should load eagerly based on its index
+const getLoadingPriority = (index: number) => {
+  // First 4 items load eagerly (typically fills initial viewport)
+  if (index < 4) return "eager";
+  return "lazy";
+};
+
+// Helper to determine video preload strategy
+const getVideoPreload = (index: number) => {
+  if (index < 2) return "auto"; // First 2 videos load fully
+  if (index < 4) return "metadata"; // Next 2 load metadata
+  return "none"; // Rest don't preload
+};
+
 export default function BentoFeatures() {
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set([0, 1, 2, 3])); // Start with first 4 visible
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +87,35 @@ export default function BentoFeatures() {
     return () => { cancelled = true; };
   }, []);
 
+  // Intersection observer to progressively load items as they approach viewport
+  useEffect(() => {
+    if (!containerRef.current || loading) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const index = Number(entry.target.getAttribute('data-index'));
+            if (!isNaN(index)) {
+              setVisibleItems((prev) => new Set([...prev, index]));
+            }
+          }
+        });
+      },
+      {
+        root: null,
+        rootMargin: '200px', // Start loading 200px before item enters viewport
+        threshold: 0,
+      }
+    );
+
+    // Observe all items
+    const items = containerRef.current.querySelectorAll('[data-index]');
+    items.forEach((item) => observer.observe(item));
+
+    return () => observer.disconnect();
+  }, [loading, templates.length]);
+
   // Add static videos from bento-vids folder
   const bentoVideos = [
     '/bento-vids/1.mp4',
@@ -117,6 +162,7 @@ export default function BentoFeatures() {
       <div className="max-w-7xl mx-auto relative z-[1]">
         {/* Horizontally scrolling masonry grid - 2 rows */}
         <div 
+          ref={containerRef}
           className="overflow-x-auto overflow-y-hidden pb-[1rem] px-[1rem] sm:px-[1.75rem]"
           style={{
             scrollbarWidth: 'thin',
@@ -168,7 +214,7 @@ export default function BentoFeatures() {
                 let itemsInCurrentColumn = 0;
                 const itemColumns: number[] = [];
                 
-                gridItems.forEach((item) => {
+                gridItems.forEach((_item) => {
                   // All items (templates, videos, and logos) are single-row items
                   // Each column holds 2 items
                   itemColumns.push(currentColumn);
@@ -181,27 +227,33 @@ export default function BentoFeatures() {
                 
                 return gridItems.map((item, index) => {
                   const column = itemColumns[index] || 0;
+                  const isVisible = visibleItems.has(index);
+                  const loadingPriority = getLoadingPriority(index);
                   
                   if (item.type === 'logo') {
                     // Logo - true 1:1 square (11rem × 11rem)
                     return (
                       <div
                         key={`logo-${index}`}
+                        data-index={index}
                         className="relative overflow-hidden rounded-xl border border-[color:var(--border)] bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center p-[1.5rem]"
                         style={{
                           width: '11rem',
                           height: '11rem',
                         }}
                       >
-                        <Image
-                          src="/carcloutfilled.webp"
-                          alt="Carclout"
-                          width={100}
-                          height={100}
-                          className="w-full h-auto object-contain opacity-50"
-                          placeholder="blur"
-                          blurDataURL={getClientBlurDataURL('#111a36')}
-                        />
+                        {isVisible && (
+                          <Image
+                            src="/carcloutfilled.webp"
+                            alt="Carclout"
+                            width={100}
+                            height={100}
+                            className="w-full h-auto object-contain opacity-50"
+                            placeholder="blur"
+                            blurDataURL={getClientBlurDataURL('#111a36')}
+                            loading={loadingPriority}
+                          />
+                        )}
                       </div>
                     );
                   }
@@ -209,23 +261,31 @@ export default function BentoFeatures() {
                   if (item.type === 'video') {
                     // Video - use similar sizing to templates
                     const columnWidth = aspectRatios[column % aspectRatios.length];
+                    const videoPreload = getVideoPreload(index);
+                    
                     return (
                       <div
                         key={`video-${index}`}
+                        data-index={index}
                         className="relative overflow-hidden rounded-xl border border-[color:var(--border)] group transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30"
                         style={{
                           width: `${columnWidth}rem`,
                           height: '11rem',
                         }}
                       >
-                        <video
-                          src={item.videoSrc}
-                          autoPlay
-                          loop
-                          muted
-                          playsInline
-                          className="w-full h-full object-cover"
-                        />
+                        {isVisible ? (
+                          <video
+                            src={item.videoSrc}
+                            autoPlay
+                            loop
+                            muted
+                            playsInline
+                            preload={videoPreload}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-purple-500/10 to-pink-500/10 animate-pulse" />
+                        )}
                       </div>
                     );
                   }
@@ -236,13 +296,14 @@ export default function BentoFeatures() {
                   return (
                     <div
                       key={template.id || `template-${index}`}
+                      data-index={index}
                       className="relative overflow-hidden rounded-xl border border-[color:var(--border)] group transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30 cursor-pointer"
                       style={{
                         width: `${columnWidth}rem`,
                         height: '11rem',
                       }}
                     >
-                      {template.thumbUrl ? (
+                      {isVisible && template.thumbUrl ? (
                         <Image
                           src={template.thumbUrl}
                           alt={template.name || 'Template'}
@@ -251,11 +312,16 @@ export default function BentoFeatures() {
                           className="w-full h-full object-cover"
                           placeholder="blur"
                           blurDataURL={template.blurhash ? getClientBlurDataURL(template.blurhash) : getClientBlurDataURL('#111a36')}
-                          loading="lazy"
+                          loading={loadingPriority}
+                          priority={loadingPriority === "eager"}
                         />
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-purple-500/10 to-pink-500/10 flex items-center justify-center">
-                          <span className="text-muted-foreground text-sm">No preview</span>
+                          {!isVisible ? (
+                            <div className="w-full h-full animate-pulse" />
+                          ) : (
+                            <span className="text-muted-foreground text-sm">No preview</span>
+                          )}
                         </div>
                       )}
                     </div>

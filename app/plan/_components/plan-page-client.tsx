@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PlanSelector from "@/components/plan-selector";
-import TestimonialsSection from "@/components/testimonials-section";
+import PaymentProcessorsMarquee from "@/components/payment-processors-marquee";
 
 function PlanPageInner() {
   const router = useRouter();
@@ -45,10 +45,10 @@ function PlanPageInner() {
         <h1 className="text-2xl md:text-3xl font-semibold">Choose your plan</h1>
         <p className="text-sm md:text-base text-white/70">You can upgrade or cancel anytime.</p>
       </section>
-      <TestimonialsSection />
-      <section className="max-w-5xl mx-auto mt-[3rem]">
+      <section className="max-w-5xl mx-auto">
         <PlanSelector />
       </section>
+      <PaymentProcessorsMarquee />
     </main>
   );
 }
