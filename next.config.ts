@@ -49,10 +49,18 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "r2.cloudflarestorage.com",
       },
-      // Public CDN domain serving signed previews (NEXT_PUBLIC_R2_PUBLIC_BASE)
+      // Public CDN domains
       {
         protocol: "https",
         hostname: "r2.carcloutcdn.com",
+      },
+      {
+        protocol: "https",
+        hostname: "storage.nytforge.com",
+      },
+      {
+        protocol: "https",
+        hostname: "storage.carclout.io",
       },
     ],
     formats: ['image/avif', 'image/webp'],
