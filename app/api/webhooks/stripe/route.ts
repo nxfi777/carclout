@@ -143,6 +143,21 @@ export async function POST(req: Request) {
       }
       break;
     }
+    case "customer.subscription.deleted": {
+      const sub = event.data.object as Stripe.Subscription;
+      try {
+        // Remove plan when subscription is deleted
+        const email = await getCustomerEmailFromStripe(sub.customer);
+        if (email) {
+          const surreal = await getSurreal();
+          await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan: null, email });
+          console.log(`Subscription deleted for ${email}, plan removed`);
+        }
+      } catch (e) {
+        console.error("Failed to remove plan on customer.subscription.deleted:", e);
+      }
+      break;
+    }
     case "payment_intent.succeeded": {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
       try {
