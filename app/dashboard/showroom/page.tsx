@@ -23,7 +23,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import { confirmToast } from "@/components/ui/toast-helpers";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CarFront, SquarePen, ImagePlus, Loader2, UploadCloud, SquareCheckBig, SquarePlus, SquareSlash } from "lucide-react";
+import { CarFront, SquarePen, ImagePlus, Loader2, UploadCloud, SquareCheckBig, SquarePlus, SquareSlash, Bell, BellOff } from "lucide-react";
 import Chevron from "@/components/ui/chevron";
 import { getViewUrls } from "@/lib/view-url-client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -240,12 +240,64 @@ function DashboardShowroomPageInner() {
   const [libraryItems, setLibraryItems] = useState<Array<{ key: string; url: string }>>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [imageDimensions, setImageDimensions] = useState<Record<string, { width: number; height: number }>>({});
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const [mutedChats, setMutedChats] = useState<Set<string>>(new Set());
+  const isWindowFocusedRef = useRef(true);
+  const lastStreakCheckRef = useRef<number>(0);
+  const streakNotificationsShownRef = useRef<Set<string>>(new Set());
   // Helper: on mobile, close channels sidebar after navigating
   const closeChannelsIfMobile = () => {
     try {
       if (typeof window !== 'undefined' && window.innerWidth < 768) setShowChannels(false);
     } catch {}
   };
+
+  // Load muted chats from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('mutedChats');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setMutedChats(new Set(parsed));
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Save muted chats to localStorage when changed
+  useEffect(() => {
+    try {
+      localStorage.setItem('mutedChats', JSON.stringify(Array.from(mutedChats)));
+    } catch {}
+  }, [mutedChats]);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotificationPermission(Notification.permission);
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().then(permission => {
+          setNotificationPermission(permission);
+        }).catch(() => {});
+      }
+    }
+  }, []);
+
+  // Track window focus
+  useEffect(() => {
+    const handleFocus = () => { isWindowFocusedRef.current = true; };
+    const handleBlur = () => { isWindowFocusedRef.current = false; };
+    
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
+
   // Open sidebars by default on desktop (md and up)
   useEffect(() => {
     try {
@@ -336,6 +388,157 @@ function DashboardShowroomPageInner() {
       return mutated ? next : prev;
     });
   }, []);
+  // Helper to show desktop notification
+  const showNotification = useCallback((chatId: string, userName: string, text: string, isDm: boolean) => {
+    // Don't show notifications for feature-request or leaderboard channels
+    if (!isDm && (chatId === 'request-a-feature' || chatId === 'leaderboard')) {
+      return;
+    }
+    
+    // Don't show if window is focused, chat is muted, or notifications not granted
+    if (isWindowFocusedRef.current || mutedChats.has(chatId) || notificationPermission !== 'granted') {
+      return;
+    }
+
+    // Don't notify for own messages
+    if (me?.email && text.includes(me.email)) {
+      return;
+    }
+
+    try {
+      const title = isDm ? `${userName} (DM)` : `${userName} in #${chatId}`;
+      const body = text.length > 100 ? text.substring(0, 100) + '...' : text;
+      const notification = new Notification(title, {
+        body,
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: chatId, // Replace previous notification from same chat
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    } catch (err) {
+      console.error('Failed to show notification:', err);
+    }
+  }, [isWindowFocusedRef, mutedChats, notificationPermission, me?.email]);
+
+  // Helper to show streak warning notification
+  const showStreakNotification = useCallback((type: 'warning' | 'lost', streak: number, hoursLeft?: number) => {
+    if (notificationPermission !== 'granted') return;
+
+    const notificationKey = `streak-${type}-${new Date().toDateString()}`;
+    if (streakNotificationsShownRef.current.has(notificationKey)) return;
+
+    try {
+      let title = '';
+      let body = '';
+      
+      if (type === 'warning') {
+        title = '🔥 Streak at Risk!';
+        if (hoursLeft !== undefined) {
+          if (hoursLeft < 1) {
+            body = `Your ${streak}-day streak expires in less than 1 hour! Log in to keep your ${streak >= 7 ? '2x XP bonus' : 'streak'} alive.`;
+          } else if (hoursLeft < 6) {
+            body = `Your ${streak}-day streak expires in ${Math.floor(hoursLeft)} hour${Math.floor(hoursLeft) !== 1 ? 's' : ''}! Log in to keep your ${streak >= 7 ? '2x XP bonus' : 'streak'} alive.`;
+          } else {
+            body = `Don't forget to log in today to maintain your ${streak}-day streak${streak >= 7 ? ' and 2x XP bonus' : ''}!`;
+          }
+        }
+      } else {
+        title = '💔 Streak Lost';
+        body = `Your ${streak}-day streak has ended. Start a new one today!`;
+      }
+
+      const notification = new Notification(title, {
+        body,
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: 'streak-warning',
+        requireInteraction: type === 'warning' && hoursLeft !== undefined && hoursLeft < 1,
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        // Navigate to home to claim daily bonus
+        window.location.href = '/dashboard/home';
+        notification.close();
+      };
+
+      streakNotificationsShownRef.current.add(notificationKey);
+    } catch (err) {
+      console.error('Failed to show streak notification:', err);
+    }
+  }, [notificationPermission]);
+
+  // Check streak status periodically
+  const checkStreakStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/activity/streak/status', { cache: 'no-store' });
+      if (!res.ok) return;
+      
+      const data = await res.json();
+      const { streak, atRisk, hoursUntilLoss } = data as { 
+        streak: number; 
+        atRisk: boolean; 
+        hoursUntilLoss: number | null;
+      };
+
+      if (atRisk && hoursUntilLoss !== null && streak > 0) {
+        // Show warning at different intervals
+        if (hoursUntilLoss < 1) {
+          // Critical: less than 1 hour left
+          showStreakNotification('warning', streak, hoursUntilLoss);
+        } else if (hoursUntilLoss < 6) {
+          // Warning: less than 6 hours left
+          showStreakNotification('warning', streak, hoursUntilLoss);
+        } else if (hoursUntilLoss < 12) {
+          // Early warning: less than 12 hours left
+          showStreakNotification('warning', streak, hoursUntilLoss);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check streak status:', err);
+    }
+  }, [showStreakNotification]);
+
+  // Periodic streak checking (every 30 minutes)
+  useEffect(() => {
+    if (!meEmail) return;
+
+    // Check immediately on mount
+    checkStreakStatus();
+
+    // Then check every 30 minutes
+    const interval = setInterval(() => {
+      const now = Date.now();
+      // Only check if it's been at least 30 minutes since last check
+      if (now - lastStreakCheckRef.current > 30 * 60 * 1000) {
+        lastStreakCheckRef.current = now;
+        checkStreakStatus();
+      }
+    }, 30 * 60 * 1000); // 30 minutes
+
+    return () => clearInterval(interval);
+  }, [meEmail, checkStreakStatus]);
+
+  // Listen for activity events to reset notification tracking
+  useEffect(() => {
+    const handleActivityChange = () => {
+      // Reset streak notifications when user performs activity
+      streakNotificationsShownRef.current.clear();
+    };
+
+    window.addEventListener('streak-refresh', handleActivityChange);
+    window.addEventListener('xp-refresh', handleActivityChange);
+    
+    return () => {
+      window.removeEventListener('streak-refresh', handleActivityChange);
+      window.removeEventListener('xp-refresh', handleActivityChange);
+    };
+  }, []);
+
   const finalizeSentAttachments = useCallback((keys: string[]) => {
     if (!keys.length) return;
     const cleaned = keys.filter((key): key is string => typeof key === 'string' && key.length > 0);
@@ -958,6 +1161,15 @@ function DashboardShowroomPageInner() {
                   return next;
                 }
               }
+              
+              // New message - show notification
+              const isNewMessage = !next.some(m => m.id === id);
+              if (isNewMessage && normalizedEmail !== me?.email?.toLowerCase()) {
+                const dmChatId = `dm:${activeDm?.email || ''}`;
+                const displayText = rawText.replace(/\u200B/g, '').trim() || (attachments.length > 0 ? `Sent ${attachments.length} image${attachments.length > 1 ? 's' : ''}` : '');
+                showNotification(dmChatId, userName, displayText, true);
+              }
+              
               next.push(message);
               return next;
             });
@@ -1056,6 +1268,14 @@ function DashboardShowroomPageInner() {
                   return next;
                 }
               }
+              
+              // New message - show notification
+              const isNewMessage = !next.some(m => m.id === id);
+              if (isNewMessage && normalizedEmail !== me?.email?.toLowerCase()) {
+                const displayText = rawText.replace(/\u200B/g, '').trim() || (attachments.length > 0 ? `Sent ${attachments.length} image${attachments.length > 1 ? 's' : ''}` : '');
+                showNotification(active, userName, displayText, false);
+              }
+              
               next.push(message);
               return next;
             });
@@ -1075,7 +1295,7 @@ function DashboardShowroomPageInner() {
       disposed = true;
       try { es?.close(); } catch {};
     };
-  }, [active, activeChatType, activeDm?.email, showroomView, blocked]);
+  }, [active, activeChatType, activeDm?.email, showroomView, blocked, me?.email, showNotification]);
 
   function canAccessByRole(userRole?: 'user' | 'staff' | 'admin', required?: 'user' | 'staff' | 'admin') {
     if (!required) return true;
@@ -1444,8 +1664,11 @@ function DashboardShowroomPageInner() {
           </button>
           <div className="text-sm font-semibold px-2 mb-2">Channels</div>
           <ul className="space-y-1">
-            {channels.filter(c=>c.slug !== 'livestream' && c.slug !== 'pro').map((c)=> (
-              <li key={c.slug}>
+            {channels.filter(c=>c.slug !== 'livestream' && c.slug !== 'pro').map((c)=> {
+              const isMuted = mutedChats.has(c.slug);
+              const canMute = c.slug !== 'request-a-feature' && c.slug !== 'leaderboard';
+              return (
+              <li key={c.slug} className="group relative">
                 <button onClick={async()=>{
                   setActiveChatType('channel');
                   setActive(c.slug);
@@ -1466,9 +1689,34 @@ function DashboardShowroomPageInner() {
                   setChatLoading(false);
                 }} className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${showroomView==='showroom' && activeChatType==='channel' && active===c.slug ? 'bg-white/10' : 'hover:bg-white/5'}`}>
                   <span>#{c.slug}</span>
+                  {isMuted && <BellOff className="ml-auto h-3 w-3 text-white/40" />}
                 </button>
+                {canMute && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMutedChats(prev => {
+                        const next = new Set(prev);
+                        if (next.has(c.slug)) {
+                          next.delete(c.slug);
+                          toast.success(`Unmuted #${c.slug}`);
+                        } else {
+                          next.add(c.slug);
+                          toast.success(`Muted #${c.slug}`);
+                        }
+                        return next;
+                      });
+                    }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-white/10 transition-opacity"
+                    title={isMuted ? `Unmute #${c.slug}` : `Mute #${c.slug}`}
+                    aria-label={isMuted ? `Unmute #${c.slug}` : `Mute #${c.slug}`}
+                  >
+                    {isMuted ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+                  </button>
+                )}
               </li>
-            ))}
+              );
+            })}
           </ul>
           <div className="text-sm font-semibold px-2 mt-4 mb-2">Direct Messages</div>
           <ul className="space-y-1">
@@ -1476,8 +1724,10 @@ function DashboardShowroomPageInner() {
               const p = presence.find(pp => (pp.email || '').toLowerCase() === (u.email || '').toLowerCase());
               const isAdm = (p?.role || '').toLowerCase() === 'admin';
               const isPro = (() => { const s = (p?.plan || '').toLowerCase(); return canonicalPlan(s) === 'ultra'; })();
+              const dmChatId = `dm:${u.email}`;
+              const isMuted = mutedChats.has(dmChatId);
               return (
-              <li key={u.email}>
+              <li key={u.email} className="group relative">
                 <ContextMenu>
                   <ContextMenuTrigger asChild>
                     <div
@@ -1502,6 +1752,7 @@ function DashboardShowroomPageInner() {
                         <AvatarFallback className="bg-[color:var(--primary)]/15 text-[color:var(--primary)]"><CarFront className="size-3" /></AvatarFallback>
                       </Avatar>
                         <span className={`truncate ${isAdm ? 'text-[#ef4444]' : (isPro ? 'text-[#ff6a00]' : '')}`}>{u.name || u.email}</span>
+                        {isMuted && <BellOff className="h-3 w-3 text-white/40" />}
                         {isAdm ? (
                           <span className="ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(239,68,68,0.12)] text-[#ef4444] border border-[#ef4444]/30">Admin</span>
                         ) : (isPro ? (
@@ -1539,6 +1790,27 @@ function DashboardShowroomPageInner() {
                     }}
                   />
                 </ContextMenu>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMutedChats(prev => {
+                      const next = new Set(prev);
+                      if (next.has(dmChatId)) {
+                        next.delete(dmChatId);
+                        toast.success(`Unmuted DM with ${u.name || u.email}`);
+                      } else {
+                        next.add(dmChatId);
+                        toast.success(`Muted DM with ${u.name || u.email}`);
+                      }
+                      return next;
+                    });
+                  }}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-white/10 transition-opacity"
+                  title={isMuted ? `Unmute DM with ${u.name || u.email}` : `Mute DM with ${u.name || u.email}`}
+                  aria-label={isMuted ? `Unmute DM with ${u.name || u.email}` : `Mute DM with ${u.name || u.email}`}
+                >
+                  {isMuted ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+                </button>
               </li>
               );
             })}
@@ -2318,11 +2590,11 @@ function DashboardShowroomPageInner() {
           </aside>
         ) : null}
         <Dialog open={attachmentModalOpen} onOpenChange={(open)=> { if (!open) { setAttachmentModalOpen(false); setAttachmentError(null); } }}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
+          <DialogContent className="max-w-3xl flex flex-col max-h-[90vh]">
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle>Add images</DialogTitle>
             </DialogHeader>
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
               {attachmentError ? (
                 <div key={attachmentErrorShakeKey} className="rounded border border-red-500/40 bg-red-500/10 text-red-200 px-3 py-2 text-sm animate-attachment-error-shake">
                   {attachmentError}
@@ -2332,23 +2604,12 @@ function DashboardShowroomPageInner() {
                 const next = (v === 'library') ? 'library' : 'upload';
                 setSelectedAttachmentTab(next);
                 if (next === 'library') void fetchLibraryPhotos();
-              }} className="w-full">
-                <TabsList className="inline-flex rounded-lg border border-[color:var(--border)]/60 bg-white/5 p-0.5">
+              }} className="w-full flex flex-col flex-1 min-h-0">
+                <TabsList className="inline-flex rounded-lg border border-[color:var(--border)]/60 bg-white/5 p-0.5 flex-shrink-0">
                   <TabsTrigger value="upload" className="px-4 py-2 text-sm data-[state=active]:bg-[rgba(255,255,255,0.12)] data-[state=active]:text-white">Upload</TabsTrigger>
                   <TabsTrigger value="library" className="px-4 py-2 text-sm data-[state=active]:bg-[rgba(255,255,255,0.12)] data-[state=active]:text-white">Browse Library</TabsTrigger>
                 </TabsList>
-                <div className="mt-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-white/60">{pendingAttachments.length}/{maxAttachments} selected</div>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!pendingAttachments.length || pendingAttachments.some((key) => attachmentStatusMap[key] === 'uploading')}
-              onClick={()=> { void handleSendAttachments(); }}
-            >
-              Send
-            </Button>
-          </div>
+                <div className="mt-4 space-y-4 flex-1 min-h-0 overflow-y-auto pb-4">
 
                   <TabsContent value="upload" className="space-y-3">
                     <DropZone
@@ -2532,6 +2793,21 @@ function DashboardShowroomPageInner() {
                   </TabsContent>
                 </div>
               </Tabs>
+            </div>
+            {/* Sticky bottom send button */}
+            <div className="flex-shrink-0 border-t border-[color:var(--border)]/60 pt-3 mt-auto bg-[var(--popover)] space-y-2">
+              <div className="flex items-center justify-between w-full">
+                <div className="text-xs text-white/60">{pendingAttachments.length}/{maxAttachments} selected</div>
+              </div>
+              <Button
+                type="button"
+                size="lg"
+                disabled={!pendingAttachments.length || pendingAttachments.some((key) => attachmentStatusMap[key] === 'uploading')}
+                onClick={()=> { void handleSendAttachments(); }}
+                className="w-full"
+              >
+                Send
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

@@ -3,6 +3,9 @@ import { auth } from "@/lib/auth";
 import PageBottomBlur from "@/components/page-bottom-blur";
 import { createMetadata } from "@/lib/seo";
 import FAQSection from "@/components/faq-section";
+import dynamic from "next/dynamic";
+
+const PaymentProcessorsMarquee = dynamic(() => import("@/components/payment-processors-marquee"), { ssr: true });
 
 export const metadata = createMetadata({
   title: "Pricing",
@@ -33,6 +36,9 @@ export default async function PricingPage() {
           </p>
         </div>
       </section>
+
+      {/* Payment Processors Marquee */}
+      <PaymentProcessorsMarquee />
 
       {/* Pricing Section */}
       <section className="w-full py-[2rem] md:py-[3rem]">

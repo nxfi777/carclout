@@ -1476,8 +1476,8 @@ export function TemplatesTabContent(){
       </div>
       {grid}
       <Dialog open={open} onOpenChange={(v)=>{ setOpen(v); if (!v) { resetTemplateSession(); setVarState({}); } }}>
-        <DialogContent className="p-2 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw]">
-          <DialogHeader>
+        <DialogContent className="p-2 sm:p-6 sm:max-w-xl md:max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-[54vw] flex flex-col max-h-[90vh]">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center justify-between">
               <span>{designOpen ? 'Designer' : (active?.name || 'Template')}</span>
               {(!designOpen && !busy && !resultUrl) ? (
@@ -1745,7 +1745,7 @@ export function TemplatesTabContent(){
             </div>
           ) : (
             <>
-              <div className="space-y-4">
+              <div className="space-y-4 flex-1 min-h-0 overflow-y-auto pb-4">
                 {(() => {
                   const tokensInPrompt = new Set(String(activeTemplate?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m)=> m.replace(/^[\[]|[\]]$/g, '')) || []);
                   const builtin = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
@@ -1821,17 +1821,6 @@ export function TemplatesTabContent(){
                     const allowUser = allowSrcs.includes('user');
                     return (
                       <div className="space-y-3">
-                        <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                          <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
-                          <div className="flex items-center gap-2">
-                            {selectedImageKeys.length >= requiredImages ? (
-                              <span className="text-xs text-white/70 whitespace-nowrap">Costs 100 credits</span>
-                            ) : null}
-                            <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="text-base">
-                              {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}
-                            </Button>
-                          </div>
-                        </div>
                         <Tabs
                           value={(() => {
                             // Normalize current tab if disabled by template
@@ -2088,6 +2077,18 @@ export function TemplatesTabContent(){
                   }
                 }}
               />
+              {/* Sticky bottom generate button */}
+              <div className="flex-shrink-0 border-t border-[color:var(--border)]/60 pt-3 mt-auto bg-[var(--popover)] space-y-2">
+                <div className="w-full flex items-center justify-between">
+                  <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
+                  {selectedImageKeys.length >= requiredImages ? (
+                    <span className="text-xs text-white/70 whitespace-nowrap">Costs 100 credits</span>
+                  ) : null}
+                </div>
+                <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="w-full text-base">
+                  {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}
+                </Button>
+              </div>
             </>
           )}
         </DialogContent>

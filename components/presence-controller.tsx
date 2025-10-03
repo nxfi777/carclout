@@ -96,9 +96,15 @@ export default function PresenceController({ email }: { email?: string | null })
       }
     };
 
+    // Only auto-update if current status is online/idle (respect manual dnd/invisible settings)
+    const shouldAutoUpdate = () => {
+      const current = latestStatusRef.current;
+      return current === "online" || current === "idle";
+    };
+
     const handleVisibility = () => {
       const currentEmail = emailRef.current;
-      if (!currentEmail) return;
+      if (!currentEmail || !shouldAutoUpdate()) return;
       const state = document.visibilityState;
       const was = latestVisibilityRef.current;
       latestVisibilityRef.current = state === "hidden" ? "hidden" : "visible";
@@ -110,11 +116,27 @@ export default function PresenceController({ email }: { email?: string | null })
     };
 
     const handleFocus = () => {
+      if (!shouldAutoUpdate()) return;
       updateStatus("online", "focus");
     };
 
     const handleBlur = () => {
+      if (!shouldAutoUpdate()) return;
       updateStatus("idle", "blur");
+    };
+
+    // Listen to manual status changes from PresenceMenu to sync latestStatusRef
+    const handleManualPresenceUpdate = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail as { email?: string; status?: string; source?: string } | undefined;
+        const currentEmail = emailRef.current;
+        if (detail?.email === currentEmail && detail?.source === "manual" && detail?.status) {
+          const s = detail.status;
+          if (s === 'online' || s === 'idle' || s === 'dnd' || s === 'invisible') {
+            latestStatusRef.current = s as PresenceStatus;
+          }
+        }
+      } catch {}
     };
 
     const handleBeforeUnload = () => {
@@ -161,6 +183,7 @@ export default function PresenceController({ email }: { email?: string | null })
       window.removeEventListener("blur", handleBlur, true);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("presence-updated-local", handleManualPresenceUpdate as EventListener);
     };
 
     cleanupRef.current?.();
@@ -172,6 +195,7 @@ export default function PresenceController({ email }: { email?: string | null })
     window.addEventListener("blur", handleBlur, true);
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("presence-updated-local", handleManualPresenceUpdate as EventListener);
 
     return () => {
       destroy();

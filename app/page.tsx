@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { auth } from "@/lib/auth";
 import PageBottomBlur from "@/components/page-bottom-blur";
+import { getSurreal } from "@/lib/surrealdb";
 
 // Lazy load heavy components
 const PhoneWithCarParallax = dynamic(() => import("@/components/phone-with-car"), {
@@ -11,7 +12,9 @@ const PhoneWithCarParallax = dynamic(() => import("@/components/phone-with-car")
 });
 const BrandMarquee = dynamic(() => import("@/components/brand-marquee"), { ssr: true });
 const BentoFeatures = dynamic(() => import("@/components/bento-features"), { ssr: true });
+const PlatformsMarquee = dynamic(() => import("@/components/platforms-marquee"), { ssr: true });
 const TestimonialsSection = dynamic(() => import("@/components/testimonials-section"), { ssr: true });
+const PaymentProcessorsMarquee = dynamic(() => import("@/components/payment-processors-marquee"), { ssr: true });
 const FAQSection = dynamic(() => import("@/components/faq-section"), { ssr: true });
 const PlanSelector = dynamic(() => import("@/components/plan-selector"), { ssr: true });
 
@@ -21,12 +24,55 @@ export const revalidate = 600;
 export default async function Home() {
   const session = await auth();
   const user = session?.user;
-  const ctaHref = user ? "/dashboard" : "/auth/signup";
+  
+  // Determine CTA text and href based on user state
+  let ctaHref = "/auth/signup";
+  let ctaText = "Try Your First Edit for $1";
+  let ctaTextFinal = "👉 Start For $1 Today";
+  
+  if (user?.email) {
+    // User is signed in - check onboarding and subscription status
+    let onboardingCompleted = false;
+    let userPlan: string | null = null;
+    
+    try {
+      const db = await getSurreal();
+      const res = await db.query(
+        "SELECT onboardingCompleted, plan FROM user WHERE email = $email LIMIT 1;",
+        { email: user.email }
+      );
+      const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { onboardingCompleted?: boolean; plan?: string | null } | null) : null;
+      onboardingCompleted = !!row?.onboardingCompleted;
+      userPlan = row?.plan || null;
+    } catch {
+      // If query fails, fall back to session plan
+      const maybeUser = user as Record<string, unknown>;
+      if (typeof maybeUser.plan === 'string') {
+        userPlan = maybeUser.plan;
+      }
+    }
+    
+    // Check if user is subscribed
+    const isSubscribed = userPlan === "minimum" || userPlan === "basic" || userPlan === "pro";
+    
+    if (onboardingCompleted && isSubscribed) {
+      // User is fully set up - show dashboard CTA
+      ctaHref = "/dashboard";
+      ctaText = "Go to Dashboard";
+      ctaTextFinal = "👉 Go to Dashboard";
+    } else if (!onboardingCompleted) {
+      // User hasn't completed onboarding
+      ctaHref = "/onboarding";
+    } else {
+      // User completed onboarding but not subscribed
+      ctaHref = "/plan";
+    }
+  }
   return (
     <main className="page-glow -mx-2 md:-mx-3">
       <PageBottomBlur />
       <section className="w-full pt-[1rem] md:pt-[2rem] pb-[4rem] grid grid-cols-1 lg:grid-cols-2 gap-[2rem] items-start relative z-[1] px-[1rem] sm:px-[1.75rem] overflow-visible">
-        <div className="ml-0 sm:ml-[1.25rem] lg:ml-[3rem] space-y-[1.2rem] text-center lg:text-left mt-[1rem] md:mt-[4.5rem]">
+        <div className="ml-0 sm:ml-[1.25rem] lg:ml-[3rem] space-y-[1.2rem] text-center lg:text-left mt-[1rem] md:mt-[2rem] lg:mt-[4.5rem]">
           {/* badge removed per request */}
           <h1 className="leading-tight font-semibold text-[clamp(2.4rem,6vw,4rem)]">
             Turn Your Car Pics Into Viral Posts<br />in <span className="text-[color:var(--primary)] font-bold">2 Clicks<span className="text-[color:var(--primary)]">.</span></span>
@@ -36,7 +82,7 @@ export default async function Home() {
           </p>
           <div className="flex items-center gap-[1rem] justify-center lg:justify-start">
             <Button asChild size="lg" className="text-[1.1rem] px-[2.5rem] py-[1.25rem] h-auto font-bold bg-[color:var(--primary)] hover:bg-[color:var(--primary)] rounded-full shadow-[0_0_25px_rgba(91,108,255,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_0_35px_rgba(91,108,255,0.7),inset_0_1px_0_rgba(255,255,255,0.15)] transition-all duration-300 hover:brightness-110">
-              <Link href={ctaHref}>Try Your First Edit for $1</Link>
+              <Link href={ctaHref}>{ctaText}</Link>
             </Button>
           </div>
           {/* Desktop-only toolkit (kept under hero copy) */}
@@ -75,8 +121,14 @@ export default async function Home() {
       {/* Bento Features */}
       <BentoFeatures />
 
+      {/* Platforms Marquee */}
+      <PlatformsMarquee />
+
       {/* Testimonials */}
       <TestimonialsSection />
+
+      {/* Payment Processors Marquee */}
+      <PaymentProcessorsMarquee />
 
       <section id="pricing" className="w-full py-[3rem] md:py-[4rem]">
         <div className="text-center space-y-[0.6rem] mb-[1.5rem]">
@@ -100,7 +152,7 @@ export default async function Home() {
           </p>
           <div className="pt-[1rem]">
             <Button asChild size="lg" className="text-[1.15rem] px-[2.75rem] py-[1.4rem] h-auto font-bold bg-[color:var(--primary)] hover:bg-[color:var(--primary)] rounded-full shadow-[0_0_25px_rgba(91,108,255,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] hover:shadow-[0_0_35px_rgba(91,108,255,0.7),inset_0_1px_0_rgba(255,255,255,0.15)] transition-all duration-300 hover:brightness-110">
-              <Link href={ctaHref}>👉 Start For $1 Today</Link>
+              <Link href={ctaHref}>{ctaTextFinal}</Link>
             </Button>
           </div>
         </div>

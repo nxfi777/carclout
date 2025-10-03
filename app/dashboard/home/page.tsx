@@ -35,9 +35,11 @@ function DashboardHomePageInner() {
   const [streak, setStreak] = useState<number>(0);
   const [series, setSeries] = useState<StreakPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [suggestions, setSuggestions] = useState<Array<{ id?: string; name: string; description?: string; slug?: string; thumbnailKey?: string; thumbUrl?: string; createdAt?: string }>>([]);
+  const [suggestions, setSuggestions] = useState<Array<{ id?: string; name: string; description?: string; slug?: string; thumbnailKey?: string; blurhash?: string; thumbUrl?: string; createdAt?: string }>>([]);
   const [isMobile, setIsMobile] = useState(false);
   const streakScrollRef = useRef<HTMLDivElement | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const streakNotificationsShownRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let mounted = true;
@@ -107,6 +109,7 @@ function DashboardHomePageInner() {
           const description = typeof (t as { description?: string })?.description === 'string' ? (t as { description?: string }).description : '';
           const createdAt = typeof (t as { created_at?: unknown })?.created_at === 'string' ? String((t as { created_at?: unknown }).created_at) : undefined;
           const keyRaw = typeof t?.thumbnailKey === 'string' ? t.thumbnailKey : undefined;
+          const blurhash = typeof (t as { blurhash?: string })?.blurhash === 'string' ? (t as { blurhash?: string }).blurhash : undefined;
           let thumbUrl: string | undefined;
           if (keyRaw) {
             try {
@@ -115,7 +118,7 @@ function DashboardHomePageInner() {
               if (typeof url === 'string') thumbUrl = url as string;
             } catch {}
           }
-          return { id: typeof t?.id === 'string' ? t.id : undefined, name, description, slug, thumbnailKey: keyRaw, thumbUrl, createdAt, proOnly: !!t?.proOnly };
+          return { id: typeof t?.id === 'string' ? t.id : undefined, name, description, slug, thumbnailKey: keyRaw, blurhash, thumbUrl, createdAt, proOnly: !!t?.proOnly };
         }));
         const filtered = resolved.filter((t)=> !!t.thumbUrl).slice(0, suggestionsLimit);
         if (mounted) setSuggestions(filtered);
@@ -195,6 +198,103 @@ function DashboardHomePageInner() {
         setReminders(Array.isArray(json?.reminders) ? json.reminders : []);
       } catch {}
     })();
+  }, []);
+
+  // Request notification permission
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotificationPermission(Notification.permission);
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().then(permission => {
+          setNotificationPermission(permission);
+        }).catch(() => {});
+      }
+    }
+  }, []);
+
+  // Check streak status and show notifications
+  useEffect(() => {
+    if (!name) return;
+
+    const checkStreakStatus = async () => {
+      try {
+        const res = await fetch('/api/activity/streak/status', { cache: 'no-store' });
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        const { streak: currentStreak, atRisk, hoursUntilLoss } = data as { 
+          streak: number; 
+          atRisk: boolean; 
+          hoursUntilLoss: number | null;
+        };
+
+        if (atRisk && hoursUntilLoss !== null && currentStreak > 0 && notificationPermission === 'granted') {
+          const notificationKey = `streak-warning-${new Date().toDateString()}`;
+          if (streakNotificationsShownRef.current.has(notificationKey)) return;
+
+          let shouldNotify = false;
+          const title = '🔥 Streak at Risk!';
+          let body = '';
+
+          if (hoursUntilLoss < 1) {
+            shouldNotify = true;
+            body = `Your ${currentStreak}-day streak expires in less than 1 hour! Log in to keep your ${currentStreak >= 7 ? '2x XP bonus' : 'streak'} alive.`;
+          } else if (hoursUntilLoss < 6) {
+            shouldNotify = true;
+            body = `Your ${currentStreak}-day streak expires in ${Math.floor(hoursUntilLoss)} hour${Math.floor(hoursUntilLoss) !== 1 ? 's' : ''}! Log in to keep your ${currentStreak >= 7 ? '2x XP bonus' : 'streak'} alive.`;
+          } else if (hoursUntilLoss < 12) {
+            shouldNotify = true;
+            body = `Don't forget to log in today to maintain your ${currentStreak}-day streak${currentStreak >= 7 ? ' and 2x XP bonus' : ''}!`;
+          }
+
+          if (shouldNotify) {
+            try {
+              const notification = new Notification(title, {
+                body,
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
+                tag: 'streak-warning',
+                requireInteraction: hoursUntilLoss < 1,
+              });
+
+              notification.onclick = () => {
+                window.focus();
+                notification.close();
+              };
+
+              streakNotificationsShownRef.current.add(notificationKey);
+            } catch (err) {
+              console.error('Failed to show streak notification:', err);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check streak status:', err);
+      }
+    };
+
+    // Check immediately
+    checkStreakStatus();
+
+    // Check every 30 minutes
+    const interval = setInterval(checkStreakStatus, 30 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [name, notificationPermission]);
+
+  // Listen for activity events to reset notification tracking
+  useEffect(() => {
+    const handleActivityChange = () => {
+      streakNotificationsShownRef.current.clear();
+    };
+
+    window.addEventListener('streak-refresh', handleActivityChange);
+    window.addEventListener('xp-refresh', handleActivityChange);
+    
+    return () => {
+      window.removeEventListener('streak-refresh', handleActivityChange);
+      window.removeEventListener('xp-refresh', handleActivityChange);
+    };
   }, []);
 
   
@@ -283,7 +383,7 @@ function DashboardHomePageInner() {
             {suggestions.map((t, i)=> (
               <Link key={t.id || t.slug || i} href={t.slug ? `/dashboard/templates?slug=${encodeURIComponent(t.slug)}` : '/dashboard/templates'} className="block">
                 <TemplateCard
-                  data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, createdAt: t.createdAt }}
+                  data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, blurhash: t.blurhash, thumbUrl: t.thumbUrl, createdAt: t.createdAt }}
                   showNewBadge={true}
                   showLike={false}
                   showFavoriteCount={false}

@@ -37,6 +37,25 @@ export default function PresenceMenu({ email, variant = "button" }: { email: str
     };
   }, [email]);
 
+  // Listen to presence-updated-local events from PresenceController to stay in sync
+  useEffect(() => {
+    const handlePresenceUpdate = (e: Event) => {
+      try {
+        const detail = (e as CustomEvent).detail as { email?: string; status?: string } | undefined;
+        if (detail?.email === email && detail?.status) {
+          const s = detail.status;
+          if (s === 'online' || s === 'idle' || s === 'dnd' || s === 'invisible') {
+            setStatus(s as PresenceStatus);
+          }
+        }
+      } catch {}
+    };
+    window.addEventListener('presence-updated-local', handlePresenceUpdate as EventListener);
+    return () => {
+      window.removeEventListener('presence-updated-local', handlePresenceUpdate as EventListener);
+    };
+  }, [email]);
+
   async function setPresence(next: PresenceStatus) {
     const prev = status;
     setStatus(next); // optimistic
