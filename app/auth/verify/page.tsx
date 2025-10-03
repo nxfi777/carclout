@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default function VerifyPage() {
   return (
     <div className="flex-1 flex items-center justify-center px-[1.5rem] py-[2rem]">
-      <div className="relative overflow-hidden w-full max-w-md border rounded-xl border-[color:var(--border)] bg-[color:var(--popover)]/70 backdrop-blur shadow-lg p-6 text-center space-y-2">
+      <div className="relative overflow-hidden w-full max-w-lg border rounded-xl border-[color:var(--border)] bg-[color:var(--popover)]/70 backdrop-blur shadow-lg p-6 text-center space-y-2">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-60 z-0 rounded-xl"

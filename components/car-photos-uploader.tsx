@@ -353,7 +353,7 @@ export default function CarPhotosUploader({ value, onChange, pendingDeletes, veh
                     {idx === 0 ? (
                       <div className="absolute top-1 left-1 rounded bg-black/70 text-white text-[10px] px-1.5 py-0.5">Primary</div>
                     ) : null}
-                    <div className="absolute bottom-1 left-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute bottom-1 left-1 flex items-center gap-1">
                       {onChatSelectedChange ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -379,7 +379,7 @@ export default function CarPhotosUploader({ value, onChange, pendingDeletes, veh
                     <button
                       type="button"
                       aria-label="Remove photo"
-                      className="absolute top-1 right-1 rounded-full p-1 bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-1 right-1 rounded-full p-1 bg-black/60 text-white"
                       onClick={() => removeKey(key)}
                     >
                       <XIcon className="size-4" />

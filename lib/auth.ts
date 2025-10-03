@@ -49,7 +49,7 @@ async function sendVerificationRequest({
 function createEmail({ url, email, request }: { url: string; email: string; request?: Request }) {
   const baseUrl = request ? getBaseUrl(request) : getEnvBaseUrl();
   return `
-  <div style="background:#0b1020;padding:2rem 1rem;margin:0;min-height:100vh">
+  <div style="background:#0b1020;padding:2rem 1rem;margin:0;">
     <div style="font-family:Roboto,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;max-width:36rem;margin:0 auto;background:#111a36;color:#e7ecff;border-radius:0.75rem;border:1px solid #263166;padding:1.5rem;">
       <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;color:#aab4ff;font-size:0.75rem;letter-spacing:.14em;text-transform:uppercase">
         <img src="${baseUrl}/favicon.ico" style="border-radius:0.25rem;width:1.25rem;height:1.25rem" alt="CarClout" />

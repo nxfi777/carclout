@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Combobox } from "@/components/ui/combobox";
 import { MAKES, MODELS_BY_MAKE, inferTypeFromMake } from "@/lib/vehicles";
 
 export type Vehicle = { make: string; model: string; type: "car" | "bike"; kitted: boolean; colorFinish?: string; accents?: string; photos?: string[] };
@@ -16,29 +17,22 @@ interface VehiclesEditorProps {
 
 export default function VehiclesEditor({ value, onChange, onWillRemoveVehicle, className }: VehiclesEditorProps) {
   const [make, setMake] = useState<string>("");
-  const [modelQuery, setModelQuery] = useState("");
-  const [modelOpen, setModelOpen] = useState(false);
-  const modelBoxRef = useRef<HTMLDivElement | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>("");
 
   const uniqueMakes = useMemo(() => Array.from(new Set(MAKES)), []);
 
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (!modelOpen) return;
-      const el = modelBoxRef.current;
-      if (el && !el.contains(e.target as Node)) setModelOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick, { passive: true } as AddEventListenerOptions);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [modelOpen]);
+  const modelOptions = useMemo(() => {
+    if (!make) return [];
+    const models = Array.from(new Set(MODELS_BY_MAKE[make] || []));
+    return models.map((m) => ({ value: m, label: m }));
+  }, [make]);
 
-  function addVehicleQuick(model: string) {
-    if (!make) return;
+  function addVehicleQuick() {
+    if (!make || !selectedModel) return;
     const type = inferTypeFromMake(make);
-    onChange([...(value || []), { make, model, type, kitted: false, colorFinish: "", accents: "" }]);
+    onChange([...(value || []), { make, model: selectedModel, type, kitted: false, colorFinish: "", accents: "" }]);
     setMake("");
-    setModelQuery("");
-    setModelOpen(false);
+    setSelectedModel("");
   }
 
   function toggleKitted(index: number, nextVal: boolean) {
@@ -74,24 +68,29 @@ export default function VehiclesEditor({ value, onChange, onWillRemoveVehicle, c
         </div>
         <div>
           <div className="text-xs mb-1 text-white/70">Vehicle Model (optional)</div>
-          <div className="relative" ref={modelBoxRef}>
-            <Input placeholder="Search model…" value={modelQuery} onFocus={() => setModelOpen(true)} onChange={(e) => setModelQuery(e.target.value)} />
-            {modelOpen ? (
-              <div className="absolute left-0 right-0 top-full mt-2 rounded-md border bg-[var(--popover)] text-[var(--popover-foreground)] border-[var(--border)] max-h-56 overflow-auto z-50 shadow-xl">
-                <ul>
-                  {Array.from(new Set(MODELS_BY_MAKE[make] || []))
-                    .filter((x) => x.toLowerCase().includes(modelQuery.toLowerCase()))
-                    .map((m) => (
-                      <li key={m}><button className="w-full text-left px-3 py-1.5 hover:bg-white/10 cursor-pointer" onClick={() => addVehicleQuick(m)}>{m}</button></li>
-                    ))}
-                  <li><button className="w-full text-left px-3 py-1.5 hover:bg-white/10 cursor-pointer" onClick={() => addVehicleQuick(modelQuery || "Other")}>Other…</button></li>
-                </ul>
-              </div>
-            ) : null}
-          </div>
-          <div className="text-xs mt-1 text-white/50">Optional. Custom: type a name to add.</div>
+          <Combobox
+            options={modelOptions}
+            value={selectedModel}
+            onValueChange={setSelectedModel}
+            placeholder={make ? "Search or enter model..." : "Select make first"}
+            searchPlaceholder="Search model..."
+            emptyText="No model found."
+            allowCustom={!!make}
+            className="bg-white/5"
+          />
+          <div className="text-xs mt-1 text-white/50">Search from list or enter custom model</div>
         </div>
       </div>
+      {make && selectedModel && (
+        <div className="mt-3">
+          <button
+            onClick={addVehicleQuick}
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Add {make} {selectedModel}
+          </button>
+        </div>
+      )}
 
       {value.length > 0 ? (
         <div className="mt-3">
