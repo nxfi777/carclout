@@ -19,6 +19,7 @@ import { FaFont } from "react-icons/fa6";
 import { RiLetterSpacing2 } from "react-icons/ri";
 import { LuRotate3D } from "react-icons/lu";
 import { CgFontHeight } from "react-icons/cg";
+import { PiArrowBendRightUp } from "react-icons/pi";
 
 const FONT_FAMILIES = [
   "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
@@ -81,6 +82,7 @@ export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactN
   const hasTextSelected = selectedLayers.some((l) => l.type === 'text');
   const hasShapeSelected = selectedLayers.some((l) => l.type === 'shape');
   const hasSelection = selectedLayers.length > 0;
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
 
   const handleDeleteSelected = React.useCallback(() => {
     for (const layer of selectedLayers) {
@@ -91,7 +93,7 @@ export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactN
   return (
     <div className="space-y-1">
       <div className="w-full flex justify-center">
-        <div className="relative z-10 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm overflow-x-auto overflow-y-visible scrollbar-thin max-w-[70vw] lg:max-w-[84vw]">
+        <div ref={scrollContainerRef} className="relative z-10 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm overflow-x-auto overflow-y-visible scrollbar-thin max-w-[70vw] lg:max-w-[84vw]">
           <div className="flex items-center gap-2 px-2 py-1 w-max min-w-full">
             <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
               <Button size="icon" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" /></Button>
@@ -126,7 +128,7 @@ export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactN
           </div>
         </div>
       </div>
-      {state.tool === 'text' ? <TextToolHint /> : null}
+      {state.tool === 'text' ? <TextToolHint scrollContainerRef={scrollContainerRef} /> : null}
     </div>
   );
 }
@@ -1165,15 +1167,85 @@ function EffectsDropdown({ variant = "default", className }: { variant?: "defaul
   );
 }
 
-function TextToolHint() {
+function TextToolHint({ scrollContainerRef: _scrollContainerRef }: { scrollContainerRef: React.RefObject<HTMLDivElement | null> }) {
+  const [showScrollHint, setShowScrollHint] = React.useState(false);
+  const [centerOffset, setCenterOffset] = React.useState(0);
+  const [isMeasured, setIsMeasured] = React.useState(false);
+  const scrollHintRef = React.useRef<HTMLSpanElement>(null);
+
+  React.useEffect(() => {
+    // Measure the scroll hint element to calculate proper centering
+    const measureAndCenter = () => {
+      if (scrollHintRef.current) {
+        const width = scrollHintRef.current.offsetWidth;
+        // Add the gap (1rem = 16px) and divide by 2 to get the offset needed
+        setCenterOffset((width + 16) / 2);
+        setIsMeasured(true);
+      }
+    };
+
+    // Measure immediately and after a small delay to ensure rendering is complete
+    measureAndCenter();
+    const measureTimer = setTimeout(measureAndCenter, 10);
+    
+    window.addEventListener('resize', measureAndCenter);
+
+    return () => {
+      clearTimeout(measureTimer);
+      window.removeEventListener('resize', measureAndCenter);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    // After 2 seconds, show the scroll hint on mobile
+    const timer = setTimeout(() => {
+      setShowScrollHint(true);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
-    <div
-      className="pt-2 text-center text-xs sm:text-sm text-white/70"
-      role="note"
-      aria-live="polite"
-    >
-      Click the canvas to add text.
-    </div>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes bounce-gentle {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-0.125rem); }
+        }
+        .animate-bounce-gentle {
+          animation: bounce-gentle 1s ease-in-out 4;
+        }
+      `}} />
+      <div
+        className="pt-2 text-center text-xs sm:text-sm text-white/70 flex items-center justify-center gap-4"
+        role="note"
+        aria-live="polite"
+        style={{ opacity: isMeasured ? 1 : 0 }}
+      >
+        <span 
+          className="transition-transform duration-500 ease-out"
+          style={{
+            transform: showScrollHint ? 'translateX(0)' : `translateX(${centerOffset}px)`
+          }}
+        >
+          Click the canvas to add text.
+        </span>
+        <span 
+          ref={scrollHintRef}
+          className={cn(
+            "flex items-center gap-1 md:hidden transition-opacity duration-500 ease-out",
+            showScrollHint ? "opacity-100" : "opacity-0 pointer-events-none"
+          )}
+          aria-hidden={!showScrollHint}
+        >
+          Scroll
+          <PiArrowBendRightUp className={cn(
+            "text-base sm:text-lg",
+            showScrollHint && "animate-bounce-gentle"
+          )} />
+        </span>
+      </div>
+    </>
   );
 }
 

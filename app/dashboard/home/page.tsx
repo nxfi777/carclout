@@ -18,6 +18,7 @@ import { STREAK_RESTORE_CREDITS_PER_DAY } from '@/lib/credits';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { getViewUrl } from '@/lib/view-url-client';
 import { Trash2 } from 'lucide-react';
+import { FaInstagram } from "react-icons/fa";
 
 type StreakPoint = { day: string; value: number };
 
@@ -86,6 +87,10 @@ function DashboardHomePageInner() {
         if (mounted) setLoading(false);
       }
       try {
+        // Determine if mobile viewport for suggestions count (5 desktop, 6 mobile)
+        const isMobileViewport = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+        const suggestionsLimit = isMobileViewport ? 6 : 5;
+        
         const res = await fetch('/api/templates?limit=200', { cache: 'no-store' });
         const data = await res.json().catch(()=>({}));
         const all = Array.isArray(data?.templates) ? data.templates as Array<{ id?: string; name?: string; description?: string; slug?: string; thumbnailKey?: string; created_at?: string; proOnly?: boolean }> : [];
@@ -112,7 +117,7 @@ function DashboardHomePageInner() {
           }
           return { id: typeof t?.id === 'string' ? t.id : undefined, name, description, slug, thumbnailKey: keyRaw, thumbUrl, createdAt, proOnly: !!t?.proOnly };
         }));
-        const filtered = resolved.filter((t)=> !!t.thumbUrl).slice(0,6);
+        const filtered = resolved.filter((t)=> !!t.thumbUrl).slice(0, suggestionsLimit);
         if (mounted) setSuggestions(filtered);
       } catch {}
     })();
@@ -244,12 +249,11 @@ function DashboardHomePageInner() {
 
       <section className="rounded-2xl border border-[color:var(--border)] bg-[var(--card)] p-5 md:p-6">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-lg font-semibold">Consistency</div>
           {loading ? (
             <Skeleton className="h-4 w-24" />
           ) : (
             <div className="flex items-center gap-3">
-              <div className="text-sm text-white/70">Streak: <span className="text-white">{streak}</span> days</div>
+              <div className="text-lg font-semibold">Streak: <span className="text-white">{streak}</span> days</div>
               <RestoreStreakButton onRestored={async()=>{ try { window.dispatchEvent(new CustomEvent('streak-refresh')); } catch {} }} />
             </div>
           )}
@@ -293,12 +297,14 @@ function DashboardHomePageInner() {
         )}
       </section>
 
-      <section className="rounded-2xl border border-[color:var(--border)] bg-[var(--card)] p-5 md:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="text-lg font-semibold">Instagram</div>
-          <Button onClick={openInstagram}>Open Instagram</Button>
+      <section className="rounded-2xl border border-[color:var(--border)] bg-[var(--card)] p-5 md:p-6 md:relative">
+        <div className="mb-4 md:hidden">
+          <Button onClick={openInstagram} className="w-full">
+            <FaInstagram className="mr-2" />
+            Open Instagram
+          </Button>
         </div>
-        <div className="grid md:grid-cols-2 gap-4 items-start">
+        <div className="grid md:grid-cols-2 gap-4 items-start md:pb-12">
           <div className="space-y-3">
             <div className="text-sm text-white/70">Schedule a reminder to post</div>
             <Input placeholder="Title (optional)" value={title} onChange={(e)=>setTitle(e.target.value)} />
@@ -306,6 +312,10 @@ function DashboardHomePageInner() {
             <DateTimeSelect value={when} onChange={setWhen} />
             <Button onClick={scheduleReminder} disabled={saving || !when}>{saving ? 'Saving...' : 'Schedule reminder'}</Button>
           </div>
+          <Button onClick={openInstagram} className="hidden md:inline-flex md:absolute md:right-6 md:bottom-6">
+            <FaInstagram className="mr-2" />
+            Open Instagram
+          </Button>
           <div className="space-y-2">
             <div className="text-sm font-medium">Upcoming reminders</div>
             <div className="space-y-2">

@@ -60,8 +60,8 @@ export default function BentoFeatures() {
       />
 
       <div className="max-w-7xl mx-auto relative z-[1]">
-        {/* Bento grid - 2x2 on desktop, stacks on mobile */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-[1rem] md:gap-[1.25rem] lg:gap-[1.5rem]">
+        {/* Bento grid - 2x2 on all screen sizes */}
+        <div className="grid grid-cols-2 gap-[0.75rem] md:gap-[1.25rem] lg:gap-[1.5rem]">
           {features.map((feature, index) => {
             const Icon = feature.icon;
             return (
@@ -70,12 +70,12 @@ export default function BentoFeatures() {
                 className={`
                   group relative overflow-hidden rounded-2xl border border-[color:var(--border)] 
                   bg-gradient-to-br ${feature.gradient}
-                  p-[1.5rem] md:p-[2rem] 
+                  p-[1rem] md:p-[2rem] 
                   transition-all duration-300 
                   hover:shadow-lg hover:shadow-primary/5
                   hover:border-primary/30
                   flex flex-col
-                  min-h-[16rem] md:min-h-[18rem]
+                  min-h-[14rem] md:min-h-[18rem]
                 `}
               >
                 {/* Background pattern overlay */}
@@ -89,31 +89,33 @@ export default function BentoFeatures() {
 
                 {/* Icon */}
                 <div className={`
-                  w-[3rem] h-[3rem] md:w-[3.5rem] md:h-[3.5rem] 
+                  w-[2.5rem] h-[2.5rem] md:w-[3.5rem] md:h-[3.5rem] 
                   rounded-xl 
                   bg-background/80 backdrop-blur-sm
                   border border-[color:var(--border)]
                   flex items-center justify-center 
-                  mb-[1.25rem] md:mb-[1.5rem]
+                  mb-[0.75rem] md:mb-[1.5rem]
                   group-hover:scale-110 transition-transform duration-300
                   relative z-[1]
                 `}>
-                  <Icon className={`w-[1.5rem] h-[1.5rem] md:w-[1.75rem] md:h-[1.75rem] ${feature.iconColor}`} />
+                  <Icon className={`w-[1.25rem] h-[1.25rem] md:w-[1.75rem] md:h-[1.75rem] ${feature.iconColor}`} />
                 </div>
 
                 {/* Content */}
                 <div className="relative z-[1] flex-1 flex flex-col">
-                  <h3 className="text-lg md:text-xl font-semibold mb-[0.75rem] text-foreground">
+                  <h3 className="text-base md:text-xl font-semibold mb-[0.5rem] md:mb-[0.75rem] text-foreground">
                     {feature.title}
                   </h3>
-                  <p className="text-sm md:text-base text-muted-foreground leading-relaxed">
+                  <p className="text-xs md:text-base text-muted-foreground leading-relaxed">
                     {feature.description}
                   </p>
                 </div>
 
                 {/* Feature Image */}
                 {feature.image ? (
-                  <div className="relative z-[1] mt-[1rem] rounded-lg overflow-hidden border border-[color:var(--border)]/50">
+                  <div className={`relative z-[1] mt-[1rem] rounded-lg overflow-hidden border border-[color:var(--border)]/50 max-w-full mx-auto ${
+                    feature.image === '/DesignerPreview.webp' ? 'md:max-w-[32rem]' : 'md:max-w-[24rem]'
+                  }`}>
                     <Image
                       src={feature.image}
                       alt={feature.title}

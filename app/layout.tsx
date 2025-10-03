@@ -58,7 +58,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [{ url: "/favicon.ico" }],
     shortcut: ["/favicon.ico"],
-    apple: [{ url: "/carcloutlogo.webp" }],
+    apple: [{ url: "/carcloutfilled.webp" }],
   },
   ...createMetadata({
     title: "CarClout — Make Your Car Page Unskippable",

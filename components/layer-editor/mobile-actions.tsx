@@ -17,6 +17,8 @@ export default function MobileActions({
   popoverOffset = 10,
   buttonClassName,
   isHorizontal,
+  onOpenChange,
+  onFirstClick,
 }: {
   triggerIcon: React.ReactNode;
   tooltipSide?: "top" | "right" | "bottom" | "left";
@@ -26,6 +28,8 @@ export default function MobileActions({
   popoverOffset?: number;
   buttonClassName?: string;
   isHorizontal: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onFirstClick?: () => void;
 }) {
   const { actions } = useDesignerActions();
   const mobileActions = actions.filter((it) => it.section !== "desktop-only");
@@ -35,7 +39,12 @@ export default function MobileActions({
   const leading = mobileActions.filter((it) => (it.section ?? "primary") === "leading");
 
   return (
-    <Popover>
+    <Popover onOpenChange={(open) => {
+      if (open && onFirstClick) {
+        onFirstClick();
+      }
+      onOpenChange?.(open);
+    }}>
       <Tooltip>
         <PopoverTrigger asChild>
           <TooltipTrigger asChild>

@@ -150,6 +150,10 @@ export const defaultGlow: EffectGlow = {
 };
 
 export function createDefaultText(xPct = 50, yPct = 50): TextLayer {
+  // Use wider width on mobile (70% of viewport) to prevent text from wrapping too early
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const widthPct = isMobile ? 70 : 28;
+  
   return {
     id: generateId('text'),
     type: 'text',
@@ -164,11 +168,12 @@ export function createDefaultText(xPct = 50, yPct = 50): TextLayer {
     lineHeightEm: 1.1,
     xPct,
     yPct,
-    widthPct: 28,
+    widthPct,
     heightPct: 12,
     rotationDeg: 0,
     scaleX: 1,
     scaleY: 1,
+    aboveMask: false, // Explicitly render text below car cutout by default
     effects: { shadow: { ...defaultShadow }, glow: { ...defaultGlow } },
   };
 }

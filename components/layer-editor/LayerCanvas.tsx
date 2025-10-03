@@ -317,7 +317,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
   );
 }
 
-function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canvasHeight }: { layer: Layer; selected: boolean; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void; justExitedEditingRef: React.MutableRefObject<boolean>; canvasHeight: number }){
+function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canvasHeight: _canvasHeight }: { layer: Layer; selected: boolean; onPointerDown: (e: React.PointerEvent, layer: Layer)=> void; justExitedEditingRef: React.MutableRefObject<boolean>; canvasHeight: number }){
   const { state, dispatch } = useLayerEditor();
   const editableRef = React.useRef<HTMLDivElement | null>(null);
   const seededRef = React.useRef<string | null>(null);
@@ -435,18 +435,15 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
     const t = layer as import("@/types/layer-editor").TextLayer;
     // Calculate font size based on canvas height to ensure viewport-independent sizing
     // fontSizeEm represents the desired size in ems (1em = 16px)
-    // Convert to percentage of layer height for consistent rendering
-    const layerHeightPx = (layer.heightPct / 100) * canvasHeight;
-    const fontSizePercent = t.fontSizeEm && layerHeightPx > 0
-      ? Math.max(10, Math.min(200, ((t.fontSizeEm * 16) / layerHeightPx) * 100)) // Convert em to % of layer height
-      : 50; // Default: 50% of layer height for better readability when fontSizeEm not set
+    // For editing mode, use a fixed calculation to prevent font from shrinking as user types
+    const fontSizePx = t.fontSizeEm ? t.fontSizeEm * 16 : 57.6; // 3.6em * 16px = 57.6px default
     const textStyle: React.CSSProperties = {
       color: t.color,
       fontFamily: t.fontFamily,
       fontWeight: t.fontWeight,
       fontStyle: t.italic ? 'italic' : undefined,
       textDecoration: t.underline ? 'underline' : undefined,
-      fontSize: `${fontSizePercent}%`, // Percentage of layer height
+      fontSize: isEditing ? `${fontSizePx}px` : `${fontSizePx}px`, // Use absolute px size to prevent shrinking
       letterSpacing: `${t.letterSpacingEm}em`,
       lineHeight: t.lineHeightEm,
       textShadow: [
@@ -544,14 +541,16 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
             ...textStyle,
           display: 'block',
           textAlign: (t.textAlign || 'center') as React.CSSProperties['textAlign'],
-            padding: 0,
+            padding: '0.5em',
             whiteSpace: 'pre-wrap',
-            overflow: 'hidden',
+            wordWrap: 'break-word',
+            overflowWrap: 'break-word',
+            overflow: 'visible',
             background: 'transparent',
             border: '1px dashed rgba(255,255,255,0.5)',
             outline: 'none',
             width: '100%',
-            height: '100%',
+            minHeight: '100%',
           }}
         />
       );
