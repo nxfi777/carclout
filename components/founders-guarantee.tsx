@@ -25,14 +25,14 @@ export default function FoundersGuarantee() {
                 Founder&apos;s Guarantee
               </h3>
               <p className="text-[1.05rem] md:text-[1.15rem] leading-relaxed text-[color:var(--foreground)]/90">
-                If your first Ignition edit doesn&apos;t get more likes than your last post, 
+                If your first CarClout edit doesn&apos;t get more likes than your last post, 
                 cancel in one click and keep the edit anyway.
               </p>
               <p className="text-[0.95rem] md:text-[1.05rem] font-medium leading-relaxed text-[color:var(--foreground)]/80">
                 No Tricks. No Hoops. No Hard Feelings.
               </p>
               <p className="text-[0.95rem] md:text-[1rem] italic text-[color:var(--foreground)]/70 pt-[0.5rem]">
-                ~ Kasra, Founder of CarClout & Nytforge
+                ~ Kasra, Founder of CarClout
               </p>
             </div>
           </div>

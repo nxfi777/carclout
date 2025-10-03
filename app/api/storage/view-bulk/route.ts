@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { createViewUrl } from "@/lib/r2";
 
-const ALLOWED_SHARED_USER_FOLDERS = new Set(["vehicles", "car-photos", "chat-profile", "chat-uploads"]);
+const ALLOWED_SHARED_USER_FOLDERS = new Set(["vehicles", "car-photos", "chat-profile", "chat-uploads", "library"]);
+const CHAT_ATTACHMENT_FOLDERS = new Set(["chat-uploads", "car-photos", "vehicles", "library"]);
 
 function normalizeKey(input: unknown): string {
   return String(input || "").replace(/^\/+/u, "");
@@ -21,6 +22,14 @@ function isAllowedCrossUserKey(normalized: string): boolean {
   if (rootSegment !== "users") return false;
   if (!isSafeUserSegment(userSegment)) return false;
   return ALLOWED_SHARED_USER_FOLDERS.has(folderSegment);
+}
+
+function isChatAttachment(normalized: string): boolean {
+  if (!normalized.startsWith("users/")) return false;
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.length < 3) return false;
+  const folderSegment = parts[2];
+  return CHAT_ATTACHMENT_FOLDERS.has(folderSegment);
 }
 
 export async function POST(req: Request) {
@@ -70,17 +79,24 @@ export async function POST(req: Request) {
       }
 
       if (!fullKey) continue;
-      tasks.push(
-        (async () => {
-          try {
-            const { url } = await createViewUrl(fullKey!, 60 * 10);
-            // Use the original key string as the map key so the client can match it
-            results[k] = url;
-          } catch {
-            // ignore individual failures
-          }
-        })()
-      );
+      
+      // For chat attachments, use the direct API endpoint instead of signed URLs
+      // This allows any authenticated user to access shared chat content
+      if (isChatAttachment(fullKey)) {
+        results[k] = `/api/chat/file?key=${encodeURIComponent(fullKey)}`;
+      } else {
+        tasks.push(
+          (async () => {
+            try {
+              const { url } = await createViewUrl(fullKey!, 60 * 10);
+              // Use the original key string as the map key so the client can match it
+              results[k] = url;
+            } catch {
+              // ignore individual failures
+            }
+          })()
+        );
+      }
     }
 
     await Promise.all(tasks);
