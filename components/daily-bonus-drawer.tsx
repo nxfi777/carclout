@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Flame, Loader2, Sparkles } from "lucide-react";
+import { useDrawerQueue, DRAWER_PRIORITY } from "@/lib/drawer-queue";
 
 type DrawerState = "idle" | "claiming" | "awarded" | "already";
 
@@ -29,6 +30,7 @@ export default function DailyBonusDrawer() {
   const hasClaimedRef = useRef(false);
   const lastPromptKeyRef = useRef<string | null>(null);
   const claimingRef = useRef(false);
+  const { requestShow, notifyDismissed } = useDrawerQueue();
 
   useEffect(() => {
     if (!isDashboard) return;
@@ -135,7 +137,15 @@ export default function DailyBonusDrawer() {
 
       claimingRef.current = true;
       setState("claiming");
-      setOpen(true);
+      
+      // Request to show via queue system with medium priority
+      requestShow(
+        "daily-bonus",
+        DRAWER_PRIORITY.MEDIUM,
+        () => setOpen(true),
+        () => setOpen(false)
+      );
+      
       await refreshXpDetails();
 
       const before = await fetchStreakValue();
@@ -205,7 +215,7 @@ export default function DailyBonusDrawer() {
       cancelled = true;
       window.removeEventListener("prompt-daily-bonus", handlePrompt as EventListener);
     };
-  }, [isDashboard]);
+  }, [isDashboard, requestShow]);
 
   const progressValue = useMemo(() => {
     if (xpIntoLevel == null || levelSpan == null || levelSpan <= 0) return 0;
@@ -232,6 +242,9 @@ export default function DailyBonusDrawer() {
   const handleOpenChange = (next: boolean) => {
     if (!next && busy) return;
     setOpen(next);
+    if (!next) {
+      notifyDismissed("daily-bonus");
+    }
   };
 
   const showProgress = level != null && levelSpan != null && levelSpan > 0 && xpIntoLevel != null;

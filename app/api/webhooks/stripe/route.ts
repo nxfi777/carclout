@@ -42,6 +42,21 @@ async function syncPlanFromSubscription(subId: string): Promise<void> {
     const shouldHaveAccess = status === "active" || status === "trialing";
     const planToSet: Plan | null = shouldHaveAccess ? mappedPlan : null;
     const surreal = await getSurreal();
+    
+    // Check if this is an upgrade from minimum to pro
+    if (planToSet === "pro") {
+      const userResult = await surreal.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email });
+      const previousPlan = Array.isArray(userResult) && Array.isArray(userResult[0]) 
+        ? (userResult[0][0] as { plan?: Plan } | undefined)?.plan
+        : null;
+      
+      // If upgrading from minimum to pro, reset welcome flag
+      if (previousPlan === "minimum") {
+        await surreal.query("UPDATE user SET plan = $plan, welcomeProShown = false WHERE email = $email;", { plan: planToSet, email });
+        return;
+      }
+    }
+    
     await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan: planToSet, email });
   } catch (e) {
     console.error("syncPlanFromSubscription failed:", e);
@@ -89,7 +104,22 @@ export async function POST(req: Request) {
           if (maybeSubId) {
             await syncPlanFromSubscription(maybeSubId);
           } else if (customerEmail && plan) {
-            await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan, email: customerEmail });
+            // Check if this is an upgrade from minimum to pro
+            if (plan === "pro") {
+              const userResult = await surreal.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email: customerEmail });
+              const previousPlan = Array.isArray(userResult) && Array.isArray(userResult[0]) 
+                ? (userResult[0][0] as { plan?: Plan } | undefined)?.plan
+                : null;
+              
+              // If upgrading from minimum to pro, reset welcome flag
+              if (previousPlan === "minimum") {
+                await surreal.query("UPDATE user SET plan = $plan, welcomeProShown = false WHERE email = $email;", { plan, email: customerEmail });
+              } else {
+                await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan, email: customerEmail });
+              }
+            } else {
+              await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan, email: customerEmail });
+            }
           }
           // Seed included credits on first-time plan purchase
           if (customerEmail && plan) {

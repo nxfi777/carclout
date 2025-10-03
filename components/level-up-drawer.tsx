@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Trophy, Sparkles } from "lucide-react";
+import { useDrawerQueue, DRAWER_PRIORITY } from "@/lib/drawer-queue";
 
 export default function LevelUpDrawer() {
   const [open, setOpen] = useState(false);
@@ -19,6 +20,7 @@ export default function LevelUpDrawer() {
   const [availableCredits, setAvailableCredits] = useState<number>(0);
   const pathname = usePathname();
   const isDashboard = pathname?.startsWith("/dashboard");
+  const { requestShow, notifyDismissed } = useDrawerQueue();
 
   useEffect(() => {
     if (!isDashboard) return;
@@ -40,7 +42,13 @@ export default function LevelUpDrawer() {
         setAvailableCredits(0);
       }
 
-      setOpen(true);
+      // Request to show via queue system with high priority
+      requestShow(
+        "level-up",
+        DRAWER_PRIORITY.HIGH,
+        () => setOpen(true),
+        () => setOpen(false)
+      );
     }
 
     window.addEventListener("level-up", handleLevelUp as EventListener);
@@ -48,15 +56,22 @@ export default function LevelUpDrawer() {
     return () => {
       window.removeEventListener("level-up", handleLevelUp as EventListener);
     };
-  }, [isDashboard]);
+  }, [isDashboard, requestShow]);
 
   if (!isDashboard) return null;
 
   const freeImages = Math.floor(availableCredits / 100);
   const freeVideos = Math.floor(availableCredits / 1350);
 
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) {
+      notifyDismissed("level-up");
+    }
+  }
+
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="bottom"
         className="border-t border-[color:var(--border)] bg-[color:var(--popover)]/95 backdrop-blur-sm sm:mx-auto sm:max-w-xl sm:rounded-t-3xl sm:border sm:border-[color:var(--border)] max-h-[calc(100dvh-6rem)] overflow-y-auto"

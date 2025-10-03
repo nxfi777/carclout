@@ -9,10 +9,12 @@ import { Toaster } from "@/components/ui/sonner";
 import SessionProviderWrapper from "@/components/session-provider";
 import DailyBonusDrawer from "@/components/daily-bonus-drawer";
 import LevelUpDrawer from "@/components/level-up-drawer";
+import WelcomeToProDrawer from "@/components/welcome-to-pro-drawer";
 import UmamiTracker from "@/components/umami-tracker";
 import { WebVitals } from "@/app/web-vitals";
 import { auth } from "@/lib/auth";
 import { createMetadata } from "@/lib/seo";
+import { DrawerQueueProvider } from "@/lib/drawer-queue";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -73,22 +75,25 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="en">
       <body className={`${poppins.className} ${poppins.variable} ${roboto.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh min-h-[100svh] bg-background text-foreground overflow-x-hidden`}>
         <SessionProviderWrapper session={session}>
-          <WebVitals />
-          <UmamiTracker session={session} />
-          <HeaderGate>
-            <SiteHeader />
-          </HeaderGate>
-          <main className="flex-1 min-h-0 flex flex-col">
-            <div className="flex-1 min-h-0 w-full px-2 md:px-3 flex flex-col">
-              {children}
-            </div>
-          </main>
-          <FooterGate>
-            <SiteFooter />
-          </FooterGate>
-          <DailyBonusDrawer />
-          <LevelUpDrawer />
-          <Toaster />
+          <DrawerQueueProvider>
+            <WebVitals />
+            <UmamiTracker session={session} />
+            <HeaderGate>
+              <SiteHeader />
+            </HeaderGate>
+            <main className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 w-full px-2 md:px-3 flex flex-col">
+                {children}
+              </div>
+            </main>
+            <FooterGate>
+              <SiteFooter />
+            </FooterGate>
+            <DailyBonusDrawer />
+            <LevelUpDrawer />
+            <WelcomeToProDrawer />
+            <Toaster />
+          </DrawerQueueProvider>
         </SessionProviderWrapper>
       </body>
     </html>
