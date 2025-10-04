@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 // import { DropZone } from "@/components/ui/drop-zone";
 import { Switch } from "@/components/ui/switch";
@@ -680,6 +681,8 @@ function NewTemplateButton(){
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>('');
   const [busy, setBusy] = useState(false);
   const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>({ enabled: false, prompt: '', duration: '5', resolution: '1080p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, previewKey: null });
+  const [showWarningDialog, setShowWarningDialog] = useState(false);
+  const [missingItems, setMissingItems] = useState<string[]>([]);
   async function uploadAdmin(file: File, subfolder: string): Promise<string | null> {
     const form = new FormData();
     form.append('file', file);
@@ -757,6 +760,29 @@ function NewTemplateButton(){
     })();
     return ()=>{ cancelled=true };
   }, [adminImageFiles, imageSizeEdited]);
+  
+  function validateAndSave() {
+    // Check for basic required fields first
+    if (!name || !prompt) { toast.error('Name and prompt are required'); return; }
+    
+    // Check for missing thumbnail or admin images
+    const missing: string[] = [];
+    const hasThumbnail = !!(thumbnailFile || selectedThumbAdminIndex !== null);
+    const hasAdminImages = adminImageFiles.length > 0;
+    
+    if (!hasThumbnail) missing.push('Thumbnail');
+    if (!hasAdminImages) missing.push('Admin Images');
+    
+    if (missing.length > 0) {
+      setMissingItems(missing);
+      setShowWarningDialog(true);
+      return;
+    }
+    
+    // If everything is present, proceed with save
+    save();
+  }
+  
   async function save() {
     if (!name || !prompt) { toast.error('Name and prompt are required'); return; }
     if (!allowVehicle && !allowUser) { toast.error('Enable at least one image source (car or user).'); return; }
@@ -992,10 +1018,37 @@ function NewTemplateButton(){
           <AdminTemplateVideo value={videoCfg as AdminVideoConfig} onChange={(next)=> setVideoCfg(next as AdminVideoConfig)} />
           
           <DialogFooter>
-            <Button size="sm" onClick={save} disabled={busy}>{busy? 'Saving…' : 'Save'}</Button>
+            <Button size="sm" onClick={validateAndSave} disabled={busy}>{busy? 'Saving…' : 'Save'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      <AlertDialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Missing Template Assets</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <div className="mb-2">The following items are missing from this template:</div>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  {missingItems.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+                <div className="mt-3">
+                  Templates without these assets may not display properly. Do you want to continue anyway?
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setShowWarningDialog(false); save(); }}>
+              Continue Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
@@ -1056,6 +1109,7 @@ function TemplatesTab() {
           favoriteCount: Number((t as { favoriteCount?: number })?.favoriteCount || 0),
           adminImageKeys: Array.isArray((t as unknown as { adminImageKeys?: string[] })?.adminImageKeys) ? ((t as unknown as { adminImageKeys?: string[] }).adminImageKeys as string[]) : [],
           video: (t as unknown as { video?: unknown })?.video as unknown,
+          created_at: (t as unknown as { created_at?: string })?.created_at,
         })));
         if (!cancelled) setTemplates(out);
       } finally { if (!cancelled) setLoading(false); }
@@ -1135,7 +1189,7 @@ function TemplatesTab() {
               <ContextMenuTrigger asChild>
                 <div>
                   <TemplateCard
-                    data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, blurhash: t.blurhash, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount, proOnly: !!t.proOnly }}
+                    data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, blurhash: t.blurhash, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount, proOnly: !!t.proOnly, isVideoTemplate: Boolean(t.video?.enabled) }}
                     showNewBadge={true}
                     showLike={false}
                     showFavoriteCount={true}
@@ -1622,6 +1676,8 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>(()=>{ try { const n = Number(template?.maxUploadImages || 0); return Number.isFinite(n) && n>0 ? n : ''; } catch { return ''; } });
   
   const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>(template?.video as unknown as AdminVideoConfig || null);
+  const [showWarningDialog, setShowWarningDialog] = useState(false);
+  const [missingItems, setMissingItems] = useState<string[]>([]);
   // Images editing state
   const [thumbFile, setThumbFile] = useState<File | null>(null);
   const [thumbPreview, setThumbPreview] = useState<string | null>(null);
@@ -1793,6 +1849,38 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       return next;
     });
   }, [prompt, template, builtIn]);
+
+  function validateAndSave() {
+    const id = String(template?.id || '');
+    if (!id) { toast.error('Missing template id'); return; }
+    if (!name.trim() || !prompt.trim()) { toast.error('Name and prompt are required'); return; }
+    
+    // Check for missing thumbnail or admin images
+    const missing: string[] = [];
+    
+    // Check if there's any thumbnail (existing, new file, or selected from admin images)
+    const hasThumbnail = !!(
+      (!clearThumb && template?.thumbnailKey) || // existing thumbnail not cleared
+      thumbFile || // new thumbnail file
+      selectedThumbExistingKey || // selected from existing admin images
+      selectedThumbAdminIndex !== null // selected from new admin images
+    );
+    
+    // Check if there are any admin images (existing or new)
+    const hasAdminImages = (adminExistingKeys.length > 0) || (adminNewFiles.length > 0);
+    
+    if (!hasThumbnail) missing.push('Thumbnail');
+    if (!hasAdminImages) missing.push('Admin Images');
+    
+    if (missing.length > 0) {
+      setMissingItems(missing);
+      setShowWarningDialog(true);
+      return;
+    }
+    
+    // If everything is present, proceed with save
+    save();
+  }
 
   async function save(){
     const id = String(template?.id || '');
@@ -2049,7 +2137,34 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
           </ul>
         </div>
       ) : null}
-      <div className="flex justify-end"><Button size="sm" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</Button></div>
+      <div className="flex justify-end"><Button size="sm" onClick={validateAndSave} disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</Button></div>
+      
+      <AlertDialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Missing Template Assets</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <div className="mb-2">The following items are missing from this template:</div>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  {missingItems.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+                <div className="mt-3">
+                  Templates without these assets may not display properly. Do you want to continue anyway?
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setShowWarningDialog(false); save(); }}>
+              Continue Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

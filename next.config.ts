@@ -66,7 +66,8 @@ const nextConfig: NextConfig = {
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    minimumCacheTTL: 60,
+    // Reduce cache TTL to 5 minutes for signed URLs (they expire after 10 min)
+    minimumCacheTTL: 300,
     // Configure allowed quality values (required in Next.js 16+)
     qualities: [75, 85, 90, 100],
   },
