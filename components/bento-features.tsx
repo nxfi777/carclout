@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { getClientBlurDataURL } from "@/lib/blur-placeholder";
+import { getClientBlurDataURL, blurHashToDataURLCached } from "@/lib/blur-placeholder";
 
 export interface TemplateItem {
   id?: string;
@@ -36,6 +36,13 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set([0, 1, 2, 3])); // Start with first 4 visible
   const containerRef = useRef<HTMLDivElement>(null);
   const [supportsGrid, setSupportsGrid] = useState(true);
+
+  // Debug: log templates on mount
+  useEffect(() => {
+    console.log('[BentoFeatures] Received templates:', templates.length);
+    console.log('[BentoFeatures] Templates with blurhash:', templates.filter(t => t?.blurhash).length);
+    console.log('[BentoFeatures] Sample template:', templates[0]);
+  }, [templates]);
 
   // Check for CSS Grid support
   useEffect(() => {
@@ -268,14 +275,14 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
                             playsInline
                             preload={videoPreload}
                             className="w-full h-full object-cover"
-                            poster={item.videoBlurhash ? getClientBlurDataURL(item.videoBlurhash) : undefined}
+                            poster={item.videoBlurhash ? blurHashToDataURLCached(item.videoBlurhash) : undefined}
                           />
                         ) : (
                           <div 
                             className="w-full h-full animate-pulse"
                             style={{
                               backgroundColor: item.videoBlurhash ? undefined : 'var(--card)',
-                              backgroundImage: item.videoBlurhash ? `url(${getClientBlurDataURL(item.videoBlurhash)})` : undefined,
+                              backgroundImage: item.videoBlurhash ? `url(${blurHashToDataURLCached(item.videoBlurhash)})` : undefined,
                               backgroundSize: 'cover',
                               backgroundPosition: 'center',
                             }}
@@ -309,7 +316,7 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
                             height={300}
                             className="w-full h-full object-cover"
                             placeholder={template.blurhash ? "blur" : "empty"}
-                            blurDataURL={template.blurhash ? getClientBlurDataURL(template.blurhash) : undefined}
+                            blurDataURL={template.blurhash ? blurHashToDataURLCached(template.blurhash) : undefined}
                             loading={loadingPriority}
                             priority={loadingPriority === "eager"}
                           />
@@ -317,7 +324,7 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
                           <div 
                             className="w-full h-full flex items-center justify-center"
                             style={{
-                              backgroundImage: template.blurhash ? `url(${getClientBlurDataURL(template.blurhash)})` : undefined,
+                              backgroundImage: template.blurhash ? `url(${blurHashToDataURLCached(template.blurhash)})` : undefined,
                               backgroundSize: 'cover',
                               backgroundPosition: 'center',
                               backgroundColor: template.blurhash ? undefined : 'var(--card)',
@@ -336,7 +343,7 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
                         <div 
                           className="w-full h-full animate-pulse"
                           style={{
-                            backgroundImage: template.blurhash ? `url(${getClientBlurDataURL(template.blurhash)})` : undefined,
+                            backgroundImage: template.blurhash ? `url(${blurHashToDataURLCached(template.blurhash)})` : undefined,
                             backgroundSize: 'cover',
                             backgroundPosition: 'center',
                             backgroundColor: 'var(--card)',

@@ -25,9 +25,14 @@ export async function getBentoTemplates(): Promise<TemplateItem[]> {
   try {
     const db = await getSurreal();
     
-    // Fetch 50 templates server-side
-    const res = await db.query("SELECT * FROM template ORDER BY created_at DESC LIMIT 50;");
+    // Fetch 50 templates server-side with explicit blurhash field
+    const res = await db.query("SELECT id, name, thumbnailKey, blurhash, created_at FROM template ORDER BY created_at DESC LIMIT 50;");
     const all = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as TemplateItem[]) : [];
+    
+    // Log for debugging
+    console.log('[getBentoTemplates] Sample template:', all[0]);
+    console.log('[getBentoTemplates] Total templates:', all.length);
+    console.log('[getBentoTemplates] Templates with blurhash:', all.filter(t => t?.blurhash).length);
     
     // Shuffle and pick templates
     const pool = [...all];
@@ -65,6 +70,10 @@ export async function getBentoTemplates(): Promise<TemplateItem[]> {
         };
       })
     );
+    
+    // Log resolved data
+    console.log('[getBentoTemplates] Resolved templates with blurhash:', resolved.filter(t => t?.blurhash).length);
+    console.log('[getBentoTemplates] Sample resolved:', resolved[0]);
     
     return resolved;
   } catch (error) {

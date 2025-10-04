@@ -40,11 +40,38 @@ function VideoCard({
 }) {
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
 
   // Avoid hydration mismatch by only showing blurhash after mount
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // iOS Safari fix: check readyState directly after mount
+  // iOS Safari sometimes doesn't fire onLoadedData reliably
+  useEffect(() => {
+    if (!isMounted || isVideoLoaded) return;
+
+    const checkVideo = () => {
+      const video = videoElementRef.current;
+      if (video && video.readyState >= 2) {
+        console.log('[HowItWorks] iOS fix: Video ready via readyState check', index);
+        setIsVideoLoaded(true);
+      }
+    };
+
+    // Check immediately
+    checkVideo();
+
+    // Check again after short delays (iOS can be slow)
+    const timer1 = setTimeout(checkVideo, 300);
+    const timer2 = setTimeout(checkVideo, 1000);
+    
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [isMounted, isVideoLoaded, index]);
   
   // Calculate preload strategy based on proximity to current slide
   // Current video: "auto" (full preload)
@@ -89,7 +116,10 @@ function VideoCard({
         )}
         
         <video
-          ref={videoRef}
+          ref={(el) => {
+            videoElementRef.current = el;
+            videoRef(el);
+          }}
           className="w-full h-full object-cover transition-opacity duration-500 opacity-0"
           style={{ opacity: isVideoLoaded ? 1 : 0 }}
           loop
@@ -97,7 +127,10 @@ function VideoCard({
           playsInline
           autoPlay
           preload={getPreloadStrategy()}
-          onLoadedData={() => setIsVideoLoaded(true)}
+          onLoadedData={() => {
+            console.log('[HowItWorks] onLoadedData fired:', index);
+            setIsVideoLoaded(true);
+          }}
           suppressHydrationWarning
         >
           <source src={video.mp4} type="video/mp4" />

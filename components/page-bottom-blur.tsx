@@ -20,15 +20,23 @@ export default function PageBottomBlur() {
 
       const observer = new IntersectionObserver(
         ([entry]) => {
-          // Only fade out, never fade back in
-          // When intersection ratio is 0, opacity stays at current value
-          // When intersection ratio reaches 0.3+, opacity becomes 0 and stays there
+          // Fade out as marquee enters viewport
+          // Also handle case where user starts below marquee
           if (entry.intersectionRatio > 0) {
+            // Marquee is visible - fade based on how much is visible
             const newOpacity = Math.max(0, 1 - (entry.intersectionRatio / 0.3));
             setOpacity(newOpacity);
             
             // Once fully faded out, mark as dismissed
             if (newOpacity === 0) {
+              setDismissed(true);
+            }
+          } else {
+            // Check if marquee is above viewport (user scrolled past it)
+            const rect = marquee.getBoundingClientRect();
+            if (rect.bottom < 0) {
+              // Marquee is above viewport - user is below it, dismiss blur
+              setOpacity(0);
               setDismissed(true);
             }
           }
@@ -38,6 +46,14 @@ export default function PageBottomBlur() {
           threshold: Array.from({ length: 31 }, (_, i) => i * 0.01) // 0, 0.01, 0.02, ..., 0.3
         }
       );
+
+      // Check initial position (in case page loads with marquee already passed)
+      const initialRect = marquee.getBoundingClientRect();
+      if (initialRect.bottom < 0) {
+        // Already below marquee on load
+        setOpacity(0);
+        setDismissed(true);
+      }
 
       observer.observe(marquee);
       return () => observer.disconnect();
