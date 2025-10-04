@@ -7,6 +7,7 @@
  */
 
 import { decode, isBlurhashValid } from 'blurhash';
+import { useState, useEffect } from 'react';
 
 /**
  * Pre-generated blur data URLs
@@ -98,7 +99,8 @@ export function blurHashToDataURL(
 }
 
 /**
- * Decode BlurHash with caching
+ * Decode BlurHash with caching (SSR-safe)
+ * Returns a consistent SVG-based blur on server, then upgrades to full blurhash on client
  * Caches decoded blurhash in sessionStorage for performance
  */
 export function blurHashToDataURLCached(
@@ -108,20 +110,23 @@ export function blurHashToDataURLCached(
 ): string {
   if (!blurHash) return BLUR_DATA_URLS.cardGradient;
   
+  // On server, return a static fallback to prevent hydration mismatches
+  if (typeof window === 'undefined') {
+    return BLUR_DATA_URLS.cardGradient;
+  }
+  
   const cacheKey = `blurhash:${blurHash}:${width}x${height}`;
   
   // Check cache
-  if (typeof window !== 'undefined') {
-    try {
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) return cached;
-    } catch {}
-  }
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) return cached;
+  } catch {}
   
   // Generate and cache
   const dataURL = blurHashToDataURL(blurHash, width, height);
   
-  if (typeof window !== 'undefined' && dataURL !== BLUR_DATA_URLS.cardGradient) {
+  if (dataURL !== BLUR_DATA_URLS.cardGradient) {
     try {
       sessionStorage.setItem(cacheKey, dataURL);
     } catch {}
@@ -141,5 +146,30 @@ export function isValidBlurHash(hash: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Hook to get blurhash data URL in an SSR-safe way
+ * Returns fallback during SSR/hydration, then upgrades to full blurhash on client
+ * This prevents hydration mismatches
+ */
+export function useBlurHashDataURL(
+  blurHash: string | undefined,
+  width = 32,
+  height = 32
+): string {
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
+  // Always use fallback during SSR and initial render
+  if (!mounted || !blurHash) {
+    return BLUR_DATA_URLS.cardGradient;
+  }
+  
+  // After mount, use cached blurhash
+  return blurHashToDataURLCached(blurHash, width, height);
 }
 

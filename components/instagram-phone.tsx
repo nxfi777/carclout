@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { BadgeCheck, Bookmark, Heart, MessageCircle, Send } from "lucide-react";
 import KCountUp from "@/components/ui/k-count-up";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { getClientBlurDataURL, blurHashToDataURLCached } from "@/lib/blur-placeholder";
+import { useBlurHashDataURL, BLUR_DATA_URLS } from "@/lib/blur-placeholder";
 
 interface InstagramPhoneProps {
   likes?: number;
@@ -16,7 +16,13 @@ interface InstagramPhoneProps {
   shares?: number;
 }
 
+const carouselImages = [
+  { src: "/car_post_before.webp", label: "BEFORE", blurHash: "LcEfi|WUadt7.AoLRkof.7kCj]a|" },
+  { src: "/car_post_after.webp", label: "AFTER", blurHash: "LVDS?pt8odt6~pofWBoexvj=Rkay" }
+];
+
 export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 }: InstagramPhoneProps) {
+  const [currentSlide, setCurrentSlide] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -25,6 +31,92 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [lastInteraction, setLastInteraction] = useState<number>(Date.now());
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const isTouchDevice = useRef<boolean>(false);
+  const lastTouchTime = useRef<number>(0);
+  
+  // Use SSR-safe blur data URLs to prevent hydration mismatch
+  const blurDataURL0 = useBlurHashDataURL(carouselImages[0].blurHash);
+  const blurDataURL1 = useBlurHashDataURL(carouselImages[1].blurHash);
+
+  // Minimum swipe distance (in px) to trigger a slide change
+  const minSwipeDistance = 50;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    isTouchDevice.current = true;
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    lastTouchTime.current = Date.now();
+    
+    if (!touchStart || touchEnd === null) return;
+    
+    const distance = touchStart - touchEnd;
+    const absoluteDistance = Math.abs(distance);
+    
+    // Only register as a swipe if the distance is significant
+    // This prevents taps from being interpreted as swipes
+    if (absoluteDistance < minSwipeDistance) return;
+    
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe) {
+      e.preventDefault();
+      setCurrentSlide(prev => prev >= carouselImages.length - 1 ? 0 : prev + 1);
+      setLastInteraction(Date.now());
+    } else if (isRightSwipe) {
+      e.preventDefault();
+      setCurrentSlide(prev => prev <= 0 ? carouselImages.length - 1 : prev - 1);
+      setLastInteraction(Date.now());
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Don't handle clicks on touch devices or shortly after touch events
+    const timeSinceTouch = Date.now() - lastTouchTime.current;
+    if (isTouchDevice.current || timeSinceTouch < 500 || !carouselRef.current) return;
+    
+    const rect = carouselRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+    
+    // Click on left half = previous, right half = next
+    if (clickX < width / 2) {
+      setCurrentSlide(prev => prev <= 0 ? carouselImages.length - 1 : prev - 1);
+    } else {
+      setCurrentSlide(prev => prev >= carouselImages.length - 1 ? 0 : prev + 1);
+    }
+    setLastInteraction(Date.now());
+  };
+
+  // Autoplay carousel with loop
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const timeSinceInteraction = Date.now() - lastInteraction;
+      // Only auto-advance if it's been at least 3 seconds since last manual interaction
+      if (timeSinceInteraction >= 3000) {
+        setCurrentSlide((prev) => {
+          // Loop back to first slide when reaching the end
+          if (prev >= carouselImages.length - 1) {
+            return 0;
+          }
+          return prev + 1;
+        });
+      }
+    }, 3000); // Check every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [lastInteraction]);
 
   async function submitContact(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -90,7 +182,7 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
             gridTemplateColumns: "1fr 8rem 1fr",
           }}
         >
-          <div className="font-semibold text-[0.9rem] justify-self-start pl-[0.5rem]">16:03</div>
+          <div className="font-semibold text-[0.9rem] justify-self-start pl-[0.5rem]">17:38</div>
           <div />
           <div className="justify-self-end flex items-center gap-[0.5rem] pr-[0.5rem]">
             {/* Signal bars */}
@@ -134,7 +226,7 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
                     sizes="2rem"
                     className="object-cover pt-[0.1rem]"
                     placeholder="blur"
-                    blurDataURL={getClientBlurDataURL('#2d2d2d')}
+                    blurDataURL={BLUR_DATA_URLS.black}
                   />
                 </div>
                 <div className="leading-tight min-w-0">
@@ -149,32 +241,74 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
             </div>
           </div>
 
-          {/* Media placeholder */}
+          {/* Media carousel */}
           <div className="relative px-0">
-            <div className="relative w-full overflow-hidden aspect-square bg-black/60 ring-1 ring-white/10">
-              {/* Pulsing overlay on top of blurhash */}
-              {!imageLoaded && (
-                <div className="absolute inset-0 z-10 bg-white/5 animate-pulse rounded-none" />
-              )}
-              <Image
-                src="/car_post.webp"
-                alt="car post"
-                fill
-                sizes="(max-width: 768px) 100vw, 19rem"
-                className="object-cover transition-opacity duration-[900ms] ease-out"
-                onLoad={() => setImageLoaded(true)}
-                priority
-                fetchPriority="high"
-                quality={85}
-                placeholder="blur"
-                blurDataURL={blurHashToDataURLCached('L26[5U.S009Z00Di?v-;00xbtlVs')}
-              />
-            </div>
+            <div 
+              ref={carouselRef}
+              className="relative w-full overflow-hidden bg-black/60 ring-1 ring-white/10 select-none cursor-pointer"
+              style={{ aspectRatio: '4/5', touchAction: 'pan-y' }}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              onClick={handleClick}
+              onDragStart={(e) => e.preventDefault()}
+            >
+              {/* Carousel wrapper */}
+              <div 
+                className="flex h-full transition-transform duration-300 ease-out"
+                style={{ 
+                  transform: `translateX(-${currentSlide * 100}%)`,
+                  userSelect: 'none',
+                  WebkitUserDrag: 'none'
+                } as React.CSSProperties}
+              >
+                {carouselImages.map((image, idx) => {
+                  const blurDataURL = idx === 0 ? blurDataURL0 : blurDataURL1;
+                  return (
+                    <div key={idx} className="relative w-full h-full flex-shrink-0" suppressHydrationWarning>
+                      {/* Pulsing overlay on top of blurhash */}
+                      {!imageLoaded && idx === currentSlide && (
+                        <div className="absolute inset-0 z-10 bg-white/5 animate-pulse rounded-none" />
+                      )}
+                      <Image
+                        src={image.src}
+                        alt={`car post ${image.label.toLowerCase()}`}
+                        fill
+                        sizes="(max-width: 768px) 100vw, 19rem"
+                        className="object-cover transition-opacity duration-[900ms] ease-out pointer-events-none"
+                        onLoad={() => idx === currentSlide && setImageLoaded(true)}
+                        priority={idx === 0}
+                        fetchPriority={idx === 0 ? "high" : "auto"}
+                        quality={85}
+                        placeholder="blur"
+                        blurDataURL={blurDataURL}
+                        draggable={false}
+                      />
+                      {/* Before/After badge */}
+                      <div className="absolute left-[0.75rem] top-[0.75rem] z-20 pointer-events-none">
+                        <div className="rounded-md bg-black/80 backdrop-blur-sm text-white text-[0.8rem] font-bold px-[0.7rem] py-[0.35rem] shadow-lg">
+                          {image.label}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-            {/* Page indicator 
-            <div className="absolute right-[0.9rem] top-[0.4rem]">
-              <div className="rounded-full bg-black/60 text-white text-[0.75rem] px-[0.5rem] py-[0.2rem]">1/6</div>
-            </div>*/}
+              {/* Carousel indicator dots */}
+              <div className="absolute bottom-[0.75rem] left-1/2 -translate-x-1/2 z-20 flex gap-[0.35rem] pointer-events-none">
+                {carouselImages.map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={`w-[0.4rem] h-[0.4rem] rounded-full transition-all duration-300 ${
+                      idx === currentSlide 
+                        ? 'bg-white w-[0.5rem] h-[0.5rem]' 
+                        : 'bg-white/50'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
             {/* Actions and caption */}
           <div className="px-[0.9rem] pb-[1.1rem] pt-[0.9rem] relative z-50 pointer-events-auto">
             <div className="flex items-center justify-between pb-[0.4rem]">

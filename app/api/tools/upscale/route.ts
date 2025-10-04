@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     if (typeof image_url === "string" && /^https?:\/\//i.test(image_url)) {
       sourceUrl = image_url;
     } else if (typeof r2_key === "string" && r2_key) {
-      const { url } = await createViewUrl(r2_key, 60 * 10);
+      const { url } = await createViewUrl(r2_key, 60 * 60 * 24);
       sourceUrl = url;
     }
     if (!sourceUrl) return NextResponse.json({ error: "Could not resolve image URL" }, { status: 400 });

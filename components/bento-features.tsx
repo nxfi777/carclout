@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { getClientBlurDataURL, blurHashToDataURLCached } from "@/lib/blur-placeholder";
+import { getClientBlurDataURL } from "@/lib/blur-placeholder";
 
 export interface TemplateItem {
   id?: string;
@@ -133,6 +133,13 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
       />
 
       <div className="max-w-7xl mx-auto relative z-[1] h-full">
+        {/* Title */}
+        <div className="text-center mb-[2rem] px-[1rem] sm:px-[1.75rem]">
+          <h2 className="text-[2.5rem] sm:text-[3.5rem] md:text-[4rem] font-bold tracking-tight text-white">
+            CREATE ANYTHING
+          </h2>
+        </div>
+
         {/* Horizontally scrolling masonry grid - 2 rows */}
         <div 
           ref={containerRef}
@@ -275,14 +282,16 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
                             playsInline
                             preload={videoPreload}
                             className="w-full h-full object-cover"
-                            poster={item.videoBlurhash ? blurHashToDataURLCached(item.videoBlurhash) : undefined}
+                            poster={item.videoBlurhash ? getClientBlurDataURL('#111a36') : undefined}
+                            suppressHydrationWarning
                           />
                         ) : (
                           <div 
                             className="w-full h-full animate-pulse"
+                            suppressHydrationWarning
                             style={{
                               backgroundColor: item.videoBlurhash ? undefined : 'var(--card)',
-                              backgroundImage: item.videoBlurhash ? `url(${blurHashToDataURLCached(item.videoBlurhash)})` : undefined,
+                              backgroundImage: item.videoBlurhash ? `url(${getClientBlurDataURL('#111a36')})` : undefined,
                               backgroundSize: 'cover',
                               backgroundPosition: 'center',
                             }}
@@ -309,22 +318,25 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
                     >
                       {isVisible ? (
                         template.thumbUrl ? (
-                          <Image
-                            src={template.thumbUrl}
-                            alt={template.name || 'Template'}
-                            width={400}
-                            height={300}
-                            className="w-full h-full object-cover"
-                            placeholder={template.blurhash ? "blur" : "empty"}
-                            blurDataURL={template.blurhash ? blurHashToDataURLCached(template.blurhash) : undefined}
-                            loading={loadingPriority}
-                            priority={loadingPriority === "eager"}
-                          />
+                          <div className="w-full h-full" suppressHydrationWarning>
+                            <Image
+                              src={template.thumbUrl}
+                              alt={template.name || 'Template'}
+                              width={400}
+                              height={300}
+                              className="w-full h-full object-cover"
+                              placeholder={template.blurhash ? "blur" : "empty"}
+                              blurDataURL={template.blurhash ? getClientBlurDataURL('#111a36') : undefined}
+                              loading={loadingPriority}
+                              priority={loadingPriority === "eager"}
+                            />
+                          </div>
                         ) : (
                           <div 
                             className="w-full h-full flex items-center justify-center"
+                            suppressHydrationWarning
                             style={{
-                              backgroundImage: template.blurhash ? `url(${blurHashToDataURLCached(template.blurhash)})` : undefined,
+                              backgroundImage: template.blurhash ? `url(${getClientBlurDataURL('#111a36')})` : undefined,
                               backgroundSize: 'cover',
                               backgroundPosition: 'center',
                               backgroundColor: template.blurhash ? undefined : 'var(--card)',
@@ -342,8 +354,9 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
                       ) : (
                         <div 
                           className="w-full h-full animate-pulse"
+                          suppressHydrationWarning
                           style={{
-                            backgroundImage: template.blurhash ? `url(${blurHashToDataURLCached(template.blurhash)})` : undefined,
+                            backgroundImage: template.blurhash ? `url(${getClientBlurDataURL('#111a36')})` : undefined,
                             backgroundSize: 'cover',
                             backgroundPosition: 'center',
                             backgroundColor: 'var(--card)',

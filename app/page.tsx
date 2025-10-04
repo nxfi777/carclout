@@ -55,8 +55,16 @@ export default async function Home() {
   
   // Determine CTA text and href based on user state
   let ctaHref = "/auth/signup";
-  let ctaText = "Try Your First Edit for $1";
-  let ctaTextFinal = "👉 Start For $1 Today";
+  let ctaText = (
+    <>
+      <span className="inline-block animate-[wiggle_1s_ease-in-out_infinite]">👉</span> Try Your First Edit for $1
+    </>
+  );
+  let ctaTextFinal = (
+    <>
+      <span className="inline-block animate-[wiggle_1s_ease-in-out_infinite]">👉</span> Start For $1 Today
+    </>
+  );
   
   if (user?.email && userState) {
     const { onboardingCompleted, plan: userPlan } = userState;
@@ -67,8 +75,16 @@ export default async function Home() {
     if (onboardingCompleted && isSubscribed) {
       // User is fully set up - show dashboard CTA
       ctaHref = "/dashboard";
-      ctaText = "Go to Dashboard";
-      ctaTextFinal = "👉 Go to Dashboard";
+      ctaText = (
+        <>
+          <span className="inline-block animate-[wiggle_1s_ease-in-out_infinite]">👉</span> Go to Dashboard
+        </>
+      );
+      ctaTextFinal = (
+        <>
+          <span className="inline-block animate-[wiggle_1s_ease-in-out_infinite]">👉</span> Go to Dashboard
+        </>
+      );
     } else if (!onboardingCompleted) {
       // User hasn't completed onboarding
       ctaHref = "/onboarding";
@@ -84,7 +100,7 @@ export default async function Home() {
         <div className="ml-0 sm:ml-[1.25rem] lg:ml-[3rem] space-y-[1.2rem] text-center lg:text-left mt-[1rem] md:mt-[2rem] lg:mt-[4.5rem]">
           {/* badge removed per request */}
           <h1 className="leading-tight font-semibold text-[clamp(2.4rem,6vw,4rem)]">
-            Turn Your Car Pics Into Viral Posts<br />in <span className="text-[color:var(--primary)] font-bold">2 Clicks<span className="text-[color:var(--primary)]">.</span></span>
+            Make your car go viral in <span className="text-[color:var(--primary)] font-bold">2 clicks<span className="text-[color:var(--primary)]">.</span></span>
           </h1>
           <p className="text-[color:var(--foreground)]/85 max-w-[42rem] text-[1.05rem] leading-relaxed mx-auto lg:mx-0">
           No editing. No skills. Just upload <span className="text-[color:var(--border)]">•</span> Generate <span className="text-[color:var(--border)]">•</span> Post

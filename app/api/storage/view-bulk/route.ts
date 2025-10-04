@@ -103,7 +103,7 @@ export async function POST(req: Request) {
         tasks.push(
           (async () => {
             try {
-              const { url } = await createViewUrl(fullKey!, 60 * 10);
+              const { url } = await createViewUrl(fullKey!, 60 * 60 * 24);
               // Use the original key string as the map key so the client can match it
               results[k] = url;
             } catch {

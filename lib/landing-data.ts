@@ -53,7 +53,7 @@ export async function getBentoTemplates(): Promise<TemplateItem[]> {
         let thumbUrl: string | undefined;
         if (key) {
           try {
-            const result = await createViewUrl(key, 60 * 60); // 1 hour expiry
+            const result = await createViewUrl(key, 60 * 60 * 24); // 24 hour expiry
             thumbUrl = result.url;
           } catch (error) {
             console.error('[getBentoTemplates] Failed to create URL for key:', key, error);

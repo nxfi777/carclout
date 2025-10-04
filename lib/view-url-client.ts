@@ -12,7 +12,7 @@ Usage:
 type Scope = 'user' | 'admin' | undefined;
 
 const SESSION_PREFIX = 'carclout:viewurl:'; // per-key cache: SESSION_PREFIX + scope + ':' + key
-const DEFAULT_TTL_MS = 9 * 60 * 1000; // 9 minutes to stay below 10m presign expiry
+const DEFAULT_TTL_MS = 23 * 60 * 60 * 1000; // 23 hours to stay below 24h presign expiry
 const BATCH_WINDOW_MS = 20; // coalesce calls arriving within this window
 const MAX_CHUNK = 100; // chunk size when sending to server
 

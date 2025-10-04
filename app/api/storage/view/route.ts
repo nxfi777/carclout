@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   }
   const root = isAdminScope ? `admin` : `users/${sanitizeUserId(user.email)}`;
   const fullKey = key.startsWith(root) ? key : `${root}/${key.replace(/^\/+/, "")}`;
-  const { url } = await createViewUrl(fullKey, 60 * 10);
+  const { url } = await createViewUrl(fullKey, 60 * 60 * 24);
   return NextResponse.json({ url });
 }
 

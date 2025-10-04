@@ -296,3 +296,10 @@ html, body { max-width: 100vw; overflow-x: hidden; }
 .animate-marquee-vertical {
   animation: marquee-vertical var(--duration) linear infinite;
 }
+
+/* Wiggle animation for pointing emoji */
+@keyframes wiggle {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-0.4rem); }
+  75% { transform: translateX(0.15rem); }
+}

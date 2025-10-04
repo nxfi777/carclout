@@ -76,7 +76,7 @@ export function BlurhashImage({
   };
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full" suppressHydrationWarning>
       {showSkeleton && !isLoaded && (
         fuseSkeleton ? (
           // Fusion mode: subtle pulsing overlay on top of blurhash

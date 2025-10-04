@@ -40,7 +40,7 @@ export async function createGetUrl(key: string) {
   return { url, key };
 }
 
-export async function createViewUrl(key: string, expiresIn: number = 60 * 10) {
+export async function createViewUrl(key: string, expiresIn: number = 60 * 60 * 24) {
   const command = new GetObjectCommand({ Bucket: bucket, Key: key });
   const url = await getSignedUrl(r2, command, { expiresIn });
   return { url, key };
