@@ -1,38 +1,27 @@
 /**
- * Generate BlurHash for How It Works Videos
+ * Generate BlurHash for Bento Box Videos
  * 
- * Run with: bun run scripts/generate-video-blurhash.ts
+ * Run with: bun run scripts/generate-bento-blurhash.ts
  * 
  * This script:
- * 1. Extracts first frame from each video using ffmpeg
+ * 1. Extracts first frame from each bento video using ffmpeg
  * 2. Generates blurhash for each frame
- * 3. Outputs JSON file with video metadata
+ * 3. Outputs the blurhashes to console for copy/paste
  */
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import sharp from 'sharp';
 import { encode } from 'blurhash';
 
 const execAsync = promisify(exec);
 
-const PUBLIC_DIR = join(process.cwd(), 'public', 'how-it-works');
+const PUBLIC_DIR = join(process.cwd(), 'public', 'bento-vids');
 const TEMP_DIR = join(PUBLIC_DIR, '.temp');
-const OUTPUT_FILE = join(PUBLIC_DIR, 'video-blurhash.json');
 
-const videos = [
-  { name: 'part1', title: 'Pick a Template' },
-  { name: 'part2', title: 'Upload Your Car' },
-  { name: 'part3', title: 'Post & Go Viral' },
-];
-
-interface VideoMetadata {
-  mp4: string;
-  title: string;
-  blurhash: string;
-}
+const videos = ['1.mp4', '2.mp4', '3.mp4', '4.mp4'];
 
 async function extractFirstFrame(videoPath: string, outputPath: string): Promise<void> {
   try {
@@ -44,10 +33,6 @@ async function extractFirstFrame(videoPath: string, outputPath: string): Promise
     }
 
     // Extract first frame at 0.1 seconds (to avoid black frames)
-    // -ss 0.1: seek to 0.1 seconds
-    // -i: input file
-    // -vframes 1: extract only 1 frame
-    // -q:v 2: high quality (2-5 is good, 2 is best)
     const command = `ffmpeg -ss 0.1 -i "${videoPath}" -vframes 1 -q:v 2 "${outputPath}" -y`;
     
     await execAsync(command);
@@ -60,27 +45,27 @@ async function extractFirstFrame(videoPath: string, outputPath: string): Promise
   }
 }
 
-async function generateVideoBlurHashes(): Promise<void> {
-  console.log('🎬 Generating BlurHash for How It Works videos...\n');
+async function generateBentoBlurHashes(): Promise<void> {
+  console.log('🎬 Generating BlurHash for Bento Box videos...\n');
 
   // Create temp directory for extracted frames
   if (!existsSync(TEMP_DIR)) {
     mkdirSync(TEMP_DIR, { recursive: true });
   }
 
-  const results: VideoMetadata[] = [];
+  const results: Array<{ src: string; blurhash: string }> = [];
   let success = 0;
   let failed = 0;
 
   for (let i = 0; i < videos.length; i++) {
-    const video = videos[i]!;
+    const videoName = videos[i]!;
     const progress = `[${i + 1}/${videos.length}]`;
     
     try {
-      console.log(`${progress} Processing: ${video.title}`);
+      console.log(`${progress} Processing: ${videoName}`);
       
-      const videoPath = join(PUBLIC_DIR, `${video.name}.mp4`);
-      const framePath = join(TEMP_DIR, `${video.name}-frame.jpg`);
+      const videoPath = join(PUBLIC_DIR, videoName);
+      const framePath = join(TEMP_DIR, `${videoName.replace('.mp4', '')}-frame.jpg`);
       
       // Check if video exists
       if (!existsSync(videoPath)) {
@@ -110,8 +95,7 @@ async function generateVideoBlurHashes(): Promise<void> {
       console.log(`${progress}   → BlurHash: ${blurhash}`);
       
       results.push({
-        mp4: `/how-it-works/${video.name}.mp4`,
-        title: video.title,
+        src: `/bento-vids/${videoName}`,
         blurhash,
       });
       
@@ -121,39 +105,33 @@ async function generateVideoBlurHashes(): Promise<void> {
       failed++;
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       console.error(`${progress}   ❌ Failed: ${errorMsg}\n`);
-      
-      // Add entry with empty blurhash so the array stays in order
-      results.push({
-        mp4: `/how-it-works/${video.name}.mp4`,
-        title: video.title,
-        blurhash: '',
-      });
     }
   }
 
-  // Write results to JSON file
-  writeFileSync(OUTPUT_FILE, JSON.stringify(results, null, 2), 'utf-8');
-  
+  // Output results for copy/paste
   console.log('\n' + '='.repeat(60));
   console.log('🎉 BlurHash Generation Complete!');
   console.log('='.repeat(60));
   console.log(`✅ Success: ${success}`);
   console.log(`❌ Failed: ${failed}`);
-  console.log(`\n📄 Output file: ${OUTPUT_FILE}`);
-  console.log(`\n🧹 To clean up temp frames: rm -rf ${TEMP_DIR}`);
   
-  // Show next steps
-  console.log('\n' + '='.repeat(60));
-  console.log('📝 Next Steps:');
-  console.log('='.repeat(60));
-  console.log('1. Update how-it-works-carousel.tsx to import this JSON');
-  console.log('2. Pass blurhash to VideoCard component');
-  console.log('3. Use <Blurhash> component instead of <Skeleton>');
-  console.log('\nSee the updated component for implementation details.');
+  if (results.length > 0) {
+    console.log('\n' + '='.repeat(60));
+    console.log('📋 Copy this to bento-features.tsx:');
+    console.log('='.repeat(60));
+    console.log('\nconst bentoVideos = [');
+    results.forEach((result, idx) => {
+      const comma = idx < results.length - 1 ? ',' : '';
+      console.log(`  { src: '${result.src}', blurhash: '${result.blurhash}' }${comma}`);
+    });
+    console.log('];');
+  }
+  
+  console.log(`\n🧹 To clean up temp frames: rm -rf ${TEMP_DIR}`);
 }
 
 // Run it
-generateVideoBlurHashes()
+generateBentoBlurHashes()
   .then(() => {
     console.log('\n✨ Done!');
     process.exit(0);
@@ -162,3 +140,4 @@ generateVideoBlurHashes()
     console.error('\n💥 Script failed:', error);
     process.exit(1);
   });
+

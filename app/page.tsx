@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/button";
 import { auth } from "@/lib/auth";
 import PageBottomBlur from "@/components/page-bottom-blur";
 import { getSurreal } from "@/lib/surrealdb";
+import { getBentoTemplates } from "@/lib/landing-data";
+import { cache } from "react";
 
-// Lazy load heavy components
+// Lazy load heavy components with automatic code splitting
 const PhoneWithCarParallax = dynamic(() => import("@/components/phone-with-car"), {
   ssr: true,
   loading: () => <div className="min-h-[22rem] sm:min-h-[26rem] md:min-h-[28rem]" />,
@@ -23,36 +25,41 @@ const FoundersGuarantee = dynamic(() => import("@/components/founders-guarantee"
 // ISR: Regenerate page every 10 minutes
 export const revalidate = 600;
 
+// Cache user state lookup to avoid repeated DB calls
+const getCachedUserState = cache(async (email: string) => {
+  try {
+    const db = await getSurreal();
+    const res = await db.query(
+      "SELECT onboardingCompleted, plan FROM user WHERE email = $email LIMIT 1;",
+      { email }
+    );
+    const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { onboardingCompleted?: boolean; plan?: string | null } | null) : null;
+    return {
+      onboardingCompleted: !!row?.onboardingCompleted,
+      plan: row?.plan || null,
+    };
+  } catch {
+    return { onboardingCompleted: false, plan: null };
+  }
+});
+
 export default async function Home() {
   const session = await auth();
   const user = session?.user;
+  
+  // Fetch bento templates server-side (parallel with user state)
+  const [bentoTemplates, userState] = await Promise.all([
+    getBentoTemplates(),
+    user?.email ? getCachedUserState(user.email) : Promise.resolve(null),
+  ]);
   
   // Determine CTA text and href based on user state
   let ctaHref = "/auth/signup";
   let ctaText = "Try Your First Edit for $1";
   let ctaTextFinal = "👉 Start For $1 Today";
   
-  if (user?.email) {
-    // User is signed in - check onboarding and subscription status
-    let onboardingCompleted = false;
-    let userPlan: string | null = null;
-    
-    try {
-      const db = await getSurreal();
-      const res = await db.query(
-        "SELECT onboardingCompleted, plan FROM user WHERE email = $email LIMIT 1;",
-        { email: user.email }
-      );
-      const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { onboardingCompleted?: boolean; plan?: string | null } | null) : null;
-      onboardingCompleted = !!row?.onboardingCompleted;
-      userPlan = row?.plan || null;
-    } catch {
-      // If query fails, fall back to session plan
-      const maybeUser = user as Record<string, unknown>;
-      if (typeof maybeUser.plan === 'string') {
-        userPlan = maybeUser.plan;
-      }
-    }
+  if (user?.email && userState) {
+    const { onboardingCompleted, plan: userPlan } = userState;
     
     // Check if user is subscribed
     const isSubscribed = userPlan === "minimum" || userPlan === "basic" || userPlan === "pro";
@@ -127,7 +134,7 @@ export default async function Home() {
       <PlatformsMarquee />
 
       {/* Bento Features */}
-      <BentoFeatures />
+      <BentoFeatures initialTemplates={bentoTemplates} />
 
       {/* Testimonials */}
       <TestimonialsSection />

@@ -1,7 +1,6 @@
 "use client";
 import Image from "next/image";
 import { useState } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { BadgeCheck, Bookmark, Heart, MessageCircle, Send } from "lucide-react";
 import KCountUp from "@/components/ui/k-count-up";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { getClientBlurDataURL } from "@/lib/blur-placeholder";
+import { getClientBlurDataURL, blurHashToDataURLCached } from "@/lib/blur-placeholder";
+
 interface InstagramPhoneProps {
   likes?: number;
   comments?: number;
@@ -152,21 +152,22 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
           {/* Media placeholder */}
           <div className="relative px-0">
             <div className="relative w-full overflow-hidden aspect-square bg-black/60 ring-1 ring-white/10">
+              {/* Pulsing overlay on top of blurhash */}
               {!imageLoaded && (
-                <Skeleton className="absolute inset-0 rounded-none bg-black/50" />
+                <div className="absolute inset-0 z-10 bg-white/5 animate-pulse rounded-none" />
               )}
               <Image
                 src="/car_post.webp"
                 alt="car post"
                 fill
                 sizes="(max-width: 768px) 100vw, 19rem"
-                className={`object-cover transition-opacity duration-[900ms] ease-out ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+                className="object-cover transition-opacity duration-[900ms] ease-out"
                 onLoad={() => setImageLoaded(true)}
                 priority
                 fetchPriority="high"
                 quality={85}
                 placeholder="blur"
-                blurDataURL={getClientBlurDataURL('#000000')}
+                blurDataURL={blurHashToDataURLCached('L26[5U.S009Z00Di?v-;00xbtlVs')}
               />
             </div>
 

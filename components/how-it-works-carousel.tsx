@@ -1,25 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious, type CarouselApi } from "@/components/ui/carousel";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { blurHashToDataURLCached } from "@/lib/blur-placeholder";
+import videoMetadata from "@/public/how-it-works/video-blurhash.json";
 
 const videos = [
   {
     title: "Pick a Template",
     description: "Choose from viral templates that actually work",
-    mp4: "/how-it-works/part1.mp4",
+    mp4: videoMetadata[0]!.mp4,
+    blurhash: videoMetadata[0]!.blurhash,
   },
   {
     title: "Upload Your Car",
     description: "Drop any photo of your car - no perfect shots needed",
-    mp4: "/how-it-works/part2.mp4",
+    mp4: videoMetadata[1]!.mp4,
+    blurhash: videoMetadata[1]!.blurhash,
   },
   {
     title: "Post & Go Viral",
     description: "Get your viral-ready edit in seconds - just post it",
-    mp4: "/how-it-works/part3.mp4",
+    mp4: videoMetadata[2]!.mp4,
+    blurhash: videoMetadata[2]!.blurhash,
   },
 ];
 
@@ -35,6 +39,12 @@ function VideoCard({
   currentIndex: number;
 }) {
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Avoid hydration mismatch by only showing blurhash after mount
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   
   // Calculate preload strategy based on proximity to current slide
   // Current video: "auto" (full preload)
@@ -54,18 +64,34 @@ function VideoCard({
     return "metadata"; // Far videos
   };
 
+  // Convert blurhash to data URL for background (memoized for performance)
+  const blurhashDataURL = useMemo(() => {
+    if (video.blurhash) {
+      return blurHashToDataURLCached(video.blurhash, 32, 24);
+    }
+    return undefined;
+  }, [video.blurhash]);
+
   return (
     <Card className="border-[color:var(--border)] bg-[var(--card)] overflow-hidden h-full">
       {/* Video Container */}
       <div className="relative aspect-[4/3] bg-black/20 overflow-hidden" suppressHydrationWarning>
-        {/* Skeleton placeholder (shown while video loads) */}
-        {!isVideoLoaded && (
-          <Skeleton className="absolute inset-0 w-full h-full" />
+        {/* BlurHash background (shown while video loads) - client-only to avoid hydration mismatch */}
+        {isMounted && !isVideoLoaded && blurhashDataURL && (
+          <div 
+            className="absolute inset-0 w-full h-full"
+            style={{
+              backgroundImage: `url(${blurhashDataURL})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }}
+          />
         )}
         
         <video
           ref={videoRef}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover transition-opacity duration-500 opacity-0"
+          style={{ opacity: isVideoLoaded ? 1 : 0 }}
           loop
           muted
           playsInline
@@ -78,12 +104,10 @@ function VideoCard({
           Your browser does not support the video tag.
         </video>
         
-        {/* Step indicator overlay */}
-        {isVideoLoaded && (
-          <div className="absolute top-[1rem] left-[1rem] bg-[color:var(--primary)] text-white text-[0.75rem] font-bold px-[0.75rem] py-[0.35rem] rounded-full z-10">
-            Step {index + 1}
-          </div>
-        )}
+        {/* Step indicator overlay - always visible */}
+        <div className="absolute top-[0.75rem] left-[0.75rem] md:top-[1rem] md:left-[1rem] bg-[color:var(--primary)] text-white text-[0.75rem] md:text-[0.8rem] font-bold px-[0.75rem] py-[0.35rem] rounded-full z-10 shadow-lg">
+          Step {index + 1}
+        </div>
       </div>
 
       {/* Content */}
@@ -165,48 +189,6 @@ export default function HowItWorksCarousel() {
     }, 100);
     return () => clearTimeout(timer);
   }, []);
-
-  // Dynamically add prefetch link tags to document head for adjacent videos
-  useEffect(() => {
-    const prefetchLinks: HTMLLinkElement[] = [];
-    
-    videos.forEach((video, index) => {
-      // Calculate if this video should be prefetched
-      const distance = Math.abs(index - current);
-      const loopDistance = Math.min(
-        distance,
-        Math.abs(index - current + videos.length),
-        Math.abs(index - current - videos.length)
-      );
-      
-      // Prefetch current and adjacent videos
-      if (loopDistance <= 1) {
-        // Check if link already exists
-        const existingLink = document.querySelector(
-          `link[rel="prefetch"][href="${video.mp4}"]`
-        );
-        
-        if (!existingLink) {
-          const link = document.createElement("link");
-          link.rel = "prefetch";
-          link.href = video.mp4;
-          link.as = "video";
-          link.type = "video/mp4";
-          document.head.appendChild(link);
-          prefetchLinks.push(link);
-        }
-      }
-    });
-
-    // Cleanup: remove prefetch links when component unmounts or current changes
-    return () => {
-      prefetchLinks.forEach((link) => {
-        if (link.parentNode) {
-          link.parentNode.removeChild(link);
-        }
-      });
-    };
-  }, [current]);
 
   return (
     <section className="w-full py-[3rem] md:py-[4rem] px-[1rem]">

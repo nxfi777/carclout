@@ -3042,9 +3042,11 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
           <ul className="grid grid-cols-3 gap-1">
             {profile!.photos!.slice(0,6).map((k: string) => (
               <li key={k} className="relative aspect-square rounded overflow-hidden bg-black/20">
-                <Skeleton className="absolute inset-0" />
+                {!previews[k] && (
+                  <Skeleton className="absolute inset-0" />
+                )}
                 {previews[k] ? (
-                  <Image src={previews[k]} alt="Car" fill className="object-cover relative z-10" sizes={PROFILE_PREVIEW_SIZES} />
+                  <Image src={previews[k]} alt="Car" fill className="object-cover" sizes={PROFILE_PREVIEW_SIZES} />
                 ) : null}
               </li>
             ))}

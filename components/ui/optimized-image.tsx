@@ -24,6 +24,12 @@ interface OptimizedImageProps extends Omit<ImageProps, 'placeholder' | 'blurData
    * Custom skeleton class
    */
   skeletonClassName?: string;
+  /**
+   * Fuse skeleton with blurhash - shows blurhash with subtle pulsing overlay (default: false)
+   * When true, blurhash is visible with pulse effect on top
+   * When false, uses solid skeleton background (legacy behavior)
+   */
+  fuseSkeleton?: boolean;
 }
 
 /**
@@ -49,6 +55,7 @@ export function OptimizedImage({
   blurColor = '#111a36',
   blurStyle,
   skeletonClassName,
+  fuseSkeleton = false,
   className,
   onLoad,
   priority,
@@ -68,14 +75,20 @@ export function OptimizedImage({
   return (
     <div className="relative w-full h-full">
       {showSkeleton && !isLoaded && (
-        <Skeleton className={cn('absolute inset-0', skeletonClassName)} />
+        fuseSkeleton ? (
+          // Fusion mode: subtle pulsing overlay on top of blurhash
+          <div className={cn('absolute inset-0 z-10 bg-white/5 animate-pulse', skeletonClassName)} />
+        ) : (
+          // Legacy mode: solid skeleton background
+          <Skeleton className={cn('absolute inset-0', skeletonClassName)} />
+        )
       )}
       <NextImage
         {...props}
         className={cn(
           className,
-          showSkeleton && 'transition-opacity duration-500',
-          showSkeleton && !isLoaded && 'opacity-0'
+          showSkeleton && !fuseSkeleton && 'transition-opacity duration-500',
+          showSkeleton && !fuseSkeleton && !isLoaded && 'opacity-0'
         )}
         placeholder="blur"
         blurDataURL={blurDataURL}
@@ -97,6 +110,7 @@ export function OptimizedBackgroundImage({
   blurColor = '#111a36',
   blurStyle,
   skeletonClassName,
+  fuseSkeleton = false,
   ...props
 }: OptimizedImageProps) {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -108,10 +122,21 @@ export function OptimizedBackgroundImage({
   return (
     <>
       {showSkeleton && !isLoaded && (
-        <Skeleton className={cn('absolute inset-0 rounded-none', skeletonClassName)} />
+        fuseSkeleton ? (
+          // Fusion mode: subtle pulsing overlay on top of blurhash
+          <div className={cn('absolute inset-0 z-10 bg-white/5 animate-pulse rounded-none', skeletonClassName)} />
+        ) : (
+          // Legacy mode: solid skeleton background
+          <Skeleton className={cn('absolute inset-0 rounded-none', skeletonClassName)} />
+        )
       )}
       <NextImage
         {...props}
+        className={cn(
+          props.className,
+          showSkeleton && !fuseSkeleton && 'transition-opacity duration-500',
+          showSkeleton && !fuseSkeleton && !isLoaded && 'opacity-0'
+        )}
         placeholder="blur"
         blurDataURL={blurDataURL}
         onLoad={(e) => {

@@ -2,7 +2,6 @@
 
 import { useEffect, useState, memo } from "react";
 import Image from "next/image";
-import { BLUR_DATA_URLS } from "@/lib/blur-placeholder";
 import InstagramPhone from "@/components/instagram-phone";
 
 function PhoneWithCarParallax() {
@@ -102,8 +101,6 @@ function PhoneWithCarParallax() {
             priority
             fetchPriority="high"
             quality={90}
-            placeholder="blur"
-            blurDataURL={BLUR_DATA_URLS.black}
           />
         </div>
       </div>

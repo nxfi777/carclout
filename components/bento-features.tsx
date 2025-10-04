@@ -3,14 +3,17 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { getClientBlurDataURL } from "@/lib/blur-placeholder";
-import { getViewUrls } from "@/lib/view-url-client";
 
-interface TemplateItem {
+export interface TemplateItem {
   id?: string;
   name?: string;
   thumbnailKey?: string;
   thumbUrl?: string;
   blurhash?: string;
+}
+
+interface BentoFeaturesProps {
+  initialTemplates?: TemplateItem[];
 }
 
 // Helper to determine if an item should load eagerly based on its index
@@ -27,64 +30,26 @@ const getVideoPreload = (index: number) => {
   return "none"; // Rest don't preload
 };
 
-export default function BentoFeatures() {
-  const [templates, setTemplates] = useState<TemplateItem[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesProps) {
+  const [templates] = useState<TemplateItem[]>(initialTemplates);
+  const [loading] = useState(false); // No loading state needed with SSR
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set([0, 1, 2, 3])); // Start with first 4 visible
   const containerRef = useRef<HTMLDivElement>(null);
+  const [supportsGrid, setSupportsGrid] = useState(true);
 
+  // Check for CSS Grid support
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoading(true);
-        // Fetch templates
-        const res = await fetch('/api/templates?limit=50', { cache: 'no-store' });
-        const data = await res.json().catch(() => ({}));
-        const all = Array.isArray(data?.templates) ? data.templates as TemplateItem[] : [];
-        
-        // Shuffle and pick templates
-        const pool = [...all];
-        for (let i = pool.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [pool[i], pool[j]] = [pool[j]!, pool[i]!];
-        }
-        const pick = pool.slice(0, 15); // Pick more templates
-        
-        // Resolve thumbnail URLs
-        const keysToResolve: string[] = [];
-        for (const t of pick) {
-          const keyRaw = t?.thumbnailKey;
-          if (keyRaw && typeof keyRaw === 'string') {
-            const key = keyRaw.startsWith('admin/') ? keyRaw : `admin/${keyRaw}`;
-            keysToResolve.push(key);
-          }
-        }
-        
-        let urlsMap: Record<string, string> = {};
-        if (keysToResolve.length > 0) {
-          try {
-            urlsMap = await getViewUrls(keysToResolve, 'admin');
-          } catch {}
-        }
-        
-        const resolved = pick.map((t) => {
-          const keyRaw = t?.thumbnailKey;
-          const key = keyRaw && typeof keyRaw === 'string' ? 
-            (keyRaw.startsWith('admin/') ? keyRaw : `admin/${keyRaw}`) : 
-            undefined;
-          return {
-            ...t,
-            thumbUrl: key ? urlsMap[key] : undefined,
-          };
-        }).filter((t) => !!t.thumbUrl); // Only keep templates with valid thumbnails
-        
-        if (!cancelled) setTemplates(resolved);
-      } finally {
-        if (!cancelled) setLoading(false);
+    if (typeof window !== 'undefined' && typeof CSS !== 'undefined') {
+      const hasGridSupport = CSS.supports('display', 'grid') && CSS.supports('grid-auto-flow', 'column');
+      setSupportsGrid(hasGridSupport);
+      
+      // Additional check for Instagram browser quirks
+      const ua = navigator.userAgent || '';
+      const isInstagram = ua.includes('Instagram');
+      if (isInstagram) {
+        console.log('[BentoFeatures] Instagram browser detected, grid support:', hasGridSupport);
       }
-    })();
-    return () => { cancelled = true; };
+    }
   }, []);
 
   // Intersection observer to progressively load items as they approach viewport
@@ -116,16 +81,16 @@ export default function BentoFeatures() {
     return () => observer.disconnect();
   }, [loading, templates.length]);
 
-  // Add static videos from bento-vids folder
+  // Add static videos from bento-vids folder with actual blurhashes
   const bentoVideos = [
-    '/bento-vids/1.mp4',
-    '/bento-vids/2.mp4',
-    '/bento-vids/3.mp4',
-    '/bento-vids/4.mp4',
+    { src: '/bento-vids/1.mp4', blurhash: 'LjFPy[o#M|t8yGkCjta#RPaeoKWB' },
+    { src: '/bento-vids/2.mp4', blurhash: 'L66H+jxtMwM]W{ofoaRhI8agozfm' },
+    { src: '/bento-vids/3.mp4', blurhash: 'LC6k|w_N?v-;xutRt7j[8wDiD%Mx' },
+    { src: '/bento-vids/4.mp4', blurhash: 'L39Pl}03}?Sc0N=;xIENEf-PJCwH' },
   ];
 
   // Randomly intersperse videos, logos, and templates
-  const gridItems: Array<{ type: 'template' | 'logo' | 'video'; data?: TemplateItem; videoSrc?: string }> = [];
+  const gridItems: Array<{ type: 'template' | 'logo' | 'video'; data?: TemplateItem; videoSrc?: string; videoBlurhash?: string }> = [];
   
   let videoIndex = 0;
   let logoCount = 0;
@@ -136,7 +101,8 @@ export default function BentoFeatures() {
     // Add video every 3-4 items (randomly distributed)
     const shouldAddVideo = videoIndex < bentoVideos.length && (index + 1) % 3 === 0;
     if (shouldAddVideo) {
-      gridItems.push({ type: 'video', videoSrc: bentoVideos[videoIndex] });
+      const video = bentoVideos[videoIndex];
+      gridItems.push({ type: 'video', videoSrc: video!.src, videoBlurhash: video!.blurhash });
       videoIndex++;
     }
     
@@ -149,32 +115,41 @@ export default function BentoFeatures() {
   });
 
   return (
-    <section className="w-full py-[3rem] md:py-[4rem] relative overflow-hidden">
+    <section className="w-full py-[3rem] md:py-[4rem] relative overflow-hidden" style={{ minHeight: '30rem' }}>
       {/* Background gradient */}
       <div 
         aria-hidden 
         className="absolute inset-0 pointer-events-none opacity-20"
         style={{
-          background: "radial-gradient(ellipse at center, color-mix(in srgb, var(--primary) 12%, transparent), transparent 60%)"
+          background: "radial-gradient(ellipse at center, rgba(91, 108, 255, 0.12), transparent 60%)"
         }}
       />
 
-      <div className="max-w-7xl mx-auto relative z-[1]">
+      <div className="max-w-7xl mx-auto relative z-[1] h-full">
         {/* Horizontally scrolling masonry grid - 2 rows */}
         <div 
           ref={containerRef}
-          className="overflow-x-auto overflow-y-hidden pb-[1rem] px-[1rem] sm:px-[1.75rem]"
+          className="overflow-x-auto overflow-y-hidden pb-[1rem] px-[1rem] sm:px-[1.75rem] webkit-overflow-scrolling-touch h-full"
           style={{
+            WebkitOverflowScrolling: 'touch',
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(255,255,255,0.2) transparent',
+            minHeight: '24rem', // Ensure minimum height for 2 rows + gap + padding
+            height: 'auto',
           }}
         >
           <div 
-            className="grid gap-[1rem]"
+            className="inline-grid gap-[1rem]"
             style={{
-              gridTemplateRows: 'repeat(2, 11rem)',
-              gridAutoFlow: 'column',
-              gridAutoColumns: 'auto',
+              display: supportsGrid ? 'inline-grid' : 'flex',
+              gridTemplateRows: supportsGrid ? 'repeat(2, 11rem)' : undefined,
+              gridAutoFlow: supportsGrid ? 'column' : undefined,
+              gridAutoColumns: supportsGrid ? 'auto' : undefined,
+              minWidth: 'min-content',
+              // Fallback for non-grid browsers
+              flexWrap: !supportsGrid ? 'nowrap' : undefined,
+              alignItems: !supportsGrid ? 'flex-start' : undefined,
+              gap: !supportsGrid ? '1rem' : undefined,
             }}
           >
             {loading ? (
@@ -185,17 +160,24 @@ export default function BentoFeatures() {
                 return (
                   <div
                     key={`skeleton-${i}`}
-                    className="relative overflow-hidden rounded-xl border border-[color:var(--border)] bg-gradient-to-br from-purple-500/10 to-pink-500/10 animate-pulse"
+                    className="relative overflow-hidden rounded-xl border border-[color:var(--border)] bg-[var(--card)] animate-pulse flex-shrink-0"
                     style={{
-                      gridRow: (i % 2) + 1,
+                      gridRow: supportsGrid ? (i % 2) + 1 : undefined,
                       width: widths[seed],
                       height: '11rem',
+                      minWidth: widths[seed],
+                      minHeight: '11rem',
                     }}
                   >
-                    <div className="w-full h-full bg-background/20" />
+                    <div className="w-full h-full bg-[var(--border)]/30" />
                   </div>
                 );
               })
+            ) : templates.length === 0 ? (
+              // Show message if no templates loaded
+              <div className="text-center py-8 text-white/60">
+                No templates available
+              </div>
             ) : (
               (() => {
                 // Pre-calculate which column each item belongs to
@@ -236,19 +218,21 @@ export default function BentoFeatures() {
                       <div
                         key={`logo-${index}`}
                         data-index={index}
-                        className="relative overflow-hidden rounded-xl border border-[color:var(--border)] bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center p-[1.5rem]"
+                        className="relative overflow-hidden rounded-xl border border-[color:var(--border)] bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center flex-shrink-0"
                         style={{
                           width: '11rem',
                           height: '11rem',
+                          minWidth: '11rem',
+                          minHeight: '11rem',
                         }}
                       >
                         {isVisible && (
                           <Image
                             src="/carcloutfilled.webp"
                             alt="Carclout"
-                            width={100}
-                            height={100}
-                            className="w-full h-auto object-contain opacity-50"
+                            width={176}
+                            height={176}
+                            className="w-full h-full object-cover opacity-50"
                             placeholder="blur"
                             blurDataURL={getClientBlurDataURL('#111a36')}
                             loading={loadingPriority}
@@ -267,10 +251,12 @@ export default function BentoFeatures() {
                       <div
                         key={`video-${index}`}
                         data-index={index}
-                        className="relative overflow-hidden rounded-xl border border-[color:var(--border)] group transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30"
+                        className="relative overflow-hidden rounded-xl border border-[color:var(--border)] group transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30 flex-shrink-0"
                         style={{
                           width: `${columnWidth}rem`,
                           height: '11rem',
+                          minWidth: `${columnWidth}rem`,
+                          minHeight: '11rem',
                         }}
                       >
                         {isVisible ? (
@@ -282,9 +268,18 @@ export default function BentoFeatures() {
                             playsInline
                             preload={videoPreload}
                             className="w-full h-full object-cover"
+                            poster={item.videoBlurhash ? getClientBlurDataURL(item.videoBlurhash) : undefined}
                           />
                         ) : (
-                          <div className="w-full h-full bg-gradient-to-br from-purple-500/10 to-pink-500/10 animate-pulse" />
+                          <div 
+                            className="w-full h-full animate-pulse"
+                            style={{
+                              backgroundColor: item.videoBlurhash ? undefined : 'var(--card)',
+                              backgroundImage: item.videoBlurhash ? `url(${getClientBlurDataURL(item.videoBlurhash)})` : undefined,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                            }}
+                          />
                         )}
                       </div>
                     );
@@ -297,32 +292,56 @@ export default function BentoFeatures() {
                     <div
                       key={template.id || `template-${index}`}
                       data-index={index}
-                      className="relative overflow-hidden rounded-xl border border-[color:var(--border)] group transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30 cursor-pointer"
+                      className="relative overflow-hidden rounded-xl border border-[color:var(--border)] group transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30 cursor-pointer flex-shrink-0"
                       style={{
                         width: `${columnWidth}rem`,
                         height: '11rem',
+                        minWidth: `${columnWidth}rem`,
+                        minHeight: '11rem',
                       }}
                     >
-                      {isVisible && template.thumbUrl ? (
-                        <Image
-                          src={template.thumbUrl}
-                          alt={template.name || 'Template'}
-                          width={400}
-                          height={300}
-                          className="w-full h-full object-cover"
-                          placeholder="blur"
-                          blurDataURL={template.blurhash ? getClientBlurDataURL(template.blurhash) : getClientBlurDataURL('#111a36')}
-                          loading={loadingPriority}
-                          priority={loadingPriority === "eager"}
-                        />
+                      {isVisible ? (
+                        template.thumbUrl ? (
+                          <Image
+                            src={template.thumbUrl}
+                            alt={template.name || 'Template'}
+                            width={400}
+                            height={300}
+                            className="w-full h-full object-cover"
+                            placeholder={template.blurhash ? "blur" : "empty"}
+                            blurDataURL={template.blurhash ? getClientBlurDataURL(template.blurhash) : undefined}
+                            loading={loadingPriority}
+                            priority={loadingPriority === "eager"}
+                          />
+                        ) : (
+                          <div 
+                            className="w-full h-full flex items-center justify-center"
+                            style={{
+                              backgroundImage: template.blurhash ? `url(${getClientBlurDataURL(template.blurhash)})` : undefined,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                              backgroundColor: template.blurhash ? undefined : 'var(--card)',
+                            }}
+                          >
+                            {!template.blurhash && (
+                              <div className="text-center px-2">
+                                <div className="text-white/30 text-xs font-medium">
+                                  {template.name || 'Template'}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
                       ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-purple-500/10 to-pink-500/10 flex items-center justify-center">
-                          {!isVisible ? (
-                            <div className="w-full h-full animate-pulse" />
-                          ) : (
-                            <span className="text-muted-foreground text-sm">No preview</span>
-                          )}
-                        </div>
+                        <div 
+                          className="w-full h-full animate-pulse"
+                          style={{
+                            backgroundImage: template.blurhash ? `url(${getClientBlurDataURL(template.blurhash)})` : undefined,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            backgroundColor: 'var(--card)',
+                          }}
+                        />
                       )}
                     </div>
                   );

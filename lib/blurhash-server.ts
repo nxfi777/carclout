@@ -84,20 +84,16 @@ export async function generateBlurHashFromFile(
   componentY = 3
 ): Promise<string> {
   try {
-    const buffer = await sharp(filePath)
+    const { data, info } = await sharp(filePath)
       .resize(32, 32, { fit: 'inside' })
       .ensureAlpha()
       .raw()
-      .toBuffer();
-
-    const { width, height } = await sharp(filePath)
-      .resize(32, 32, { fit: 'inside' })
-      .metadata();
+      .toBuffer({ resolveWithObject: true });
 
     const blurHash = encode(
-      new Uint8ClampedArray(buffer),
-      width || 32,
-      height || 32,
+      new Uint8ClampedArray(data),
+      info.width,
+      info.height,
       componentX,
       componentY
     );

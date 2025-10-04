@@ -35,29 +35,44 @@ function isChatAttachment(normalized: string): boolean {
 export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
-    if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const body = await req.json().catch(() => ({} as { keys?: unknown; scope?: unknown }));
     const keys = Array.isArray(body?.keys) ? (body.keys as unknown[]) : [];
     const scope = body?.scope === "admin" ? "admin" : "user";
     const requestedAdmin = scope === "admin";
 
-    // Allow non-admins to fetch a safe, read-only subset of admin assets (template thumbnails, hooks previews)
-    if (requestedAdmin && user.role !== "admin") {
-      const whitelistPrefixes = ["admin/templates/", "admin/hooks/"];
-      const allWhitelisted = keys.every((k) => {
-        if (typeof k !== "string" || !k) return false;
+    // Public whitelist for unauthenticated users (template thumbnails, hooks previews)
+    const publicWhitelistPrefixes = ["admin/templates/", "admin/hooks/"];
+    
+    // Check if all requested keys are publicly accessible
+    const allPublicWhitelisted = requestedAdmin && keys.every((k) => {
+      if (typeof k !== "string" || !k) return false;
       const rel = normalizeKey(k);
-        const full = rel.startsWith("admin/") ? rel : `admin/${rel}`;
-        return whitelistPrefixes.some((p) => full.startsWith(p));
-      });
-      if (!allWhitelisted) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      const full = rel.startsWith("admin/") ? rel : `admin/${rel}`;
+      return publicWhitelistPrefixes.some((p) => full.startsWith(p));
+    });
+
+    // Allow public access to whitelisted admin assets, otherwise require auth
+    if (!allPublicWhitelisted) {
+      if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      
+      // Allow non-admins to fetch whitelisted admin assets if authenticated
+      if (requestedAdmin && user.role !== "admin") {
+        const whitelistPrefixes = ["admin/templates/", "admin/hooks/"];
+        const allWhitelisted = keys.every((k) => {
+          if (typeof k !== "string" || !k) return false;
+          const rel = normalizeKey(k);
+          const full = rel.startsWith("admin/") ? rel : `admin/${rel}`;
+          return whitelistPrefixes.some((p) => full.startsWith(p));
+        });
+        if (!allWhitelisted) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
       }
     }
 
     const isAdminScope = requestedAdmin;
 
-    const root = isAdminScope ? `admin` : `users/${sanitizeUserId(user.email)}`;
+    const root = isAdminScope ? `admin` : (user?.email ? `users/${sanitizeUserId(user.email)}` : 'admin');
     const results: Record<string, string> = {};
     const tasks: Promise<void>[] = [];
 

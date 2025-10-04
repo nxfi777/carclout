@@ -15,6 +15,7 @@ import { WebVitals } from "@/app/web-vitals";
 import { auth } from "@/lib/auth";
 import { createMetadata } from "@/lib/seo";
 import { DrawerQueueProvider } from "@/lib/drawer-queue";
+import InstagramBrowserPrompt from "@/components/instagram-browser-prompt";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -73,9 +74,17 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const session = await auth();
   return (
     <html lang="en">
+      <head>
+        {/* Preconnect to critical domains */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* DNS prefetch for external resources */}
+        <link rel="dns-prefetch" href="https://cdn.sanity.io" />
+      </head>
       <body className={`${poppins.className} ${poppins.variable} ${roboto.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh min-h-[100svh] bg-background text-foreground overflow-x-hidden`}>
         <SessionProviderWrapper session={session}>
           <DrawerQueueProvider>
+            <InstagramBrowserPrompt />
             <WebVitals />
             <UmamiTracker session={session} />
             <HeaderGate>
