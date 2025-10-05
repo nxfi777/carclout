@@ -286,7 +286,7 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
                       />
                       {/* Before/After badge */}
                       <div className="absolute left-[0.75rem] top-[0.75rem] z-20 pointer-events-none">
-                        <div className="rounded-md bg-black/80 backdrop-blur-sm text-white text-[0.8rem] font-bold px-[0.7rem] py-[0.35rem] shadow-lg">
+                        <div className="rounded-md bg-black/80 backdrop-blur-sm text-white text-[1.1rem] font-bold px-[1rem] py-[0.5rem] shadow-lg">
                           {image.label}
                         </div>
                       </div>
@@ -354,9 +354,9 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
               </button>
             </div>
             <div className="mt-[0.35rem] text-[0.85rem] leading-snug">
-              <span className="font-semibold">nytforge</span> Full GT3RS bodykit <span className="opacity-80">·</span> DM for enquiries
+              <span className="font-semibold">nytforge</span> RS3 before and after
             </div>
-            <div className="mt-[0.3rem] text-[0.82rem] text-sky-300">#porsche #gt3rs #ai #carsofinstagram</div>
+            <div className="mt-[0.3rem] text-[0.82rem] text-sky-300">#rs3 #audirs3 #beforeandafter #carsofinstagram</div>
           </div>
           </div>
         </div>

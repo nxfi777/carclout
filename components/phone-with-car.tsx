@@ -6,9 +6,25 @@ import InstagramPhone from "@/components/instagram-phone";
 
 function PhoneWithCarParallax() {
   const [cursor, setCursor] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isMobile, setIsMobile] = useState(false);
 
-  // Throttle mouse movement for better performance
+  // Detect if device is mobile/touch-enabled
+  useEffect(() => {
+    const checkMobile = () => {
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isSmallScreen = window.innerWidth < 1024; // lg breakpoint
+      setIsMobile(isTouchDevice || isSmallScreen);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Throttle mouse movement for better performance (desktop only)
   const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isMobile) return; // Disable on mobile
+    
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width; // 0..1
     const ny = (e.clientY - rect.top) / rect.height; // 0..1
@@ -19,70 +35,21 @@ function PhoneWithCarParallax() {
   };
 
   function handleLeave() {
+    if (isMobile) return; // Disable on mobile
     setCursor({ x: 0, y: 0 });
   }
 
   const phoneTranslate = `translate3d(${(cursor.x * 0.7).toFixed(3)}rem, ${(cursor.y * 0.7).toFixed(3)}rem, 0)`;
   const carTranslate = `translate3d(${(cursor.x * -0.4).toFixed(3)}rem, ${(cursor.y * -0.2).toFixed(3)}rem, 0)`;
 
-  // Light device-orientation parallax on supported mobile devices
-  useEffect(() => {
-    let active = false;
-    function handleOrientation(e: DeviceOrientationEvent) {
-      // Prefer small ranges so the motion feels subtle
-      const gamma = typeof e.gamma === "number" ? e.gamma : 0; // left-right
-      const beta = typeof e.beta === "number" ? e.beta : 0; // front-back
-      const maxGamma = 25; // degrees
-      const maxBeta = 20; // degrees
-      const nx = Math.max(-1, Math.min(1, gamma / maxGamma));
-      const ny = Math.max(-1, Math.min(1, beta / maxBeta));
-      setCursor({ x: nx, y: ny });
-      active = true;
-    }
-
-    // Attempt to subscribe immediately where permission isn't required
-    if (typeof window !== "undefined" && typeof window.DeviceOrientationEvent !== "undefined") {
-      try {
-        window.addEventListener("deviceorientation", handleOrientation, true);
-      } catch {}
-    }
-
-    // iOS requires a user gesture to grant permission; expose a helper on first touch
-    function requestPermissionOnce() {
-      // iOS Safari exposes DeviceOrientationEvent.requestPermission()
-      const DOE = (DeviceOrientationEvent as unknown) as { requestPermission?: () => Promise<string> };
-      if (DOE && typeof DOE.requestPermission === "function") {
-        try {
-          DOE.requestPermission()
-            .then((res) => {
-              if (res === "granted") {
-                window.addEventListener("deviceorientation", handleOrientation, true);
-              }
-            })
-            .catch(() => {});
-        } catch {}
-      }
-      // Remove after first attempt
-      window.removeEventListener("touchstart", requestPermissionOnce);
-    }
-    try {
-      window.addEventListener("touchstart", requestPermissionOnce, { passive: true });
-    } catch {}
-
-    return () => {
-      try { window.removeEventListener("deviceorientation", handleOrientation, true); } catch {}
-      try { window.removeEventListener("touchstart", requestPermissionOnce); } catch {}
-      if (!active) setCursor({ x: 0, y: 0 });
-    };
-  }, []);
+  // Device orientation parallax disabled to prevent unwanted movement on mobile
+  // Users can interact with the phone carousel without triggering parallax effects
 
   return (
     <div
       className="relative mx-auto flex items-center justify-center min-h-[22rem] sm:min-h-[26rem] md:min-h-[28rem] select-none w-full"
       onMouseMove={handleMove}
       onMouseLeave={handleLeave}
-      // Try to request motion permission on first tap for iOS
-      onTouchStart={() => { /* handled via global listener in effect */ }}
     >
       {/* Car underneath with drop shadow */}
       <div
