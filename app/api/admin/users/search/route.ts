@@ -11,6 +11,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = String(searchParams.get("q") || "").trim();
   const limit = Math.max(1, Math.min(50, parseInt(String(searchParams.get("limit") || "20"))));
+  const offset = Math.max(0, parseInt(String(searchParams.get("offset") || "0")));
 
   const db = await getSurreal();
   // Ensure analyzers and FTS indexes exist (only creates if missing)
@@ -24,22 +25,23 @@ export async function GET(req: Request) {
   try { await db.query(`DEFINE INDEX IF NOT EXISTS user_email_ft ON TABLE user FIELDS email SEARCH ANALYZER email_search BM25;`); } catch {}
   
 
-  let rows: Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string }> = [];
+  let rows: Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string; created_at?: string }> = [];
   try {
     if (q) {
       const res = await db.query(
-        `SELECT name, displayName, email, credits_balance, plan, role FROM user 
+        `SELECT name, displayName, email, credits_balance, plan, role, created_at FROM user 
          WHERE displayName @@ $q OR name @@ $q OR email @@ $q 
-         LIMIT $limit;`,
-        { q, limit }
+         ORDER BY created_at DESC
+         LIMIT $limit START $offset;`,
+        { q, limit, offset }
       );
-      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string }>) : []);
+      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string; created_at?: string }>) : []);
     } else {
       const res = await db.query(
-        `SELECT name, displayName, email, credits_balance, plan, role FROM user ORDER BY string::lower(displayName ?? name) LIMIT $limit;`,
-        { limit }
+        `SELECT name, displayName, email, credits_balance, plan, role, created_at FROM user ORDER BY created_at DESC LIMIT $limit START $offset;`,
+        { limit, offset }
       );
-      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string }>) : []);
+      rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string; created_at?: string }>) : []);
     }
   } catch {
     rows = [];
@@ -52,6 +54,7 @@ export async function GET(req: Request) {
     credits: typeof r?.credits_balance === "number" ? Number(r.credits_balance) : 0,
     plan: r?.plan || null,
     role: r?.role || null,
+    createdAt: r?.created_at || null,
   }));
   return NextResponse.json({ users });
 }

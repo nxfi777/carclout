@@ -16,6 +16,7 @@ import { auth } from "@/lib/auth";
 import { createMetadata } from "@/lib/seo";
 import { DrawerQueueProvider } from "@/lib/drawer-queue";
 import InstagramBrowserPrompt from "@/components/instagram-browser-prompt";
+import { headers } from "next/headers";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -72,6 +73,26 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const session = await auth();
+  const headersList = await headers();
+  const pathname = headersList.get("x-pathname") || "";
+  const isMaintenancePage = pathname === "/maintenance";
+  
+  // For maintenance page, render minimal layout without header/footer
+  if (isMaintenancePage) {
+    return (
+      <html lang="en">
+        <head>
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        </head>
+        <body className={`${poppins.className} ${poppins.variable} ${roboto.variable} ${geistMono.variable} antialiased bg-background text-foreground`}>
+          {children}
+        </body>
+      </html>
+    );
+  }
+  
+  // Normal layout with header and footer
   return (
     <html lang="en">
       <head>

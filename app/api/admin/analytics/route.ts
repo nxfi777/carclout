@@ -190,24 +190,6 @@ export async function GET(req: Request) {
     const estimatedProfitUsd = Math.max(0, totalRevenueUsd * PROFIT_RATE);
     const settledProfitUsd = Math.max(0, settledRevenueUsd * PROFIT_RATE);
 
-    // Top 10 users by XP
-    let topUsers: Array<{ id?: unknown; email: string; displayName?: string | null; name?: string | null; plan?: string | null; xp: number; level?: number | null }> = [];
-    try {
-      const topRes = await db.query<Array<{ id?: unknown; email?: string; displayName?: string | null; name?: string | null; plan?: string | null; xp?: number; level?: number | null }>>(
-        `SELECT id, email, displayName, name, plan, xp, level FROM user ORDER BY xp DESC LIMIT 10;`
-      );
-      const rows = Array.isArray(topRes) && Array.isArray(topRes[0]) ? (topRes[0] as Array<{ id?: unknown; email?: string; displayName?: string | null; name?: string | null; plan?: string | null; xp?: number; level?: number | null }>) : [];
-      topUsers = rows.map((r) => ({
-        id: r.id,
-        email: (r.email || "").toString(),
-        displayName: r.displayName ?? null,
-        name: r.name ?? null,
-        plan: (r.plan ?? null) as string | null,
-        xp: typeof r.xp === 'number' ? r.xp : 0,
-        level: typeof r.level === 'number' ? r.level : null,
-      }));
-    } catch {}
-
     return NextResponse.json({
       metrics: {
         // Total revenue = active subscriptions + top-ups (time-range)
@@ -230,7 +212,6 @@ export async function GET(req: Request) {
           minimumUsers: minSubs,
       },
       series,
-        topUsers,
       rangeDays: days,
     });
   } catch (e) {

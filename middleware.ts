@@ -5,9 +5,30 @@ import { getSurreal } from "@/lib/surrealdb";
 
 export const middleware = auth(async (req) => {
   const { pathname, search } = req.nextUrl;
+  
+  // Set pathname header for layout to read
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", pathname);
+  
+  // Check for maintenance mode
+  const maintenanceMode = process.env.MAINTENANCE_MODE === "true";
+  const isMaintenancePage = pathname === "/maintenance";
+  
+  // If maintenance mode is enabled, redirect all requests to maintenance page
+  // except the maintenance page itself and static assets
+  if (maintenanceMode && !isMaintenancePage && !pathname.startsWith("/_next") && !pathname.startsWith("/api")) {
+    return NextResponse.redirect(new URL("/maintenance", req.nextUrl));
+  }
+  
+  // If maintenance mode is disabled and user is on maintenance page, redirect to home
+  if (!maintenanceMode && isMaintenancePage) {
+    return NextResponse.redirect(new URL("/", req.nextUrl));
+  }
+  
   const isAuthPage = pathname === "/auth/signin" || pathname === "/auth/signup";
   const isOnboardingPage = pathname.startsWith("/onboarding");
   const isPlanPage = pathname === "/plan";
+  const isProtectedRoute = pathname.startsWith("/dashboard") || pathname.startsWith("/community") || pathname.startsWith("/workspace");
 
   // If already authenticated and visiting auth pages, check onboarding/plan status
   if (isAuthPage) {
@@ -38,7 +59,21 @@ export const middleware = auth(async (req) => {
         return NextResponse.redirect(new URL("/dashboard", req.nextUrl));
       }
     }
-    return NextResponse.next();
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
+  }
+
+  // Only protect specific routes: dashboard, community, workspace
+  // Allow public access to homepage, pricing, etc.
+  if (!isProtectedRoute) {
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
   }
 
   // Protect matched routes: redirect unauthenticated users to sign in
@@ -71,7 +106,11 @@ export const middleware = auth(async (req) => {
 
     // Allow access to onboarding and plan pages if not fully set up
     if (isOnboardingPage || isPlanPage) {
-      return NextResponse.next();
+      return NextResponse.next({
+        request: {
+          headers: requestHeaders,
+        },
+      });
     }
 
     // For dashboard and other protected routes, ensure user is fully onboarded and subscribed
@@ -87,11 +126,28 @@ export const middleware = auth(async (req) => {
     // On error, allow through to avoid blocking legitimate users
   }
 
-  return NextResponse.next();
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/community/:path*", "/workspace/:path*", "/auth/signin", "/auth/signup", "/onboarding/:path*", "/plan"],
+  matcher: [
+    "/dashboard/:path*",
+    "/community/:path*",
+    "/workspace/:path*",
+    "/auth/signin",
+    "/auth/signup",
+    "/onboarding/:path*",
+    "/plan",
+    "/",
+    "/pricing",
+    "/about",
+    // Allow middleware to check maintenance mode on public routes
+    "/((?!_next/static|_next/image|favicon.ico|api).*)",
+  ],
 };
 
 

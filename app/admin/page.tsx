@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useEffect, useState, useMemo, useCallback } from "react";
+import { Suspense, useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { DashboardWorkspacePanel } from "@/components/dashboard-workspace-panel";
 import MusicSuggestions from "@/components/music/music-suggestions";
@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Textarea } from "@/components/ui/textarea";
 // import { DropZone } from "@/components/ui/drop-zone";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
@@ -199,7 +200,6 @@ function AdminAnalyticsTab() {
     settledProfitUsd?: number;
     topupRevenueUsd?: number;
   } | null>(null);
-  const [topUsers, setTopUsers] = useState<Array<{ email: string; displayName?: string | null; name?: string | null; plan?: string | null; xp: number; level?: number | null }>>([]);
   const [series, setSeries] = useState<Array<{ date: string; revenueUsd: number; creditsSpent: number; costUsd?: number; stripeFeesUsd?: number; profitUsd?: number }>>([]);
 
   useEffect(() => {
@@ -212,7 +212,6 @@ function AdminAnalyticsTab() {
         if (!cancelled && res.ok) {
           setMetrics(data?.metrics || null);
           setSeries(Array.isArray(data?.series) ? data.series : []);
-          setTopUsers(Array.isArray(data?.topUsers) ? data.topUsers : []);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -327,50 +326,7 @@ function AdminAnalyticsTab() {
       </div>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Top 10 users by XP</CardTitle></CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="grid grid-cols-6 gap-2 items-center">
-                  <Skeleton className="h-4 w-10" />
-                  <Skeleton className="h-4 w-40 col-span-2" />
-                  <Skeleton className="h-4 w-56" />
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-4 w-12 justify-self-end" />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="border rounded">
-              <div className="grid grid-cols-6 gap-2 px-3 py-2 text-xs text-white/60 border-b">
-                <div>#</div>
-                <div className="col-span-2">Name</div>
-                <div>Email</div>
-                <div>Plan</div>
-                <div className="text-right">XP</div>
-              </div>
-              <ul className="max-h-80 overflow-y-auto divide-y">
-                {topUsers.map((u, idx) => (
-                  <li key={u.email} className="grid grid-cols-6 gap-2 px-3 py-2 text-sm items-center">
-                    <div className="text-white/70">{idx + 1}</div>
-                    <div className="col-span-2 truncate">{u.displayName || u.name || '—'}</div>
-                    <div className="truncate font-mono">{u.email}</div>
-                    <div className="capitalize">{(u.plan || '').toString()}</div>
-                    <div className="text-right tabular-nums">{u.xp?.toLocaleString?.() || 0}</div>
-                  </li>
-                ))}
-                {!topUsers.length ? (
-                  <li className="px-3 py-2 text-sm text-white/60">No users found</li>
-                ) : null}
-              </ul>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Bestow credits & Manage users</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Manage users</CardTitle></CardHeader>
         <CardContent>
           <GrantCreditsForm />
           <div className="mt-4 pt-4 border-t">
@@ -446,38 +402,54 @@ function GrantCreditsForm(){
 
 function UserCreditsSearch(){
   const [q, setQ] = useState("");
-  const [rows, setRows] = useState<Array<{ displayName?: string|null; name?: string|null; email: string; credits: number; plan?: string | null; role?: string | null }>>([]);
+  const [rows, setRows] = useState<Array<{ displayName?: string|null; name?: string|null; email: string; credits: number; plan?: string | null; role?: string | null; createdAt?: string | null }>>([]);
   const [changingPlan, setChangingPlan] = useState<string | null>(null);
   const [editingCredits, setEditingCredits] = useState<string | null>(null);
   const [confirmPlanDialog, setConfirmPlanDialog] = useState<{ email: string; userName: string; currentPlan: string | null; newPlan: string | null } | null>(null);
   const [confirmCreditsDialog, setConfirmCreditsDialog] = useState<{ email: string; userName: string; currentCredits: number; newCredits: number; delta: number } | null>(null);
   const [creditsInputValue, setCreditsInputValue] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const loadingRef = useRef(false);
+  const LIMIT = 30;
+  
+  const loadMore = useCallback(async (resetOffset = false, currentOffset: number) => {
+    if (loadingRef.current) return; // Prevent multiple simultaneous loads using ref
+    
+    loadingRef.current = true;
+    setLoading(true);
+    try {
+      const offsetToUse = resetOffset ? 0 : currentOffset;
+      const res = await fetch(`/api/admin/users/search?q=${encodeURIComponent(q)}&limit=${LIMIT}&offset=${offsetToUse}`, { cache:'no-store' }).then(r=>r.json()).catch(()=>({ users: [] }));
+      const newUsers = Array.isArray(res?.users) ? res.users : [];
+      
+      if (resetOffset) {
+        setRows(newUsers);
+        setOffset(newUsers.length);
+      } else {
+        setRows(prev => [...prev, ...newUsers]);
+        setOffset(prev => prev + newUsers.length);
+      }
+      
+      setHasMore(newUsers.length === LIMIT);
+    } catch {}
+    finally {
+      loadingRef.current = false;
+      setLoading(false);
+    }
+  }, [q, LIMIT]);
   
   const run = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/admin/users/search?q=${encodeURIComponent(q)}&limit=50`, { cache:'no-store' }).then(r=>r.json()).catch(()=>({ users: [] }));
-      setRows(Array.isArray(res?.users) ? res.users : []);
-    } catch {}
-  }, [q]);
+    setOffset(0);
+    setHasMore(true);
+    await loadMore(true, 0);
+  }, [loadMore]);
   
-  // Debounced search
+  // Debounced search - reset to first page when search changes
   useEffect(()=>{
     const t = setTimeout(run, 400);
-    let es: EventSource | null = null;
-    (async ()=>{
-      try {
-        es = new EventSource(`/api/admin/users/live?q=${encodeURIComponent(q)}&limit=50`);
-        es.onmessage = (ev) => {
-          try {
-            const data = JSON.parse(ev.data || '{}');
-            const users = Array.isArray(data?.users) ? data.users : [];
-            setRows(users);
-          } catch {}
-        };
-        es.onerror = () => { try { es?.close(); } catch {} };
-      } catch {}
-    })();
-    return ()=> { clearTimeout(t); try { es?.close(); } catch {} };
+    return ()=> clearTimeout(t);
   }, [q, run]);
 
   const handlePlanChange = async (email: string, userName: string, currentPlan: string | null, newPlan: string) => {
@@ -555,92 +527,157 @@ function UserCreditsSearch(){
     }
   };
 
+  const handleScroll = useCallback((e: React.UIEvent<HTMLUListElement>) => {
+    if (loadingRef.current || !hasMore) return; // Early return if already loading or no more data
+    
+    const target = e.currentTarget;
+    const scrolledToBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100;
+    
+    if (scrolledToBottom) {
+      loadMore(false, offset);
+    }
+  }, [hasMore, loadMore, offset]);
+
   return (
-    <div className="space-y-2">
-      <Input 
-        value={q} 
-        onChange={(e)=> setQ(e.target.value)} 
-        placeholder="Search users by display name, handle, or email" 
-        className="flex-1" 
-      />
-      <div className="border rounded">
-        <div className="grid grid-cols-[1fr_2fr_140px_140px] gap-2 px-3 py-2 text-xs text-white/60 border-b">
-          <div>Name</div>
-          <div>Email</div>
-          <div className="text-center">Plan</div>
-          <div className="text-right">Credits</div>
+    <TooltipProvider>
+      <div className="space-y-2">
+        <Input 
+          value={q} 
+          onChange={(e)=> setQ(e.target.value)} 
+          placeholder="Search users by display name, handle, or email" 
+          className="flex-1" 
+        />
+        <div className="border rounded">
+          <div className="grid grid-cols-[1fr_2fr_140px_140px_140px] gap-2 px-3 py-2 text-xs text-white/60 border-b">
+            <div>Name</div>
+            <div>Email</div>
+            <div className="text-center">Plan</div>
+            <div className="text-right">Credits</div>
+            <div className="text-right">Joined</div>
+          </div>
+          <ul className="max-h-[32rem] overflow-y-auto divide-y" onScroll={handleScroll}>
+            {rows.map((u)=> (
+              <li key={u.email} className="grid grid-cols-[1fr_2fr_140px_140px_140px] gap-2 px-3 py-2 text-sm items-center">
+                <div className="truncate">{u.displayName || u.name || '—'}</div>
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(u.email);
+                          toast.success('Email copied to clipboard');
+                        } catch {
+                          toast.error('Failed to copy email');
+                        }
+                      }}
+                      className="truncate font-mono cursor-pointer hover:text-blue-400 transition-colors text-left"
+                    >
+                      {u.email}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="start" className="max-w-sm">
+                    <p className="font-mono text-xs">{u.email}</p>
+                    <p className="text-[0.625rem] text-white/60 mt-1">Click to copy</p>
+                  </TooltipContent>
+                </Tooltip>
+                <div className="flex items-center justify-center">
+                  {u.role === 'admin' ? (
+                    <span className="text-amber-400 text-xs">Admin</span>
+                  ) : (
+                    <Select 
+                      value={u.plan || "none"} 
+                      onValueChange={(newPlan) => handlePlanChange(u.email, u.displayName || u.name || u.email, u.plan ?? null, newPlan)}
+                      disabled={changingPlan === u.email}
+                    >
+                      <SelectTrigger className="h-7 text-xs w-[120px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="minimum">Minimum</SelectItem>
+                        <SelectItem value="pro">Pro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="text-right">
+                  {editingCredits === u.email ? (
+                    <Input
+                      type="number"
+                      value={creditsInputValue}
+                      onChange={(e) => setCreditsInputValue(e.target.value)}
+                      onBlur={() => handleCreditsChange(u.email, u.displayName || u.name || u.email, u.credits)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleCreditsChange(u.email, u.displayName || u.name || u.email, u.credits);
+                        if (e.key === 'Escape') setEditingCredits(null);
+                      }}
+                      autoFocus
+                      className="h-7 text-xs text-right w-28 ml-auto"
+                    />
+                  ) : (
+                    <button
+                      onClick={() => handleCreditsClick(u.email, u.credits)}
+                      className="hover:text-blue-400 transition-colors cursor-pointer"
+                    >
+                      {u.credits}
+                    </button>
+                  )}
+                </div>
+                <div className="text-right text-xs text-white/70">
+                  {u.createdAt ? (
+                    <Tooltip delayDuration={300}>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-help">
+                          {new Date(u.createdAt).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric' 
+                          })}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="text-xs">
+                          {new Date(u.createdAt).toLocaleString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true
+                          })}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : '—'}
+                </div>
+              </li>
+            ))}
+            {!rows.length && !loading ? (
+              <li className="px-3 py-2 text-sm text-white/60">No users found</li>
+            ) : null}
+            {loading ? (
+              <li className="px-3 py-2 text-sm text-white/60 text-center">Loading...</li>
+            ) : null}
+          </ul>
         </div>
-        <ul className="max-h-72 overflow-y-auto divide-y">
-          {rows.map((u)=> (
-            <li key={u.email} className="grid grid-cols-[1fr_2fr_140px_140px] gap-2 px-3 py-2 text-sm items-center">
-              <div className="truncate">{u.displayName || u.name || '—'}</div>
-              <div className="truncate font-mono">{u.email}</div>
-              <div className="flex items-center justify-center">
-                {u.role === 'admin' ? (
-                  <span className="text-amber-400 text-xs">Admin</span>
-                ) : (
-                  <Select 
-                    value={u.plan || "none"} 
-                    onValueChange={(newPlan) => handlePlanChange(u.email, u.displayName || u.name || u.email, u.plan ?? null, newPlan)}
-                    disabled={changingPlan === u.email}
-                  >
-                    <SelectTrigger className="h-7 text-xs w-[120px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      <SelectItem value="minimum">Minimum</SelectItem>
-                      <SelectItem value="pro">Pro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-              <div className="text-right">
-                {editingCredits === u.email ? (
-                  <Input
-                    type="number"
-                    value={creditsInputValue}
-                    onChange={(e) => setCreditsInputValue(e.target.value)}
-                    onBlur={() => handleCreditsChange(u.email, u.displayName || u.name || u.email, u.credits)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleCreditsChange(u.email, u.displayName || u.name || u.email, u.credits);
-                      if (e.key === 'Escape') setEditingCredits(null);
-                    }}
-                    autoFocus
-                    className="h-7 text-xs text-right w-28 ml-auto"
-                  />
-                ) : (
-                  <button
-                    onClick={() => handleCreditsClick(u.email, u.credits)}
-                    className="hover:text-blue-400 transition-colors cursor-pointer"
-                  >
-                    {u.credits}
-                  </button>
-                )}
-              </div>
-            </li>
-          ))}
-          {!rows.length ? (
-            <li className="px-3 py-2 text-sm text-white/60">No users found</li>
-          ) : null}
-        </ul>
-      </div>
 
       <AlertDialog open={!!confirmPlanDialog} onOpenChange={(open) => !open && setConfirmPlanDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Change User Plan</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>You are about to change the plan for:</p>
-              <div className="bg-white/5 p-3 rounded space-y-1 text-sm">
-                <div><strong>User:</strong> {confirmPlanDialog?.userName}</div>
-                <div><strong>Email:</strong> {confirmPlanDialog?.email}</div>
-                <div><strong>Current Plan:</strong> <span className="capitalize">{confirmPlanDialog?.currentPlan || 'none'}</span></div>
-                <div><strong>New Plan:</strong> <span className="capitalize text-green-400">{confirmPlanDialog?.newPlan || 'none'}</span></div>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <div>You are about to change the plan for:</div>
+                <div className="bg-white/5 p-3 rounded space-y-1 text-sm">
+                  <div><strong>User:</strong> {confirmPlanDialog?.userName}</div>
+                  <div><strong>Email:</strong> {confirmPlanDialog?.email}</div>
+                  <div><strong>Current Plan:</strong> <span className="capitalize">{confirmPlanDialog?.currentPlan || 'none'}</span></div>
+                  <div><strong>New Plan:</strong> <span className="capitalize text-green-400">{confirmPlanDialog?.newPlan || 'none'}</span></div>
+                </div>
+                <div className="text-xs text-white/60 mt-2">
+                  This will immediately change the user&apos;s access and features according to their new plan tier.
+                </div>
               </div>
-              <p className="text-xs text-white/60 mt-2">
-                This will immediately change the user&apos;s access and features according to their new plan tier.
-              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -654,23 +691,25 @@ function UserCreditsSearch(){
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Change User Credits</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>You are about to adjust credits for:</p>
-              <div className="bg-white/5 p-3 rounded space-y-1 text-sm">
-                <div><strong>User:</strong> {confirmCreditsDialog?.userName}</div>
-                <div><strong>Email:</strong> {confirmCreditsDialog?.email}</div>
-                <div><strong>Current Credits:</strong> {confirmCreditsDialog?.currentCredits}</div>
-                <div><strong>New Credits:</strong> <span className="text-green-400">{confirmCreditsDialog?.newCredits}</span></div>
-                <div>
-                  <strong>Change:</strong> 
-                  <span className={confirmCreditsDialog && confirmCreditsDialog.delta > 0 ? 'text-green-400' : 'text-red-400'}>
-                    {' '}{confirmCreditsDialog && confirmCreditsDialog.delta > 0 ? '+' : ''}{confirmCreditsDialog?.delta}
-                  </span>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <div>You are about to adjust credits for:</div>
+                <div className="bg-white/5 p-3 rounded space-y-1 text-sm">
+                  <div><strong>User:</strong> {confirmCreditsDialog?.userName}</div>
+                  <div><strong>Email:</strong> {confirmCreditsDialog?.email}</div>
+                  <div><strong>Current Credits:</strong> {confirmCreditsDialog?.currentCredits}</div>
+                  <div><strong>New Credits:</strong> <span className="text-green-400">{confirmCreditsDialog?.newCredits}</span></div>
+                  <div>
+                    <strong>Change:</strong> 
+                    <span className={confirmCreditsDialog && confirmCreditsDialog.delta > 0 ? 'text-green-400' : 'text-red-400'}>
+                      {' '}{confirmCreditsDialog && confirmCreditsDialog.delta > 0 ? '+' : ''}{confirmCreditsDialog?.delta}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-xs text-white/60 mt-2">
+                  This will immediately adjust the user&apos;s credit balance.
                 </div>
               </div>
-              <p className="text-xs text-white/60 mt-2">
-                This will immediately adjust the user&apos;s credit balance.
-              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -679,7 +718,8 @@ function UserCreditsSearch(){
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }
 

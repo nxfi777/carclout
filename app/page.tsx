@@ -6,6 +6,7 @@ import PageBottomBlur from "@/components/page-bottom-blur";
 import { getSurreal } from "@/lib/surrealdb";
 import { getBentoTemplates } from "@/lib/landing-data";
 import { cache } from "react";
+import ScarcityProgressBar from "@/components/scarcity-progress-bar";
 
 // Lazy load heavy components with automatic code splitting
 const PhoneWithCarParallax = dynamic(() => import("@/components/phone-with-car"), {
@@ -110,6 +111,8 @@ export default async function Home() {
               <Link href={ctaHref}>{ctaText}</Link>
             </Button>
           </div>
+          {/* Scarcity Progress Bar - Only show for non-signed-in users */}
+          {!user?.email && <ScarcityProgressBar />}
           {/* Desktop-only toolkit (kept under hero copy) */}
           {/* <div className="hidden lg:block mt-[2rem] rounded-2xl border border-[color:var(--border)] bg-[var(--popover)]/60 p-[1rem] max-w-[28rem]">
             <ul className="grid grid-cols-2 gap-x-[1rem] gap-y-[0.5rem] text-[0.95rem]">
@@ -186,6 +189,12 @@ export default async function Home() {
               <Link href={ctaHref}>{ctaTextFinal}</Link>
             </Button>
           </div>
+          {/* Scarcity Progress Bar - Only show for non-signed-in users */}
+          {!user?.email && (
+            <div className="flex justify-center">
+              <ScarcityProgressBar />
+            </div>
+          )}
         </div>
       </section>
     </main>

@@ -15,6 +15,7 @@ export async function GET(request: Request) {
 
   const q = String(searchParams.get("q") || "").trim();
   const limit = Math.max(1, Math.min(50, parseInt(String(searchParams.get("limit") || "50"))));
+  const offset = Math.max(0, parseInt(String(searchParams.get("offset") || "0")));
 
   const db = await getSurreal();
   const te = new TextEncoder();
@@ -27,17 +28,18 @@ export async function GET(request: Request) {
         try {
           const res = await db.query(
             q
-              ? `SELECT name, displayName, email, credits_balance, plan, role FROM user WHERE displayName @@ $q OR name @@ $q OR email @@ $q LIMIT $limit;`
-              : `SELECT name, displayName, email, credits_balance, plan, role FROM user ORDER BY string::lower(displayName ?? name) LIMIT $limit;`,
-            { q, limit }
+              ? `SELECT name, displayName, email, credits_balance, plan, role, created_at FROM user WHERE displayName @@ $q OR name @@ $q OR email @@ $q ORDER BY created_at DESC LIMIT $limit START $offset;`
+              : `SELECT name, displayName, email, credits_balance, plan, role, created_at FROM user ORDER BY created_at DESC LIMIT $limit START $offset;`,
+            { q, limit, offset }
           );
-          const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string }>) : []).map((r) => ({
+          const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string; created_at?: string }>) : []).map((r) => ({
             name: r?.name || null,
             displayName: r?.displayName || null,
             email: String(r?.email || ""),
             credits: typeof r?.credits_balance === "number" ? Number(r.credits_balance) : 0,
             plan: r?.plan || null,
             role: r?.role || null,
+            createdAt: r?.created_at || null,
           }));
           controller.enqueue(te.encode(`data: ${JSON.stringify({ users: rows })}\n\n`));
         } catch {}
@@ -50,17 +52,18 @@ export async function GET(request: Request) {
           try {
             const res = await db.query(
               q
-                ? `SELECT name, displayName, email, credits_balance, plan, role FROM user WHERE displayName @@ $q OR name @@ $q OR email @@ $q LIMIT $limit;`
-                : `SELECT name, displayName, email, credits_balance, plan, role FROM user ORDER BY string::lower(displayName ?? name) LIMIT $limit;`,
-              { q, limit }
+                ? `SELECT name, displayName, email, credits_balance, plan, role, created_at FROM user WHERE displayName @@ $q OR name @@ $q OR email @@ $q ORDER BY created_at DESC LIMIT $limit START $offset;`
+                : `SELECT name, displayName, email, credits_balance, plan, role, created_at FROM user ORDER BY created_at DESC LIMIT $limit START $offset;`,
+              { q, limit, offset }
             );
-            const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string }>) : []).map((r) => ({
+            const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string; created_at?: string }>) : []).map((r) => ({
               name: r?.name || null,
               displayName: r?.displayName || null,
               email: String(r?.email || ""),
               credits: typeof r?.credits_balance === "number" ? Number(r.credits_balance) : 0,
               plan: r?.plan || null,
               role: r?.role || null,
+              createdAt: r?.created_at || null,
             }));
             controller.enqueue(te.encode(`data: ${JSON.stringify({ users: rows })}\n\n`));
           } catch {}

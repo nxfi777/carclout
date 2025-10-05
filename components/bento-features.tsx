@@ -284,6 +284,16 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
                             className="w-full h-full object-cover"
                             poster={item.videoBlurhash ? getClientBlurDataURL('#111a36') : undefined}
                             suppressHydrationWarning
+                            onLoadedData={(e) => {
+                              const video = e.currentTarget;
+                              const playPromise = video.play();
+                              if (playPromise !== undefined) {
+                                playPromise.catch(() => {
+                                  // Silently catch play interruption errors
+                                  // This happens when the video is removed during loading
+                                });
+                              }
+                            }}
                           />
                         ) : (
                           <div 
