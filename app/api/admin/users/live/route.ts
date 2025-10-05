@@ -27,15 +27,17 @@ export async function GET(request: Request) {
         try {
           const res = await db.query(
             q
-              ? `SELECT name, displayName, email, credits_balance FROM user WHERE displayName @@ $q OR name @@ $q OR email @@ $q LIMIT $limit;`
-              : `SELECT name, displayName, email, credits_balance FROM user ORDER BY string::lower(displayName ?? name) LIMIT $limit;`,
+              ? `SELECT name, displayName, email, credits_balance, plan, role FROM user WHERE displayName @@ $q OR name @@ $q OR email @@ $q LIMIT $limit;`
+              : `SELECT name, displayName, email, credits_balance, plan, role FROM user ORDER BY string::lower(displayName ?? name) LIMIT $limit;`,
             { q, limit }
           );
-          const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number }>) : []).map((r) => ({
+          const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string }>) : []).map((r) => ({
             name: r?.name || null,
             displayName: r?.displayName || null,
             email: String(r?.email || ""),
             credits: typeof r?.credits_balance === "number" ? Number(r.credits_balance) : 0,
+            plan: r?.plan || null,
+            role: r?.role || null,
           }));
           controller.enqueue(te.encode(`data: ${JSON.stringify({ users: rows })}\n\n`));
         } catch {}
@@ -48,15 +50,17 @@ export async function GET(request: Request) {
           try {
             const res = await db.query(
               q
-                ? `SELECT name, displayName, email, credits_balance FROM user WHERE displayName @@ $q OR name @@ $q OR email @@ $q LIMIT $limit;`
-                : `SELECT name, displayName, email, credits_balance FROM user ORDER BY string::lower(displayName ?? name) LIMIT $limit;`,
+                ? `SELECT name, displayName, email, credits_balance, plan, role FROM user WHERE displayName @@ $q OR name @@ $q OR email @@ $q LIMIT $limit;`
+                : `SELECT name, displayName, email, credits_balance, plan, role FROM user ORDER BY string::lower(displayName ?? name) LIMIT $limit;`,
               { q, limit }
             );
-            const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number }>) : []).map((r) => ({
+            const rows = (Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<{ name?: string; displayName?: string; email?: string; credits_balance?: number; plan?: string | null; role?: string }>) : []).map((r) => ({
               name: r?.name || null,
               displayName: r?.displayName || null,
               email: String(r?.email || ""),
               credits: typeof r?.credits_balance === "number" ? Number(r.credits_balance) : 0,
+              plan: r?.plan || null,
+              role: r?.role || null,
             }));
             controller.enqueue(te.encode(`data: ${JSON.stringify({ users: rows })}\n\n`));
           } catch {}

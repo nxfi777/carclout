@@ -370,10 +370,10 @@ function AdminAnalyticsTab() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Bestow credits</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Bestow credits & Manage users</CardTitle></CardHeader>
         <CardContent>
           <GrantCreditsForm />
-          <div className="mt-3">
+          <div className="mt-4 pt-4 border-t">
             <UserCreditsSearch />
           </div>
         </CardContent>
@@ -446,17 +446,23 @@ function GrantCreditsForm(){
 
 function UserCreditsSearch(){
   const [q, setQ] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<Array<{ displayName?: string|null; name?: string|null; email: string; credits: number }>>([]);
+  const [rows, setRows] = useState<Array<{ displayName?: string|null; name?: string|null; email: string; credits: number; plan?: string | null; role?: string | null }>>([]);
+  const [changingPlan, setChangingPlan] = useState<string | null>(null);
+  const [editingCredits, setEditingCredits] = useState<string | null>(null);
+  const [confirmPlanDialog, setConfirmPlanDialog] = useState<{ email: string; userName: string; currentPlan: string | null; newPlan: string | null } | null>(null);
+  const [confirmCreditsDialog, setConfirmCreditsDialog] = useState<{ email: string; userName: string; currentCredits: number; newCredits: number; delta: number } | null>(null);
+  const [creditsInputValue, setCreditsInputValue] = useState<string>("");
+  
   const run = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await fetch(`/api/admin/users/search?q=${encodeURIComponent(q)}&limit=50`, { cache:'no-store' }).then(r=>r.json()).catch(()=>({ users: [] }));
       setRows(Array.isArray(res?.users) ? res.users : []);
-    } finally { setLoading(false); }
+    } catch {}
   }, [q]);
+  
+  // Debounced search
   useEffect(()=>{
-    const t = setTimeout(run, 250);
+    const t = setTimeout(run, 400);
     let es: EventSource | null = null;
     (async ()=>{
       try {
@@ -473,24 +479,145 @@ function UserCreditsSearch(){
     })();
     return ()=> { clearTimeout(t); try { es?.close(); } catch {} };
   }, [q, run]);
+
+  const handlePlanChange = async (email: string, userName: string, currentPlan: string | null, newPlan: string) => {
+    const targetPlan = newPlan === "none" ? null : newPlan;
+    if (targetPlan === currentPlan) return; // No change
+    
+    // Show confirmation dialog
+    setConfirmPlanDialog({ email, userName, currentPlan, newPlan: targetPlan });
+  };
+
+  const confirmPlanChange = async () => {
+    if (!confirmPlanDialog) return;
+    const { email, newPlan } = confirmPlanDialog;
+    
+    setChangingPlan(email);
+    try {
+      const res = await fetch('/api/admin/plan', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ targetEmail: email, plan: newPlan }) 
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { 
+        toast.error(data?.error || 'Failed to update plan'); 
+        return; 
+      }
+      toast.success(`Plan updated to ${newPlan || 'none'}`);
+      run();
+    } catch {
+      toast.error('Failed to update plan');
+    } finally {
+      setChangingPlan(null);
+      setConfirmPlanDialog(null);
+    }
+  };
+
+  const handleCreditsClick = (email: string, currentCredits: number) => {
+    setEditingCredits(email);
+    setCreditsInputValue(String(currentCredits));
+  };
+
+  const handleCreditsChange = (email: string, userName: string, currentCredits: number) => {
+    const newCredits = Math.max(0, Math.trunc(Number(creditsInputValue)));
+    if (!Number.isFinite(newCredits) || newCredits === currentCredits) {
+      setEditingCredits(null);
+      return;
+    }
+    
+    const delta = newCredits - currentCredits;
+    setConfirmCreditsDialog({ email, userName, currentCredits, newCredits, delta });
+  };
+
+  const confirmCreditsChange = async () => {
+    if (!confirmCreditsDialog) return;
+    const { email, delta } = confirmCreditsDialog;
+    
+    try {
+      const res = await fetch('/api/admin/credits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetEmail: email, credits: delta, reason: 'admin_adjustment' })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error || 'Failed to update credits');
+        return;
+      }
+      toast.success('Credits updated');
+      run();
+    } catch {
+      toast.error('Failed to update credits');
+    } finally {
+      setEditingCredits(null);
+      setConfirmCreditsDialog(null);
+    }
+  };
+
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Input value={q} onChange={(e)=> setQ(e.target.value)} placeholder="Search users by display name, handle, or email" className="flex-1" />
-        <Button size="sm" onClick={run} disabled={loading}>{loading? 'Searching…' : 'Search'}</Button>
-      </div>
+      <Input 
+        value={q} 
+        onChange={(e)=> setQ(e.target.value)} 
+        placeholder="Search users by display name, handle, or email" 
+        className="flex-1" 
+      />
       <div className="border rounded">
-        <div className="grid grid-cols-3 gap-2 px-3 py-2 text-xs text-white/60 border-b">
+        <div className="grid grid-cols-[1fr_2fr_140px_140px] gap-2 px-3 py-2 text-xs text-white/60 border-b">
           <div>Name</div>
           <div>Email</div>
+          <div className="text-center">Plan</div>
           <div className="text-right">Credits</div>
         </div>
         <ul className="max-h-72 overflow-y-auto divide-y">
           {rows.map((u)=> (
-            <li key={u.email} className="grid grid-cols-3 gap-2 px-3 py-2 text-sm items-center">
+            <li key={u.email} className="grid grid-cols-[1fr_2fr_140px_140px] gap-2 px-3 py-2 text-sm items-center">
               <div className="truncate">{u.displayName || u.name || '—'}</div>
               <div className="truncate font-mono">{u.email}</div>
-              <div className="text-right">{u.credits}</div>
+              <div className="flex items-center justify-center">
+                {u.role === 'admin' ? (
+                  <span className="text-amber-400 text-xs">Admin</span>
+                ) : (
+                  <Select 
+                    value={u.plan || "none"} 
+                    onValueChange={(newPlan) => handlePlanChange(u.email, u.displayName || u.name || u.email, u.plan ?? null, newPlan)}
+                    disabled={changingPlan === u.email}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-[120px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="minimum">Minimum</SelectItem>
+                      <SelectItem value="pro">Pro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <div className="text-right">
+                {editingCredits === u.email ? (
+                  <Input
+                    type="number"
+                    value={creditsInputValue}
+                    onChange={(e) => setCreditsInputValue(e.target.value)}
+                    onBlur={() => handleCreditsChange(u.email, u.displayName || u.name || u.email, u.credits)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreditsChange(u.email, u.displayName || u.name || u.email, u.credits);
+                      if (e.key === 'Escape') setEditingCredits(null);
+                    }}
+                    autoFocus
+                    className="h-7 text-xs text-right w-28 ml-auto"
+                  />
+                ) : (
+                  <button
+                    onClick={() => handleCreditsClick(u.email, u.credits)}
+                    className="hover:text-blue-400 transition-colors cursor-pointer"
+                  >
+                    {u.credits}
+                  </button>
+                )}
+              </div>
             </li>
           ))}
           {!rows.length ? (
@@ -498,6 +625,60 @@ function UserCreditsSearch(){
           ) : null}
         </ul>
       </div>
+
+      <AlertDialog open={!!confirmPlanDialog} onOpenChange={(open) => !open && setConfirmPlanDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change User Plan</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>You are about to change the plan for:</p>
+              <div className="bg-white/5 p-3 rounded space-y-1 text-sm">
+                <div><strong>User:</strong> {confirmPlanDialog?.userName}</div>
+                <div><strong>Email:</strong> {confirmPlanDialog?.email}</div>
+                <div><strong>Current Plan:</strong> <span className="capitalize">{confirmPlanDialog?.currentPlan || 'none'}</span></div>
+                <div><strong>New Plan:</strong> <span className="capitalize text-green-400">{confirmPlanDialog?.newPlan || 'none'}</span></div>
+              </div>
+              <p className="text-xs text-white/60 mt-2">
+                This will immediately change the user&apos;s access and features according to their new plan tier.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmPlanChange}>Confirm Change</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!confirmCreditsDialog} onOpenChange={(open) => !open && setConfirmCreditsDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change User Credits</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>You are about to adjust credits for:</p>
+              <div className="bg-white/5 p-3 rounded space-y-1 text-sm">
+                <div><strong>User:</strong> {confirmCreditsDialog?.userName}</div>
+                <div><strong>Email:</strong> {confirmCreditsDialog?.email}</div>
+                <div><strong>Current Credits:</strong> {confirmCreditsDialog?.currentCredits}</div>
+                <div><strong>New Credits:</strong> <span className="text-green-400">{confirmCreditsDialog?.newCredits}</span></div>
+                <div>
+                  <strong>Change:</strong> 
+                  <span className={confirmCreditsDialog && confirmCreditsDialog.delta > 0 ? 'text-green-400' : 'text-red-400'}>
+                    {' '}{confirmCreditsDialog && confirmCreditsDialog.delta > 0 ? '+' : ''}{confirmCreditsDialog?.delta}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-white/60 mt-2">
+                This will immediately adjust the user&apos;s credit balance.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setEditingCredits(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmCreditsChange}>Confirm Change</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
