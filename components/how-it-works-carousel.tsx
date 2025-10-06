@@ -259,7 +259,7 @@ function VideoCard({
                   setActiveVideo(2);
                 });
                 otherVid.currentTime = 0;
-                otherVid.play().catch(err => console.error(`[HowItWorks] Video ${index} fallback play error:`, err));
+                otherVid.play().catch(() => {});
                 hasTriggeredTransition.current = false;
               }
             }
@@ -307,7 +307,7 @@ function VideoCard({
                   setActiveVideo(1);
                 });
                 otherVid.currentTime = 0;
-                otherVid.play().catch(err => console.error(`[HowItWorks] Video ${index} fallback play error:`, err));
+                otherVid.play().catch(() => {});
                 hasTriggeredTransition.current = false;
               }
             }
@@ -412,9 +412,7 @@ export default function HowItWorksCarousel() {
       console.log(`[HowItWorks Carousel] Starting video ${index} from beginning`);
       video.play().then(() => {
         console.log(`[HowItWorks Carousel] Video ${index} play promise resolved`);
-      }).catch((err) => {
-        console.error(`[HowItWorks Carousel] Video ${index} play error:`, err);
-      });
+      }).catch(() => {});
     }
   };
 

@@ -14,6 +14,8 @@ export interface UserDoc {
   auto_reload_enabled?: boolean;
   auto_reload_threshold?: number; // credits balance threshold to trigger reload
   auto_reload_amount?: number; // USD amount to reload
+  stripeCustomerId?: string; // Stripe customer ID for subscription management
+  stripeSubscriptionId?: string; // Active Stripe subscription ID
 }
 
 

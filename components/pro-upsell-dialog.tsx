@@ -56,7 +56,7 @@ export default function ProUpsellDialog() {
                   <li>100GB storage</li>
                   <li>On-demand upscales</li>
                   <li>Video generation</li>
-                  <li>All tools unlocked</li>
+                  <li>All templates unlocked</li>
                   <li>Priority updates</li>
                   <li>Exclusive discounts</li>
                   <li>Livestreams access</li>

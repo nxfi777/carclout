@@ -28,6 +28,8 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { confirmToast } from '@/components/ui/toast-helpers';
 import { getViewUrl, getViewUrls } from '@/lib/view-url-client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import CreditDepletionDrawer from '@/components/credit-depletion-drawer';
+import { useCreditDepletion } from '@/lib/use-credit-depletion';
  
 
 export function HooksTabContent() {
@@ -622,6 +624,9 @@ export function TemplatesTabContent(){
   const deeplinkedRef = useRef<boolean>(false);
   const animPendingBlobRef = useRef<Blob | null>(null);
   const [animHasPending, setAnimHasPending] = useState(false);
+
+  // Credit depletion drawer hook
+  const creditDepletion = useCreditDepletion();
 
   // Reset generated output/designer state when switching templates or closing the dialog
   function resetTemplateSession() {
@@ -1325,9 +1330,10 @@ export function TemplatesTabContent(){
     const sess = sessionRef.current;
     setResultUrl(null);
     try {
-      // Prevent negative balance: require at least 100 credits before attempting a generation (90 gen + 10 cutout)
+      // Check credits and show warning if running low
       const bal = await getCredits();
-      if (bal < 100) { toast.error('Not enough credits to generate. Top up in Billing.'); return; }
+      const shouldBlock = creditDepletion.checkAndTrigger(bal, 100);
+      if (shouldBlock) return; // Block if truly insufficient
       // Preflight checks without showing the generating UI
       const requiredImages = Math.max(1, Number((activeTemplate as { maxUploadImages?: number })?.maxUploadImages || 1));
       let selectedFullKey: string | null = null;
@@ -1656,10 +1662,14 @@ export function TemplatesTabContent(){
                             } catch { setAnimCredits(undefined as unknown as number); }
 
                             setAnimConfirmOpen(false);
+                            // Check credits before video generation
+                            const bal = await getCredits();
+                            const insufficientCredits = creditDepletion.checkAndTrigger(bal, animCredits || 500);
+                            if (insufficientCredits) return;
                             setAnimLoading(true);
                             const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: active?.id, templateSlug: active?.slug, startKey }) });
                             const out = await resp.json().catch(()=>({}));
-                            if (resp.status === 402) { toast.error('Not enough credits. Top up in Billing.'); setAnimLoading(false); return; }
+                            if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, animCredits || 500); setAnimLoading(false); return; }
                             if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); setAnimLoading(false); return; }
                             setAnimResultUrl(String(out.url));
                             if (typeof out?.key === 'string') setAnimResultKey(String(out.key));
@@ -1693,6 +1703,10 @@ export function TemplatesTabContent(){
                       return;
                     }
                     if (!resultKey) return;
+                    // Check credits before attempting upscale
+                    const bal = await getCredits();
+                    const insufficientCredits = creditDepletion.checkAndTrigger(bal, 20);
+                    if (insufficientCredits) return;
                     setUpscaleBusy(true);
                     try {
                       // Try to offer better estimate by fetching current image dimensions
@@ -1706,7 +1720,7 @@ export function TemplatesTabContent(){
                       } catch {}
                       const res = await fetch('/api/tools/upscale', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payloadObj) });
                       const data = await res.json().catch(()=>({}));
-                      if (res.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
+                      if (res.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, 20); return; }
                       if (res.status === 400 && (data?.error === 'UPSCALE_AT_MAX')) { toast.error('Already at maximum resolution.'); return; }
                       if (res.status === 400 && (data?.error === 'UPSCALE_DIM_OVERFLOW')) { toast.error('Upscale would exceed the 4K limit.'); return; }
                       if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { toast.error('This image was already upscaled. Use the original.'); return; }
@@ -2117,6 +2131,13 @@ export function TemplatesTabContent(){
           )}
         </DialogContent>
       </Dialog>
+      <CreditDepletionDrawer 
+        open={creditDepletion.isOpen}
+        onOpenChange={creditDepletion.close}
+        currentPlan={creditDepletion.currentPlan}
+        creditsRemaining={creditDepletion.creditsRemaining}
+        requiredCredits={creditDepletion.requiredCredits}
+      />
     </div>
   );
 }

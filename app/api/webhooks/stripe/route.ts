@@ -43,6 +43,9 @@ async function syncPlanFromSubscription(subId: string): Promise<void> {
     const planToSet: Plan | null = shouldHaveAccess ? mappedPlan : null;
     const surreal = await getSurreal();
     
+    // Get customer ID from subscription
+    const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
+    
     // Check if this is an upgrade from minimum to pro
     if (planToSet === "pro") {
       const userResult = await surreal.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email });
@@ -50,14 +53,21 @@ async function syncPlanFromSubscription(subId: string): Promise<void> {
         ? (userResult[0][0] as { plan?: Plan } | undefined)?.plan
         : null;
       
-      // If upgrading from minimum to pro, reset welcome flag
+      // If upgrading from minimum to pro, reset welcome flag and store Stripe IDs
       if (previousPlan === "minimum") {
-        await surreal.query("UPDATE user SET plan = $plan, welcomeProShown = false WHERE email = $email;", { plan: planToSet, email });
+        await surreal.query(
+          "UPDATE user SET plan = $plan, welcomeProShown = false, stripeCustomerId = $customerId, stripeSubscriptionId = $subscriptionId WHERE email = $email;", 
+          { plan: planToSet, email, customerId, subscriptionId: subId }
+        );
         return;
       }
     }
     
-    await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan: planToSet, email });
+    // Update plan and store Stripe IDs
+    await surreal.query(
+      "UPDATE user SET plan = $plan, stripeCustomerId = $customerId, stripeSubscriptionId = $subscriptionId WHERE email = $email;", 
+      { plan: planToSet, email, customerId, subscriptionId: subId }
+    );
   } catch (e) {
     console.error("syncPlanFromSubscription failed:", e);
   }
@@ -104,6 +114,9 @@ export async function POST(req: Request) {
           if (maybeSubId) {
             await syncPlanFromSubscription(maybeSubId);
           } else if (customerEmail && plan) {
+            // Store customer ID if available
+            const customerId = typeof session.customer === 'string' ? session.customer : null;
+            
             // Check if this is an upgrade from minimum to pro
             if (plan === "pro") {
               const userResult = await surreal.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email: customerEmail });
@@ -111,14 +124,29 @@ export async function POST(req: Request) {
                 ? (userResult[0][0] as { plan?: Plan } | undefined)?.plan
                 : null;
               
-              // If upgrading from minimum to pro, reset welcome flag
+              // If upgrading from minimum to pro, reset welcome flag and store customer ID
               if (previousPlan === "minimum") {
-                await surreal.query("UPDATE user SET plan = $plan, welcomeProShown = false WHERE email = $email;", { plan, email: customerEmail });
+                if (customerId) {
+                  await surreal.query(
+                    "UPDATE user SET plan = $plan, welcomeProShown = false, stripeCustomerId = $customerId WHERE email = $email;", 
+                    { plan, email: customerEmail, customerId }
+                  );
+                } else {
+                  await surreal.query("UPDATE user SET plan = $plan, welcomeProShown = false WHERE email = $email;", { plan, email: customerEmail });
+                }
+              } else {
+                if (customerId) {
+                  await surreal.query("UPDATE user SET plan = $plan, stripeCustomerId = $customerId WHERE email = $email;", { plan, email: customerEmail, customerId });
+                } else {
+                  await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan, email: customerEmail });
+                }
+              }
+            } else {
+              if (customerId) {
+                await surreal.query("UPDATE user SET plan = $plan, stripeCustomerId = $customerId WHERE email = $email;", { plan, email: customerEmail, customerId });
               } else {
                 await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan, email: customerEmail });
               }
-            } else {
-              await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan, email: customerEmail });
             }
           }
           // Seed included credits on first-time plan purchase
@@ -176,12 +204,15 @@ export async function POST(req: Request) {
     case "customer.subscription.deleted": {
       const sub = event.data.object as Stripe.Subscription;
       try {
-        // Remove plan when subscription is deleted
+        // Remove plan and subscription ID when subscription is deleted
         const email = await getCustomerEmailFromStripe(sub.customer);
         if (email) {
           const surreal = await getSurreal();
-          await surreal.query("UPDATE user SET plan = $plan WHERE email = $email;", { plan: null, email });
-          console.log(`Subscription deleted for ${email}, plan removed`);
+          await surreal.query(
+            "UPDATE user SET plan = $plan, stripeSubscriptionId = NONE WHERE email = $email;", 
+            { plan: null, email }
+          );
+          console.log(`Subscription deleted for ${email}, plan and subscription ID removed`);
         }
       } catch (e) {
         console.error("Failed to remove plan on customer.subscription.deleted:", e);

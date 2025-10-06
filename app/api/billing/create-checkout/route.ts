@@ -113,26 +113,104 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Invalid plan: ${key}` }, { status: 400 });
     }
 
-    // Fetch Surreal user id
+    // Fetch Surreal user data including Stripe IDs
     let userIdString = "";
+    let existingCustomerId: string | null = null;
+    let existingSubscriptionId: string | null = null;
     try {
       const db = await getSurreal();
-      const q = await db.query("SELECT id FROM user WHERE email = $email LIMIT 1;", { email });
-      const row = Array.isArray(q) && Array.isArray(q[0]) ? (q[0][0] as { id?: unknown }) : null;
+      const q = await db.query(
+        "SELECT id, stripeCustomerId, stripeSubscriptionId FROM user WHERE email = $email LIMIT 1;", 
+        { email }
+      );
+      const row = Array.isArray(q) && Array.isArray(q[0]) ? (q[0][0] as { 
+        id?: unknown; 
+        stripeCustomerId?: string; 
+        stripeSubscriptionId?: string;
+      }) : null;
       const rid = row?.id as unknown;
       if (rid) userIdString = rid instanceof RecordId ? rid.toString() : String(rid);
+      existingCustomerId = row?.stripeCustomerId || null;
+      existingSubscriptionId = row?.stripeSubscriptionId || null;
     } catch {}
 
+    // Fallback: If no IDs in database, search Stripe directly (handles existing users from before this feature)
+    if (!existingSubscriptionId || !existingCustomerId) {
+      try {
+        const customers = await stripe.customers.search({ query: `email:'${email}'` });
+        if (customers.data.length > 0) {
+          existingCustomerId = customers.data[0].id;
+          
+          // Find active subscription for this customer
+          const subscriptions = await stripe.subscriptions.list({
+            customer: existingCustomerId,
+            status: 'active',
+            limit: 1,
+          });
+          
+          if (subscriptions.data.length > 0) {
+            existingSubscriptionId = subscriptions.data[0].id;
+            
+            // Backfill the database with these IDs for next time
+            try {
+              const db = await getSurreal();
+              await db.query(
+                "UPDATE user SET stripeCustomerId = $customerId, stripeSubscriptionId = $subscriptionId WHERE email = $email;",
+                { customerId: existingCustomerId, subscriptionId: existingSubscriptionId, email }
+              );
+              console.log(`Backfilled Stripe IDs for ${email}`);
+            } catch (e) {
+              console.error("Failed to backfill Stripe IDs:", e);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to search Stripe for existing customer:", e);
+      }
+    }
+
+    // If user has an existing subscription, update it instead of creating a new one
+    if (existingSubscriptionId && existingCustomerId) {
+      try {
+        // Verify the subscription still exists and is active
+        const subscription = await stripe.subscriptions.retrieve(existingSubscriptionId);
+        
+        if (subscription.status === 'active' || subscription.status === 'trialing') {
+          // Update the existing subscription (Stripe handles proration automatically)
+          await stripe.subscriptions.update(existingSubscriptionId, {
+            items: [{
+              id: subscription.items.data[0].id,
+              price: price,
+            }],
+            proration_behavior: 'always_invoice', // Create invoice with proration
+            metadata: { plan: key, userId: userIdString, userEmail: email },
+          });
+
+          // Redirect to billing portal to show the update
+          const origin = resolveOrigin(req);
+          return NextResponse.json({ 
+            url: `${origin}/dashboard/templates?upgrade=success`,
+            message: "Subscription updated successfully"
+          });
+        }
+      } catch (e) {
+        // If subscription doesn't exist or errored, continue to create new checkout
+        console.error("[checkout] Failed to update existing subscription:", e);
+      }
+    }
+
+    // No existing subscription or update failed - create new checkout session
     const origin = resolveOrigin(req);
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [{ price, quantity: 1 }],
       customer_email: email,
+      customer: existingCustomerId || undefined, // Use existing customer if available
       client_reference_id: userIdString || undefined,
       metadata: { plan: key, userId: userIdString, userEmail: email },
       subscription_data: { metadata: { plan: key, userId: userIdString, userEmail: email } },
-        success_url: `${origin}/dashboard/templates?welcome=1`,
+      success_url: `${origin}/dashboard/templates?welcome=1`,
       cancel_url: `${origin}/plan?canceled=1`,
       allow_promotion_codes: true,
     });

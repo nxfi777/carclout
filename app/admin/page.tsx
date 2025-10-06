@@ -15,7 +15,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, CarFront } from "lucide-react";
 import { TemplateCard } from "@/components/templates/template-card";
 import { Bar, BarChart, CartesianGrid, Line, XAxis, YAxis, ResponsiveContainer } from "recharts";
  
@@ -26,6 +26,8 @@ import { AdminTemplateImages } from "@/components/admin/admin-template-images";
 import { AdminTemplateVideo, type AdminVideoConfig } from "@/components/admin/admin-template-video";
 import Lottie from "lottie-react";
 import fireAnimation from "@/public/fire.json";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import Image from "next/image";
 
 //
 
@@ -83,6 +85,14 @@ type TemplateDisplay = {
   designerDefaults?: {
     headline?: string | null;
   } | null;
+};
+
+type ChatProfile = {
+  name?: string;
+  image?: string;
+  vehicles?: Array<{ make?: string; model?: string }>;
+  photos?: string[];
+  bio?: string;
 };
 
 //
@@ -400,6 +410,146 @@ function GrantCreditsForm(){
   );
 }
 
+function ChatProfileDialog({ email, name, open, onOpenChange }: { email: string; name: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [profile, setProfile] = useState<ChatProfile | null>(null);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [photosLoading, setPhotosLoading] = useState(false);
+  const requestedPhotoKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoadingProfile(true);
+    (async () => {
+      try {
+        const fetched = await fetch(`/api/users/chat-profile?email=${encodeURIComponent(email)}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null);
+        if (!cancelled) {
+          requestedPhotoKeysRef.current = new Set();
+          setPreviews({});
+          setPhotosLoading(false);
+          setProfile(fetched || null);
+        }
+      } catch { }
+      finally {
+        if (!cancelled) setLoadingProfile(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [email, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const keys = Array.isArray(profile?.photos) ? profile.photos.slice(0, 6).filter(Boolean) : [];
+    if (!keys.length) {
+      setPhotosLoading(false);
+      return;
+    }
+    const missing = keys.filter((k) => k && !previews[k] && !requestedPhotoKeysRef.current.has(k));
+    if (!missing.length) return;
+    let cancelled = false;
+    setPhotosLoading(true);
+    missing.forEach((k) => requestedPhotoKeysRef.current.add(k));
+    (async () => {
+      try {
+        const { getViewUrls } = await import("@/lib/view-url-client");
+        const urls = await getViewUrls(missing);
+        if (!cancelled) {
+          setPreviews((prev) => ({ ...prev, ...urls }));
+        }
+      } catch { }
+      finally {
+        if (!cancelled) {
+          setPhotosLoading(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [profile?.photos, previews, open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Chat Profile</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Avatar className="size-12">
+              <AvatarImage src={profile?.image} alt={profile?.name || name} />
+              <AvatarFallback className="bg-[color:var(--primary)]/15 text-[color:var(--primary)]">
+                <CarFront className="size-6" />
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <div className="text-base font-medium truncate">{profile?.name || name}</div>
+              <div className="text-sm text-white/60">{email}</div>
+            </div>
+          </div>
+          
+          {typeof profile?.bio === 'string' && profile.bio.trim() ? (
+            <div className="text-sm text-white/80 whitespace-pre-wrap bg-white/5 p-3 rounded border border-white/10">
+              {profile.bio}
+            </div>
+          ) : null}
+
+          {loadingProfile ? (
+            <div>
+              <div className="text-sm font-medium mb-2">Vehicles</div>
+              <div className="flex flex-wrap gap-2">
+                <Skeleton className="h-7 w-28" />
+                <Skeleton className="h-7 w-24" />
+                <Skeleton className="h-7 w-32" />
+              </div>
+            </div>
+          ) : Array.isArray(profile?.vehicles) && profile.vehicles.length > 0 ? (
+            <div>
+              <div className="text-sm font-medium mb-2">Vehicles</div>
+              <div className="flex flex-wrap gap-2">
+                {profile.vehicles.slice(0, 6).map((v, i) => (
+                  <span key={i} className="px-3 py-1 rounded bg-white/5 border border-white/10 text-sm">
+                    {v.make} {v.model}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div>
+            <div className="text-sm font-medium mb-2">Photos</div>
+            {photosLoading ? (
+              <div className="grid grid-cols-3 gap-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="aspect-square rounded overflow-hidden bg-black/20">
+                    <Skeleton className="w-full h-full" />
+                  </div>
+                ))}
+              </div>
+            ) : Array.isArray(profile?.photos) && profile.photos.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2">
+                {profile.photos.slice(0, 6).map((k) => (
+                  <div key={k} className="relative aspect-square rounded overflow-hidden bg-black/20 border border-white/10">
+                    {!previews[k] && (
+                      <Skeleton className="absolute inset-0" />
+                    )}
+                    {previews[k] ? (
+                      <Image src={previews[k]} alt="Car" fill className="object-cover" sizes="(max-width: 768px) 33vw, 150px" />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-white/50 bg-white/5 p-4 rounded border border-white/10 text-center">
+                No photos yet.
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function UserCreditsSearch(){
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<Array<{ displayName?: string|null; name?: string|null; email: string; credits: number; plan?: string | null; role?: string | null; createdAt?: string | null }>>([]);
@@ -413,6 +563,7 @@ function UserCreditsSearch(){
   const [offset, setOffset] = useState(0);
   const loadingRef = useRef(false);
   const LIMIT = 30;
+  const [profileDialogUser, setProfileDialogUser] = useState<{ email: string; name: string } | null>(null);
   
   const loadMore = useCallback(async (resetOffset = false, currentOffset: number) => {
     if (loadingRef.current) return; // Prevent multiple simultaneous loads using ref
@@ -558,7 +709,12 @@ function UserCreditsSearch(){
           <ul className="max-h-[32rem] overflow-y-auto divide-y" onScroll={handleScroll}>
             {rows.map((u)=> (
               <li key={u.email} className="grid grid-cols-[1fr_2fr_140px_140px_140px] gap-2 px-3 py-2 text-sm items-center">
-                <div className="truncate">{u.displayName || u.name || '—'}</div>
+                <button 
+                  className="truncate hover:text-blue-400 transition-colors cursor-pointer text-left"
+                  onClick={() => setProfileDialogUser({ email: u.email, name: u.displayName || u.name || u.email })}
+                >
+                  {u.displayName || u.name || '—'}
+                </button>
                 <Tooltip delayDuration={300}>
                   <TooltipTrigger asChild>
                     <button
@@ -718,6 +874,13 @@ function UserCreditsSearch(){
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ChatProfileDialog
+        email={profileDialogUser?.email || ''}
+        name={profileDialogUser?.name || ''}
+        open={!!profileDialogUser}
+        onOpenChange={(open) => !open && setProfileDialogUser(null)}
+      />
       </div>
     </TooltipProvider>
   );
@@ -948,7 +1111,7 @@ function NewTemplateButton(){
       if (!f) { setAspectRatio(null); return; }
       try {
         const url = URL.createObjectURL(f);
-        const img = new Image();
+        const img = new window.Image();
         await new Promise<void>((resolve, reject)=>{ img.onload = ()=>resolve(); img.onerror=()=>reject(new Error('img')); img.src=url; });
         if (!cancelled) setAspectRatio(img.naturalWidth && img.naturalHeight ? (img.naturalWidth / img.naturalHeight) : null);
         try { URL.revokeObjectURL(url); } catch {}
@@ -965,7 +1128,7 @@ function NewTemplateButton(){
       const first = adminImageFiles[0]; if (!first) return;
       try {
         const url = URL.createObjectURL(first);
-        const img = new Image();
+        const img = new window.Image();
         await new Promise<void>((resolve, reject)=>{ img.onload=()=>resolve(); img.onerror=()=>reject(new Error('img')); img.src=url; });
         const ow = Math.max(1, img.naturalWidth||img.width||0);
         const oh = Math.max(1, img.naturalHeight||img.height||0);

@@ -43,9 +43,17 @@ export default function DailyBonusDrawer() {
 
     async function needsProfileCompletion(): Promise<boolean> {
       try {
-        const prof = await fetch("/api/profile", { cache: "no-store" })
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+        
+        const prof = await fetch("/api/profile", { 
+          cache: "no-store",
+          signal: controller.signal
+        })
           .then((r) => r.json())
           .catch(() => null);
+        clearTimeout(timeoutId);
+        
         const vehicles = Array.isArray(prof?.profile?.vehicles)
           ? (prof.profile.vehicles as unknown[])
           : [];
@@ -60,9 +68,15 @@ export default function DailyBonusDrawer() {
 
     async function alreadyActiveToday(): Promise<boolean> {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+        
         const res = await fetch("/api/activity/streak?days=1", {
           cache: "no-store",
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
+        
         const data = await res.json().catch(() => ({}));
         const days: Array<{ date?: string; active?: boolean }> = Array.isArray(data?.days)
           ? data.days
@@ -79,7 +93,15 @@ export default function DailyBonusDrawer() {
 
     async function fetchStreakValue(): Promise<number> {
       try {
-        const res = await fetch("/api/activity/streak", { cache: "no-store" });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+        
+        const res = await fetch("/api/activity/streak", { 
+          cache: "no-store",
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
         if (!res.ok) return 0;
         const json = await res.json().catch(() => ({}));
         return Number(json?.streak || 0);
@@ -90,7 +112,15 @@ export default function DailyBonusDrawer() {
 
     async function refreshXpDetails() {
       try {
-        const res = await fetch("/api/xp", { cache: "no-store" });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+        
+        const res = await fetch("/api/xp", { 
+          cache: "no-store",
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
         if (!res.ok) return;
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
@@ -138,74 +168,93 @@ export default function DailyBonusDrawer() {
       claimingRef.current = true;
       setState("claiming");
       
-      // Request to show via queue system with medium priority
-      requestShow(
-        "daily-bonus",
-        DRAWER_PRIORITY.MEDIUM,
-        () => setOpen(true),
-        () => setOpen(false)
-      );
-      
-      await refreshXpDetails();
-
-      const before = await fetchStreakValue();
-      let awarded = 0;
-      let leveledUp = false;
-      let newLevel = 0;
       try {
-        const res = await fetch("/api/xp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: "daily-login" }),
-        });
-        const data = await res.json().catch(() => ({}));
-        awarded = Number(data?.added || 0);
-        leveledUp = !!data?.leveledUp;
-        newLevel = Number(data?.level || 0);
-      } catch {
-        awarded = 0;
-      }
-      if (cancelled) {
-        claimingRef.current = false;
-        return;
-      }
-      setAdded(Math.max(0, awarded));
-
-      await refreshXpDetails();
-      const after = await fetchStreakValue();
-      if (!cancelled) {
-        setStreakDelta(Math.max(0, after - before));
-      }
-
-      if (awarded > 0) {
-        setState("awarded");
-        hasClaimedRef.current = true;
-        lastPromptKeyRef.current = todayKey;
-        try {
-          window.dispatchEvent(new CustomEvent("streak-refresh"));
-        } catch {}
-        try {
-          window.dispatchEvent(new CustomEvent("xp-refresh"));
-        } catch {}
+        // Request to show via queue system with medium priority
+        requestShow(
+          "daily-bonus",
+          DRAWER_PRIORITY.MEDIUM,
+          () => setOpen(true),
+          () => setOpen(false)
+        );
         
-        // Trigger level-up drawer if leveled up
-        if (leveledUp && newLevel > 0) {
-          window.setTimeout(() => {
-            try {
-              window.dispatchEvent(new CustomEvent("level-up", { detail: { level: newLevel } }));
-            } catch {}
-          }, 1000);
+        await refreshXpDetails();
+
+        const before = await fetchStreakValue();
+        let awarded = 0;
+        let leveledUp = false;
+        let newLevel = 0;
+        
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for the claim
+          
+          const res = await fetch("/api/xp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: "daily-login" }),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          
+          const data = await res.json().catch(() => ({}));
+          awarded = Number(data?.added || 0);
+          leveledUp = !!data?.leveledUp;
+          newLevel = Number(data?.level || 0);
+        } catch (err) {
+          console.error("Failed to claim daily bonus:", err);
+          awarded = 0;
         }
-      } else {
+        
+        if (cancelled) {
+          return;
+        }
+        setAdded(Math.max(0, awarded));
+
+        await refreshXpDetails();
+        const after = await fetchStreakValue();
+        if (!cancelled) {
+          setStreakDelta(Math.max(0, after - before));
+        }
+
+        if (awarded > 0) {
+          setState("awarded");
+          hasClaimedRef.current = true;
+          lastPromptKeyRef.current = todayKey;
+          try {
+            window.dispatchEvent(new CustomEvent("streak-refresh"));
+          } catch {}
+          try {
+            window.dispatchEvent(new CustomEvent("xp-refresh"));
+          } catch {}
+          
+          // Trigger level-up drawer if leveled up
+          if (leveledUp && newLevel > 0) {
+            window.setTimeout(() => {
+              try {
+                window.dispatchEvent(new CustomEvent("level-up", { detail: { level: newLevel } }));
+              } catch {}
+            }, 1000);
+          }
+        } else {
+          setState("already");
+          hasClaimedRef.current = true;
+          lastPromptKeyRef.current = todayKey;
+          window.setTimeout(() => {
+            if (!cancelled) setOpen(false);
+          }, 500);
+        }
+      } catch (err) {
+        console.error("Daily bonus claim failed:", err);
+        // Show error state instead of hanging
         setState("already");
         hasClaimedRef.current = true;
         lastPromptKeyRef.current = todayKey;
         window.setTimeout(() => {
           if (!cancelled) setOpen(false);
-        }, 500);
+        }, 2000);
+      } finally {
+        claimingRef.current = false;
       }
-
-      claimingRef.current = false;
     }
 
     window.addEventListener("prompt-daily-bonus", handlePrompt as EventListener);
