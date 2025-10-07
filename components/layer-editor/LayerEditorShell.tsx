@@ -10,11 +10,11 @@ import { Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function AnimatedWand({ hasBeenClicked, isPopoverOpen }: { hasBeenClicked: boolean; isPopoverOpen: boolean }) {
-  const [isAnimatingOrange, setIsAnimatingOrange] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
 
   useEffect(() => {
     if (hasBeenClicked) {
-      setIsAnimatingOrange(false);
+      setIsAnimating(false);
       return;
     }
 
@@ -22,14 +22,14 @@ function AnimatedWand({ hasBeenClicked, isPopoverOpen }: { hasBeenClicked: boole
     let glowTimeout: NodeJS.Timeout;
 
     const scheduleNext = () => {
-      // Random delay between 3-8 seconds before next glow
-      const delay = Math.random() * 5000 + 3000;
+      // Random delay between 1.5-4 seconds before next glow
+      const delay = Math.random() * 2500 + 1500;
       
       mainTimeout = setTimeout(() => {
-        setIsAnimatingOrange(true);
+        setIsAnimating(true);
         // Glow lasts 2 seconds
         glowTimeout = setTimeout(() => {
-          setIsAnimatingOrange(false);
+          setIsAnimating(false);
           scheduleNext();
         }, 2000);
       }, delay);
@@ -43,14 +43,14 @@ function AnimatedWand({ hasBeenClicked, isPopoverOpen }: { hasBeenClicked: boole
     };
   }, [hasBeenClicked]);
 
-  const shouldBeOrange = isPopoverOpen || (isAnimatingOrange && !hasBeenClicked);
-  const shouldJiggle = isAnimatingOrange && !hasBeenClicked;
+  const shouldGlow = isPopoverOpen || (isAnimating && !hasBeenClicked);
+  const shouldJiggle = isAnimating && !hasBeenClicked;
 
   return (
     <Wand2 
       className={cn(
         "size-5 transition-colors duration-1000 ease-in-out",
-        shouldBeOrange ? "text-orange-500" : "text-current"
+        shouldGlow ? "text-indigo-500" : "text-current"
       )} 
       style={{
         animation: shouldJiggle ? "jiggle 0.5s ease-in-out infinite" : "none"

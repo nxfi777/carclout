@@ -1003,10 +1003,11 @@ export function TemplatesTabContent(){
               userHasPro={canonicalPlan(me?.plan) === 'ultra'}
               onLikeToggle={()=> toggleFavorite(it.id, it.slug)}
               onClick={()=>{
-                if (Boolean((it as Record<string, unknown>).proOnly) && canonicalPlan(me?.plan) !== 'ultra') {
-                  try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
-                  return;
-                }
+                // Comment out plan check - all users now have access to all templates
+                // if (Boolean((it as Record<string, unknown>).proOnly) && canonicalPlan(me?.plan) !== 'ultra') {
+                //   try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
+                //   return;
+                // }
                 setActive({ id: it.id, name: it.name, slug: it.slug });
                 setOpen(true);
               }}
@@ -1148,12 +1149,15 @@ export function TemplatesTabContent(){
 
   const handleDesignerAnimate = useCallback(async (getBlob: () => Promise<Blob | null>) => {
     try {
+      // Comment out plan check - all users now have video generation access
+      /*
       if (canonicalPlan(me?.plan) !== 'ultra') {
         try {
           window.dispatchEvent(new CustomEvent('open-pro-upsell'));
         } catch {}
         return;
       }
+      */
       setAnimConfirmOpen(true);
       setAnimCredits(undefined as unknown as number);
       setAnimResultUrl(null);
@@ -1166,7 +1170,7 @@ export function TemplatesTabContent(){
       animPendingBlobRef.current = blob;
       setAnimHasPending(true);
     } catch {}
-  }, [me?.plan]);
+  }, []);
 
   useEffect(()=>{
     const srcs: Array<'vehicle'|'user'> = Array.isArray(activeTemplate?.allowedImageSources) ? (activeTemplate!.allowedImageSources as Array<'vehicle'|'user'>) : ['vehicle','user'];
@@ -1554,7 +1558,35 @@ export function TemplatesTabContent(){
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button className="w-full sm:w-auto" variant="outline" onClick={()=>{ setAnimResultUrl(null); setAnimResultKey(null); }}>Return to designer</Button>
-                    <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
+                      {/* Upscale button - available for all users with indigo styling */}
+                      {animResultKey && !String(animResultKey).includes('upscaled') && !String(animResultKey).includes('2x') ? (
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="h-9 px-4 text-sm border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 flex-1 sm:flex-none min-w-[7rem]"
+                          onClick={()=>{
+                            // All users can upscale videos
+                            toast.message('Video upscale coming soon');
+                          }}
+                        >
+                          Upscale
+                        </Button>
+                      ) : null}
+                      {/* Smooth (60fps) button - available for all users with indigo styling */}
+                      {animResultKey && (String(animResultKey).includes('upscaled') || String(animResultKey).includes('2x')) && !String(animResultKey).includes('60fps') && !String(animResultKey).includes('interpolated') ? (
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="h-9 px-4 text-sm border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 flex-1 sm:flex-none min-w-[9rem]"
+                          onClick={()=>{
+                            // All users can use smooth (60fps)
+                            toast.message('Video interpolation coming soon');
+                          }}
+                        >
+                          Smooth (60fps)
+                        </Button>
+                      ) : null}
                       <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={async()=>{
                         const ok = await confirmToast({ title: 'Delete video?', message: 'This will delete it from your workspace library.' });
                         if (!ok) return;
@@ -1698,10 +1730,13 @@ export function TemplatesTabContent(){
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
                   <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70 flex-1 sm:flex-none min-w-[9rem]" onClick={()=> setDesignOpen(true)}>Designer</Button>
                   <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70 flex-1 sm:flex-none min-w-[12rem]" disabled={upscaleBusy || !resultKey} onClick={async()=>{
+                    // Comment out plan check - all users now have upscale access
+                    /*
                     if (canonicalPlan(me?.plan) !== 'ultra') {
                       try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
                       return;
                     }
+                    */
                     if (!resultKey) return;
                     // Check credits before attempting upscale
                     const bal = await getCredits();
@@ -2058,7 +2093,7 @@ export function TemplatesTabContent(){
                 open={cropOpen}
                 imageUrl={cropUrl}
                 aspectRatio={typeof (activeTemplate as { aspectRatio?: number })?.aspectRatio === 'number' ? Number((activeTemplate as { aspectRatio?: number }).aspectRatio) : 1}
-                title={`Crop image to match aspect ratio`}
+                title={`Crop image to match template`}
                 onCancel={()=>{ setCropOpen(false); setCropUrl(null); setPendingKeys(null); }}
                 onCropped={async(blob)=>{
                   setCropOpen(false);

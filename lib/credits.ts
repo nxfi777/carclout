@@ -92,7 +92,7 @@ export async function checkAndTriggerAutoReload(email: string): Promise<void> {
   // Get plan for differential credit rates
   const planRes = await db.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email });
   const planRow = Array.isArray(planRes) && Array.isArray(planRes[0]) ? (planRes[0][0] as { plan?: string }) : null;
-  const currentPlan = planRow?.plan as "minimum" | "basic" | "pro" | null;
+  const currentPlan = planRow?.plan as "minimum" | "pro" | null;
   
   const ratePerDollar = currentPlan === "pro" ? CREDITS_PER_DOLLAR : Math.floor(2500 / 5); // 1000 or 500
   const credits = amount * ratePerDollar;
@@ -167,19 +167,19 @@ export async function requireAndReserveCredits(email: string, cost: number, reas
   await adjustCredits(email, -cost, `reserve:${reason}`, ref || null);
 }
 
-export function includedMonthlyCreditsForPlan(plan: "basic" | "pro" | "ultra" | "$1" | "$20" | "$200"): number {
-  // Map the app's 3 plans ($1, $20, $200) to included monthly credits.
-  // We price credits at $0.001 (10x scale), with bigger plan bonuses for CX while keeping margins safe.
+export function includedMonthlyCreditsForPlan(plan: "minimum" | "pro" | "ultra" | "$1" | "$20" | "$200"): number {
+  // Map the app's plans to included monthly credits.
+  // Credit allocation based on $17/mo Pro = 13,900 credits (817.65 credits per dollar)
   switch (plan) {
     case "$1":
-    case "basic":
-      return 500; // $1 ⇒ 500 credits → ~5 generations at 100 credits/image (90 gen + 10 cutout)
+    case "minimum":
+      return 1100; // $1 ⇒ 1100 credits → ~11 generations at 100 credits/image (90 gen + 10 cutout)
     case "$20":
     case "pro":
-      return 25000; // $20 ⇒ 25,000 credits → ~250 generations at 100 credits/image
+      return 13900; // $17/mo ⇒ 13,900 credits → ~139 generations at 100 credits/image
     case "$200":
     case "ultra":
-      return 250000; // $200 ⇒ 250,000 credits → ~2,500 generations at 100 credits/image
+      return 26165; // $32/mo (yearly) ⇒ 26,165 credits → ~261 generations + video features
     default:
       return 0;
   }

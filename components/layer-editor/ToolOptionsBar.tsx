@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import type { ShapeLayer, TextLayer } from "@/types/designer";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2, Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical, Check, Trash2, Copy } from "lucide-react";
+import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2, Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical, Check, Trash2, Copy, ArrowRight } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { BsTransparency } from "react-icons/bs";
@@ -19,7 +19,10 @@ import { FaFont } from "react-icons/fa6";
 import { RiLetterSpacing2 } from "react-icons/ri";
 import { LuRotate3D } from "react-icons/lu";
 import { CgFontHeight } from "react-icons/cg";
-import { PiArrowBendRightUp } from "react-icons/pi";
+import { PiArrowBendRightUp, PiTextHFill } from "react-icons/pi";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { SHOW_IMAGE_TOOL } from "@/components/layer-editor/config";
 
 const FONT_FAMILIES = [
   "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
@@ -103,7 +106,7 @@ export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactN
             {state.tool === 'text' && hasTextSelected ? <TextOptions /> : null}
             {state.tool === 'shape' ? <ShapeOptions /> : null}
             {hasShapeSelected ? <ShapeStyleOptions /> : null}
-            {state.tool === 'image' ? <ImageOptions /> : null}
+            {SHOW_IMAGE_TOOL && state.tool === 'image' ? <ImageOptions /> : null}
             <RotationOptions />
             {(['select','shape','image'] as string[]).includes(state.tool) ? (
               <>
@@ -194,6 +197,23 @@ function TextOptions() {
     } catch { return 1; }
   })();
   const textOpacityPct = Math.round(textAlpha * 100);
+  
+  // Helper to extract alpha from highlight color
+  const highlightAlpha = ((): number => {
+    try {
+      if (!isText || !selectedTextLayers[0]?.highlightColor) return 0.3;
+      const color = selectedTextLayers[0].highlightColor;
+      // Check for rgba format
+      const rgbaMatch = color.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\)/i);
+      if (rgbaMatch) return Math.max(0, Math.min(1, Number(rgbaMatch[1] || 0.3)));
+      // Check for 8-digit hex format (#RRGGBBAA)
+      if (color.startsWith('#') && color.length === 9) {
+        const alphaHex = color.slice(7, 9);
+        return Math.max(0, Math.min(1, parseInt(alphaHex, 16) / 255));
+      }
+      return 0.3;
+    } catch { return 0.3; }
+  })();
   const lineHeightValue = isText && selectedTextLayers.length === 1 ? selectedTextLayers[0].lineHeightEm : 1.1;
   const horizontalTiltValue = isText && selectedTextLayers.length === 1 ? Math.round(Number(selectedTextLayers[0].tiltYDeg || 0)) : 0;
   const verticalTiltValue = isText && selectedTextLayers.length === 1 ? Math.round(Number(selectedTextLayers[0].tiltXDeg || 0)) : 0;
@@ -314,6 +334,178 @@ function TextOptions() {
             }
           }}
         />
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button 
+              size="icon" 
+              variant="outline" 
+              className="h-8 w-8" 
+              title="Text styling"
+              disabled={!isText}
+            >
+              <PiTextHFill size={16} />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 space-y-4" align="start" onOpenAutoFocus={(e)=> e.preventDefault()}>
+            {/* Stroke Section */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="text-stroke"
+                  checked={isText && !!selectedTextLayers[0]?.strokeEnabled}
+                  onCheckedChange={(checked)=>{
+                    if (!isText) return;
+                    for (const t of selectedTextLayers) {
+                      dispatch({ 
+                        type: 'update_layer', 
+                        id: t.id, 
+                        patch: { 
+                          strokeEnabled: !!checked,
+                          strokeColor: t.strokeColor || '#000000',
+                          strokeWidth: t.strokeWidth || 2
+                        } 
+                      });
+                    }
+                  }}
+                />
+                <Label htmlFor="text-stroke" className="text-sm font-medium cursor-pointer">
+                  Stroke
+                </Label>
+              </div>
+              {isText && selectedTextLayers[0]?.strokeEnabled && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-white/70 min-w-[3rem]">Color</span>
+                    <input
+                      type="color"
+                      className="h-8 w-10 rounded"
+                      value={hexFromColor(selectedTextLayers[0]?.strokeColor || '#000000')}
+                      onChange={(e)=>{
+                        if (!isText) return;
+                        const hex = e.target.value;
+                        for (const t of selectedTextLayers) {
+                          dispatch({ type: 'update_layer', id: t.id, patch: { strokeColor: hex } });
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm text-white/70">
+                      <span>Width</span>
+                      <span className="text-white">{selectedTextLayers[0]?.strokeWidth || 0}px</span>
+                    </div>
+                    <Slider
+                      className="w-full"
+                      min={0}
+                      max={20}
+                      step={0.5}
+                      value={[selectedTextLayers[0]?.strokeWidth || 0]}
+                      onValueChange={(v)=>{
+                        if (!isText) return;
+                        const width = Math.max(0, Math.min(20, Number(v?.[0] || 0)));
+                        for (const t of selectedTextLayers) {
+                          dispatch({ type: 'update_layer', id: t.id, patch: { strokeWidth: width } });
+                        }
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            
+            {/* Highlight Section */}
+            <div className="space-y-3 pt-3 border-t border-[var(--border)]">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="text-highlight"
+                  checked={isText && !!selectedTextLayers[0]?.highlightEnabled}
+                  onCheckedChange={(checked)=>{
+                    if (!isText) return;
+                    for (const t of selectedTextLayers) {
+                      dispatch({ 
+                        type: 'update_layer', 
+                        id: t.id, 
+                        patch: { 
+                          highlightEnabled: !!checked,
+                          highlightColor: t.highlightColor || 'rgba(255,255,0,0.3)'
+                        } 
+                      });
+                    }
+                  }}
+                />
+                <Label htmlFor="text-highlight" className="text-sm font-medium cursor-pointer">
+                  Highlight
+                </Label>
+              </div>
+              {isText && selectedTextLayers[0]?.highlightEnabled && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-white/70 min-w-[3rem]">Color</span>
+                    <input
+                      type="color"
+                      className="h-8 w-10 rounded"
+                      value={hexFromColor(selectedTextLayers[0]?.highlightColor || '#ffff00')}
+                      onChange={(e)=>{
+                        if (!isText) return;
+                        const hex = e.target.value;
+                        // Preserve the current alpha when changing color
+                        const alpha = highlightAlpha;
+                        const newColor = rgbaStringFrom(hex, alpha);
+                        for (const t of selectedTextLayers) {
+                          dispatch({ type: 'update_layer', id: t.id, patch: { highlightColor: newColor } });
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm text-white/70">
+                      <span>Opacity</span>
+                      <span className="text-white">{Math.round(highlightAlpha * 100)}%</span>
+                    </div>
+                    <Slider
+                      className="w-full"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={[highlightAlpha]}
+                      onValueChange={(v)=>{
+                        if (!isText) return;
+                        const alpha = Math.max(0, Math.min(1, Number(v?.[0] || 0.3)));
+                        for (const t of selectedTextLayers) {
+                          const hex = hexFromColor(t.highlightColor || '#ffff00');
+                          const newColor = rgbaStringFrom(hex, alpha);
+                          dispatch({ type: 'update_layer', id: t.id, patch: { highlightColor: newColor } });
+                        }
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Corner Radius Section */}
+            <div className="space-y-3 pt-3 border-t border-[var(--border)]">
+              <div className="flex items-center justify-between text-sm text-white/70">
+                <span>Corner Radius</span>
+                <span className="text-white">{((selectedTextLayers[0]?.borderRadiusEm || 0) * 16).toFixed(0)}px</span>
+              </div>
+              <Slider
+                className="w-full"
+                min={0}
+                max={1}
+                step={0.05}
+                value={[selectedTextLayers[0]?.borderRadiusEm || 0]}
+                onValueChange={(v)=>{
+                  if (!isText) return;
+                  const radius = Math.max(0, Math.min(1, Number(v?.[0] || 0)));
+                  for (const t of selectedTextLayers) {
+                    dispatch({ type: 'update_layer', id: t.id, patch: { borderRadiusEm: radius } });
+                  }
+                }}
+              />
+            </div>
+          </PopoverContent>
+        </Popover>
         <div className="flex items-center gap-0">
           <Button size="icon" variant="outline" className="rounded-r-none" onClick={()=> applyDeltaPx(-2)}>-</Button>
           <Popover open={open} onOpenChange={setOpen}>
@@ -710,25 +902,40 @@ function ShapeOptions() {
   const { state, dispatch } = useLayerEditor();
   const current = state.marqueeMode === 'ellipse' ? 'ellipse' : 'rectangle';
   return (
-    <Labeled label="Shape">
-      <button
-        className={cn("px-2 py-1 rounded", current==='rectangle' ? 'bg-white/10' : 'hover:bg-white/10')}
-        onClick={()=> { dispatch({ type: 'set_tool', tool: 'shape' }); dispatch({ type: 'set_marquee_mode', mode: 'rectangle' }); }}
-        title="Rectangle"
-      >
-        <Square aria-hidden className="size-4" />
-      </button>
-      <button
-        className={cn("px-2 py-1 rounded", current==='ellipse' ? 'bg-white/10' : 'hover:bg-white/10')}
-        onClick={()=> { dispatch({ type: 'set_tool', tool: 'shape' }); dispatch({ type: 'set_marquee_mode', mode: 'ellipse' }); }}
-        title="Ellipse"
-      >
-        <Circle aria-hidden className="size-4" />
-      </button>
-      <button className="px-2 py-1 rounded opacity-50 cursor-not-allowed" disabled title="Polygon coming soon">
-        <Triangle aria-hidden className="size-4" />
-      </button>
-    </Labeled>
+    <>
+      <Labeled label="Shape">
+        <button
+          className={cn("px-2 py-1 rounded", current==='rectangle' ? 'bg-white/10' : 'hover:bg-white/10')}
+          onClick={()=> { dispatch({ type: 'set_tool', tool: 'shape' }); dispatch({ type: 'set_marquee_mode', mode: 'rectangle' }); }}
+          title="Rectangle"
+        >
+          <Square aria-hidden className="size-4" />
+        </button>
+        <button
+          className={cn("px-2 py-1 rounded", current==='ellipse' ? 'bg-white/10' : 'hover:bg-white/10')}
+          onClick={()=> { dispatch({ type: 'set_tool', tool: 'shape' }); dispatch({ type: 'set_marquee_mode', mode: 'ellipse' }); }}
+          title="Ellipse"
+        >
+          <Circle aria-hidden className="size-4" />
+        </button>
+        <button className="px-2 py-1 rounded opacity-50 cursor-not-allowed" disabled title="Polygon coming soon">
+          <Triangle aria-hidden className="size-4" />
+        </button>
+      </Labeled>
+      <Labeled label="Add">
+        <button
+          className="px-2 py-1 rounded hover:bg-white/10"
+          onClick={async ()=> {
+            const { createDefaultArrow } = await import('@/types/layer-editor');
+            const arrow = createDefaultArrow(50, 50);
+            dispatch({ type: 'add_layer', layer: arrow, atTop: true });
+          }}
+          title="Add Arrow"
+        >
+          <ArrowRight aria-hidden className="size-4" />
+        </button>
+      </Labeled>
+    </>
   );
 }
 
@@ -850,6 +1057,40 @@ function ShapeStyleOptions() {
             }}
           />
         </Labeled>
+      ) : null}
+      {String((selectedShapes[0]).shape) === 'arrow' ? (
+        <>
+          <Labeled label="Arrowhead Size">
+            <Slider 
+              className="w-36" 
+              min={0.05} 
+              max={0.4} 
+              step={0.01} 
+              value={[Number((selectedShapes[0]).arrowHeadSize || 0.15)]}
+              onValueChange={(v)=>{
+                const size = Math.max(0.05, Math.min(0.4, Number(v?.[0] || 0.15)));
+                for (const s of selectedShapes) {
+                  dispatch({ type: 'update_layer', id: s.id, patch: { arrowHeadSize: size } });
+                }
+              }}
+            />
+          </Labeled>
+          <Labeled label="Curvature">
+            <Slider 
+              className="w-36" 
+              min={-1} 
+              max={1} 
+              step={0.05} 
+              value={[Number((selectedShapes[0]).curvature || 0)]}
+              onValueChange={(v)=>{
+                const curve = Math.max(-1, Math.min(1, Number(v?.[0] || 0)));
+                for (const s of selectedShapes) {
+                  dispatch({ type: 'update_layer', id: s.id, patch: { curvature: curve } });
+                }
+              }}
+            />
+          </Labeled>
+        </>
       ) : null}
     </>
   );

@@ -130,5 +130,20 @@ export async function ensureFolder(prefix: string) {
   );
 }
 
+// Export getSignedUrl from AWS SDK for direct use
+export { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+// Helper function to upload buffer to R2
+export async function uploadToR2(key: string, buffer: Buffer, contentType: string) {
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+    })
+  );
+}
+
 export { bucket };
 

@@ -70,7 +70,7 @@ function OnboardingPageInner() {
             return;
           }
         }
-        const isSubscribed = plan === "minimum" || plan === "basic" || plan === "pro";
+        const isSubscribed = plan === "minimum" || plan === "basic" || plan === "pro" || plan === "ultra";
         if (isSubscribed) {
           router.replace("/dashboard/templates");
           return;

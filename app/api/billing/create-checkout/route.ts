@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { stripe, PLAN_PRICE_IDS, type Plan } from "@/lib/stripe";
+import { stripe, type Plan } from "@/lib/stripe";
 import { auth } from "@/lib/auth";
 import { getSurreal } from "@/lib/surrealdb";
-import { CREDITS_PER_DOLLAR } from "@/lib/credits";
-import { RecordId } from "surrealdb";
 
 function resolveOrigin(req: Request): string {
   const envUrl =
@@ -26,7 +24,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { plan, topup } = (await req.json().catch(()=>({} as Record<string, unknown>))) as { plan?: unknown; topup?: unknown };
+    const { plan: _plan, topup, interval: _interval } = (await req.json().catch(()=>({} as Record<string, unknown>))) as { plan?: unknown; topup?: unknown; interval?: unknown };
     // Credits top-up flow (one-time payment)
     if (typeof topup === "number") {
       // Load plan for differential credit rates
@@ -36,21 +34,21 @@ export async function POST(req: Request) {
         const r = await db.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email });
         const row = Array.isArray(r) && Array.isArray(r[0]) ? (r[0][0] as { plan?: Plan }) : null;
         const p = row?.plan as Plan | undefined;
-        currentPlan = p === "pro" ? "pro" : "minimum"; // default minimum if unset
+        currentPlan = (p === "pro" || p === "ultra") ? p : "minimum"; // default minimum if unset
       } catch {}
 
-      const minUsd = 5;
+      const minUsd = 3;
       const amountUsd = Math.max(minUsd, Math.floor(Number(topup)));
       if (!Number.isFinite(amountUsd) || amountUsd < minUsd) {
         return NextResponse.json({ error: `Minimum top-up is $${minUsd}` }, { status: 400 });
       }
       
-      // Tiered pricing structure that scales to exactly 1:1000
-      // Based on Hormozi's pricing psychology: anchor high, volume incentives, psychological pricing
-      let credits: number;
-      let ratePerDollar = 0;
+      // Single plan pricing: 1100 credits per dollar (3300 credits for $3 minimum)
+      const ratePerDollar = 1100; // 1100 credits per dollar
       
-      if (currentPlan === "pro") {
+      // Comment out pro/ultra differential pricing - single plan model
+      /*
+      if (currentPlan === "pro" || currentPlan === "ultra") {
         // Pro plan: Tiered topups that scale progressively better
         // Designed to encourage larger purchases while rewarding bulk buyers
         if (amountUsd >= 199) {
@@ -81,8 +79,13 @@ export async function POST(req: Request) {
         ratePerDollar = Math.floor(2500 / 5); // 500
         credits = amountUsd * ratePerDollar;
       }
+      */
+      
+      const credits = amountUsd * ratePerDollar;
+      
       const origin = resolveOrigin(req);
-      const upgradeHint = currentPlan === "minimum" && ratePerDollar < CREDITS_PER_DOLLAR;
+      // Remove upgrade hint since we're single plan now
+      // const upgradeHint = currentPlan === "minimum" && ratePerDollar < CREDITS_PER_DOLLAR;
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
         payment_method_types: ["card"],
@@ -90,7 +93,7 @@ export async function POST(req: Request) {
           {
             price_data: {
               currency: "usd",
-              product_data: { name: `${credits} Credits Top-up${upgradeHint ? " (more value on Pro)" : ""}` },
+              product_data: { name: `${credits} Credits Top-up` },
               unit_amount: amountUsd * 100,
             },
             quantity: 1,
@@ -101,16 +104,26 @@ export async function POST(req: Request) {
         success_url: `${origin}/dashboard?topup=success`,
         cancel_url: `${origin}/dashboard?topup=cancelled`,
       });
-      return NextResponse.json({ url: session.url, ...(upgradeHint ? { hint: "You get more credits per dollar on Pro." } : {}) });
+      return NextResponse.json({ url: session.url });
     }
 
+    // Comment out pro/ultra plan checkout logic - single plan model
+    /*
     const key = ((plan as Plan) || "minimum") as Plan;
     if (key === "basic") {
       return NextResponse.json({ error: "This plan is coming soon." }, { status: 400 });
     }
-    const price = PLAN_PRICE_IDS[key];
+    
+    // Determine billing interval (default to yearly for pro and ultra, monthly for minimum)
+    const billingInterval: BillingInterval = (typeof interval === "string" && (interval === "monthly" || interval === "yearly")) 
+      ? interval 
+      : (key === "pro" || key === "ultra" ? "yearly" : "monthly");
+    
+    const priceIds = PLAN_PRICE_IDS[key];
+    const price = priceIds?.[billingInterval] || priceIds?.monthly || "";
+    
     if (!price) {
-      return NextResponse.json({ error: `Invalid plan: ${key}` }, { status: 400 });
+      return NextResponse.json({ error: `Invalid plan or billing interval: ${key} (${billingInterval})` }, { status: 400 });
     }
 
     // Fetch Surreal user data including Stripe IDs
@@ -216,6 +229,11 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ url: session.url });
+    */
+    
+    // For now, return error for plan subscriptions since we're moving to single $1 plan
+    return NextResponse.json({ error: "Plan subscriptions are currently being updated. Please use credit top-ups." }, { status: 400 });
+
   } catch (e) {
     const err = e as { message?: string } & { raw?: { message?: string } };
     const detail = err?.raw?.message || err?.message || "Stripe error";

@@ -11,6 +11,8 @@ import { DesignerActionsProvider } from "@/components/layer-editor/DesignerActio
 import { composeLayersToBlob, exportDesignerState } from "@/lib/layer-export";
 import { getViewUrl } from "@/lib/view-url-client";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import CreditDepletionDrawer from "@/components/credit-depletion-drawer";
+import { useCreditDepletion } from "@/lib/use-credit-depletion";
 
 type RembgConfig = {
   enabled?: boolean;
@@ -57,9 +59,18 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
   const dirtyCommitRef = React.useRef<(() => void) | null>(null);
   const stateRef = React.useRef<import("@/types/layer-editor").LayerEditorState | null>(null);
   void aspectRatio; void onClose; void saveLabel; // accepted for API compatibility
+  const creditDepletion = useCreditDepletion();
 
   const initializedRef = React.useRef(!!projectState); // Already initialized if we have project state
   const initialBgKeyRef = React.useRef(bgKey);
+
+  async function getCredits(): Promise<number> {
+    try {
+      const r = await fetch('/api/credits', { cache: 'no-store' }).then(r=>r.json());
+      const c = typeof r?.credits === 'number' ? Number(r.credits) : 0;
+      return Number.isFinite(c) ? c : 0;
+    } catch { return 0; }
+  }
   
   useEffect(()=>{
     // If projectState was provided, we already have everything - skip rembg
@@ -284,6 +295,10 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
 
   const upscaleBackground = useCallback(async () => {
     if (upscaling) return;
+    // Check credits before attempting upscale
+    const bal = await getCredits();
+    const insufficientCredits = creditDepletion.checkAndTrigger(bal, 20);
+    if (insufficientCredits) return;
     setUpscaling(true);
     try {
       let payload: { r2_key: string; original_width?: number; original_height?: number } = { r2_key: bgKey };
@@ -304,7 +319,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
         try { onReplaceBgKey(String(data.key), typeof data?.url === 'string' ? String(data.url) : undefined); } catch {}
       }
     } catch {} finally { setUpscaling(false); }
-  }, [bgKey, onReplaceBgKey, upscaling]);
+  }, [bgKey, onReplaceBgKey, upscaling, creditDepletion]);
 
   const actions = React.useMemo(() => {
     const list: import("@/components/layer-editor/DesignerActionsContext").DesignerActionDescriptor[] = [];
@@ -453,6 +468,13 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
           />
         </LayerEditorProvider>
       </DesignerActionsProvider>
+      <CreditDepletionDrawer
+        open={creditDepletion.isOpen}
+        onOpenChange={creditDepletion.close}
+        currentPlan={creditDepletion.currentPlan}
+        creditsRemaining={creditDepletion.creditsRemaining}
+        requiredCredits={creditDepletion.requiredCredits}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { getSurreal } from "@/lib/surrealdb";
 import { getBentoTemplates } from "@/lib/landing-data";
 import { cache } from "react";
 import ScarcityProgressBar from "@/components/scarcity-progress-bar";
+import { isSubscribedPlan } from "@/lib/plans";
 
 // Lazy load heavy components with automatic code splitting
 const PhoneWithCarParallax = dynamic(() => import("@/components/phone-with-car"), {
@@ -71,7 +72,7 @@ export default async function Home() {
     const { onboardingCompleted, plan: userPlan } = userState;
     
     // Check if user is subscribed
-    const isSubscribed = userPlan === "minimum" || userPlan === "basic" || userPlan === "pro";
+    const isSubscribed = isSubscribedPlan(userPlan);
     
     if (onboardingCompleted && isSubscribed) {
       // User is fully set up - show dashboard CTA
@@ -158,18 +159,16 @@ export default async function Home() {
       {/* Testimonials */}
       <TestimonialsSection />
 
-      {/* Payment Processors Marquee */}
-      <PaymentProcessorsMarquee />
-
       <section id="pricing" className="w-full py-[3rem] md:py-[4rem]">
         <div className="text-center space-y-[0.6rem] mb-[1.5rem]">
-          <h2 className="text-[1.6rem] md:text-[2rem] font-semibold">Simple pricing</h2>
-          <p className="text-[color:var(--foreground)]/80 text-[0.95rem] md:text-[1.05rem]">Pick the plan that fits. Upgrade or cancel anytime.</p>
+          <h2 className="text-[1.6rem] md:text-[2rem] font-semibold">Just $1.</h2>
         </div>
         <div className="max-w-6xl mx-auto px-[1rem]">
           <PlanSelector ctaLabel="Get started" />
         </div>
       </section>
+      {/* Payment Processors Marquee */}
+      <PaymentProcessorsMarquee />
       <FAQSection />
 
       {/* Founders Guarantee */}

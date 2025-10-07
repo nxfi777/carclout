@@ -18,6 +18,7 @@ type TemplateDoc = {
   aspectRatio?: number;
   allowedImageSources?: Array<'vehicle' | 'user'>; // 'user' covers upload + workspace
   proOnly?: boolean;
+  status?: 'draft' | 'public'; // visibility status (defaults to 'draft')
   // Maximum number of user images allowed per upload action in the Use Template UI
   maxUploadImages?: number;
   variables?: Array<{ key: string; label?: string; type?: string; required?: boolean; defaultValue?: string | number | boolean }>;
@@ -70,12 +71,18 @@ export async function GET(req: Request) {
   const limit = Math.max(1, Math.min(500, parseInt(String(searchParams.get('limit') || '500')) || 500));
   const db = await getSurreal();
 
-  // Optional user context for per-user "favorited" flag
+  // Optional user context for per-user "favorited" flag and admin role
   let email: string | null = null;
-  try { const u = await getSessionUser(); email = u?.email || null; } catch {}
+  let isAdmin = false;
+  try { 
+    const u = await getSessionUser(); 
+    email = u?.email || null; 
+    isAdmin = (u as { role?: unknown })?.role === 'admin';
+  } catch {}
 
-  // Load templates (recent by default)
-  const res = await db.query(`SELECT * FROM template ORDER BY created_at DESC LIMIT ${limit};`);
+  // Load templates (recent by default) - filter by status for non-admin users
+  const statusFilter = isAdmin ? '' : `WHERE (status = 'public' OR status IS NONE)`;
+  const res = await db.query(`SELECT * FROM template ${statusFilter} ORDER BY created_at DESC LIMIT ${limit};`);
   const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as TemplateDoc[]) : [];
 
   // Map to string ids first for easier joins
@@ -174,6 +181,7 @@ export async function POST(req: Request) {
     falModelSlug: body?.falModelSlug || "fal-ai/gemini-25-flash-image/edit", // default; admin can override
     thumbnailKey: body?.thumbnailKey || undefined,
     adminImageKeys: Array.isArray(body?.adminImageKeys) ? (body!.adminImageKeys as string[]).filter((x) => typeof x === "string") : [],
+    status: (body?.status === 'public' || body?.status === 'draft') ? body.status : 'draft', // default to draft
     imageSize: ((): TemplateDoc['imageSize'] => {
       try {
         const sz = (body as { imageSize?: { width?: unknown; height?: unknown } })?.imageSize;
@@ -311,6 +319,7 @@ export async function POST(req: Request) {
     aspectRatio = $aspectRatio,
     allowedImageSources = $allowedImageSources,
     proOnly = $proOnly,
+    status = $status,
     maxUploadImages = $maxUploadImages,
     variables = $variables,
     categories = $categories,
@@ -372,6 +381,7 @@ export async function PATCH(req: Request) {
     'aspectRatio',
     'allowedImageSources',
     'proOnly',
+    'status',
     'maxUploadImages',
     'variables',
     'categories',

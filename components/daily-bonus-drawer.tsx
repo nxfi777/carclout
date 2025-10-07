@@ -150,33 +150,12 @@ export default function DailyBonusDrawer() {
       }
     }
 
-    async function handlePrompt() {
+    async function claimBonus() {
       if (cancelled) return;
       const todayKey = currentDayKey();
-      if (hasClaimedRef.current && lastPromptKeyRef.current !== todayKey) {
-        hasClaimedRef.current = false;
-      }
-      if (hasClaimedRef.current || claimingRef.current) return;
-      if (lastPromptKeyRef.current === todayKey) return;
-      if (await needsProfileCompletion()) return;
-      if (await alreadyActiveToday()) {
-        hasClaimedRef.current = true;
-        lastPromptKeyRef.current = todayKey;
-        return;
-      }
-
-      claimingRef.current = true;
-      setState("claiming");
       
       try {
-        // Request to show via queue system with medium priority
-        requestShow(
-          "daily-bonus",
-          DRAWER_PRIORITY.MEDIUM,
-          () => setOpen(true),
-          () => setOpen(false)
-        );
-        
+        setState("claiming");
         await refreshXpDetails();
 
         const before = await fetchStreakValue();
@@ -196,10 +175,15 @@ export default function DailyBonusDrawer() {
           });
           clearTimeout(timeoutId);
           
-          const data = await res.json().catch(() => ({}));
-          awarded = Number(data?.added || 0);
-          leveledUp = !!data?.leveledUp;
-          newLevel = Number(data?.level || 0);
+          if (!res.ok) {
+            console.error("Daily bonus API returned error:", res.status);
+            awarded = 0;
+          } else {
+            const data = await res.json().catch(() => ({}));
+            awarded = Number(data?.added || 0);
+            leveledUp = !!data?.leveledUp;
+            newLevel = Number(data?.level || 0);
+          }
         } catch (err) {
           console.error("Failed to claim daily bonus:", err);
           awarded = 0;
@@ -208,12 +192,20 @@ export default function DailyBonusDrawer() {
         if (cancelled) {
           return;
         }
+        
         setAdded(Math.max(0, awarded));
 
         await refreshXpDetails();
         const after = await fetchStreakValue();
         if (!cancelled) {
           setStreakDelta(Math.max(0, after - before));
+        }
+
+        // Ensure state transition is visible
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        if (cancelled) {
+          return;
         }
 
         if (awarded > 0) {
@@ -255,6 +247,39 @@ export default function DailyBonusDrawer() {
       } finally {
         claimingRef.current = false;
       }
+    }
+
+    async function handlePrompt() {
+      if (cancelled) return;
+      const todayKey = currentDayKey();
+      if (hasClaimedRef.current && lastPromptKeyRef.current !== todayKey) {
+        hasClaimedRef.current = false;
+      }
+      if (hasClaimedRef.current || claimingRef.current) return;
+      if (lastPromptKeyRef.current === todayKey) return;
+      if (await needsProfileCompletion()) return;
+      if (await alreadyActiveToday()) {
+        hasClaimedRef.current = true;
+        lastPromptKeyRef.current = todayKey;
+        return;
+      }
+
+      claimingRef.current = true;
+      setState("idle"); // Reset to idle before showing
+      
+      // Request to show via queue system with medium priority
+      requestShow(
+        "daily-bonus",
+        DRAWER_PRIORITY.MEDIUM,
+        () => {
+          setOpen(true);
+          // Start the claim process after drawer opens
+          setTimeout(() => {
+            claimBonus();
+          }, 300);
+        },
+        () => setOpen(false)
+      );
     }
 
     window.addEventListener("prompt-daily-bonus", handlePrompt as EventListener);

@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { getBaseUrl } from "@/lib/base-url";
 import { getSurreal } from "@/lib/surrealdb";
+import { isSubscribedPlan } from "@/lib/plans";
 
 export const middleware = auth(async (req) => {
   const { pathname, search } = req.nextUrl;
@@ -43,7 +44,7 @@ export const middleware = auth(async (req) => {
         const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { onboardingCompleted?: boolean; plan?: string | null } | null) : null;
         const onboardingCompleted = !!row?.onboardingCompleted;
         const userPlan = row?.plan || null;
-        const isSubscribed = userPlan === "minimum" || userPlan === "basic" || userPlan === "pro";
+        const isSubscribed = isSubscribedPlan(userPlan);
 
         // Redirect based on user state
         if (!onboardingCompleted) {
@@ -102,7 +103,7 @@ export const middleware = auth(async (req) => {
     const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as { onboardingCompleted?: boolean; plan?: string | null } | null) : null;
     const onboardingCompleted = !!row?.onboardingCompleted;
     const userPlan = row?.plan || null;
-    const isSubscribed = userPlan === "minimum" || userPlan === "basic" || userPlan === "pro";
+    const isSubscribed = isSubscribedPlan(userPlan);
 
     // Allow access to onboarding and plan pages if not fully set up
     if (isOnboardingPage || isPlanPage) {

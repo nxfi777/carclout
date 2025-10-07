@@ -12,10 +12,16 @@ export async function POST(req: Request) {
 	
 	const { targetEmail, plan } = await req.json().catch(()=>({} as Record<string, unknown>));
 	
-	// Validate plan value
-	const validPlans = ["minimum", "basic", "pro", null];
-	if (!targetEmail || !validPlans.includes(plan as string | null)) {
-		return NextResponse.json({ error: "targetEmail and valid plan required (minimum, basic, pro, or null)" }, { status: 400 });
+	// Validate plan value (legacy aliases normalize to canonical plan ids)
+	const validPlans = ["minimum", "pro", "ultra", null] as const;
+	const normalizedPlan = typeof plan === "string" ? plan.trim().toLowerCase() : plan;
+	const allowedPlan = normalizedPlan === null || validPlans.includes(normalizedPlan as (typeof validPlans)[number])
+		? normalizedPlan
+		: normalizedPlan === "basic" || normalizedPlan === "base" ? "minimum"
+		: normalizedPlan === "premium" ? "pro"
+		: normalizedPlan;
+	if (!targetEmail || (allowedPlan !== null && !validPlans.includes(allowedPlan as (typeof validPlans)[number]))) {
+		return NextResponse.json({ error: "targetEmail and valid plan required (minimum, pro, ultra, or null)" }, { status: 400 });
 	}
 	
 	try {
@@ -44,7 +50,7 @@ export async function POST(req: Request) {
 		// Update the user's plan
 		await db.query(
 			`UPDATE user SET plan = $plan WHERE email = $email;`,
-			{ email: String(targetEmail), plan: plan === null ? null : String(plan) }
+			{ email: String(targetEmail), plan: allowedPlan === null ? null : String(allowedPlan) }
 		);
 		
 		return NextResponse.json({ ok: true });

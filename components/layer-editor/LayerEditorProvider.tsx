@@ -80,6 +80,12 @@ function serializeLayer(layer: Layer) {
       fontSizeEm: textLayer.fontSizeEm ?? null,
       letterSpacingEm: Number(textLayer.letterSpacingEm || 0),
       lineHeightEm: Number(textLayer.lineHeightEm || 1),
+      strokeEnabled: !!textLayer.strokeEnabled,
+      strokeColor: textLayer.strokeColor ?? null,
+      strokeWidth: Number(textLayer.strokeWidth ?? 0),
+      highlightEnabled: !!textLayer.highlightEnabled,
+      highlightColor: textLayer.highlightColor ?? null,
+      borderRadiusEm: Number(textLayer.borderRadiusEm ?? 0),
     } as const;
   }
   if (layer.type === 'shape') {

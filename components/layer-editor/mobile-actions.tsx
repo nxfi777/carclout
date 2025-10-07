@@ -113,7 +113,7 @@ function ActionButton({ action, wide }: { action: import("@/components/layer-edi
 
   if (action.electric) {
     return (
-      <ElectricBorder key={action.key} color="#ff6a00" speed={1} chaos={0.6} thickness={2} className={wide ? "rounded-md" : "rounded-full"}>
+      <ElectricBorder key={action.key} color="#8b5cf6" speed={1} chaos={0.6} thickness={2} className={wide ? "rounded-md" : "rounded-full"}>
         {content}
       </ElectricBorder>
     );

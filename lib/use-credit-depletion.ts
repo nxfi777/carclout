@@ -37,9 +37,9 @@ export function useCreditDepletion(): UseCreditDepletionReturn {
         const me = await fetch('/api/me', { cache: 'no-store' }).then(r => r.json());
         if (mounted) {
           const plan = me?.plan;
-          if (plan === 'pro' || plan === 'ultra') {
+          if (plan === 'pro' || plan === 'ultra' || plan === 'premium') {
             setCurrentPlan('pro');
-          } else if (plan === 'minimum' || plan === 'basic' || plan === 'base') {
+          } else if (plan === 'minimum' || plan === 'base' || plan === 'basic' || plan === 'starter') {
             setCurrentPlan('minimum');
           }
         }

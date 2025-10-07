@@ -44,7 +44,7 @@ type ChatMessage = {
 }
 
 type ShowroomView = "showroom" | "forge" | "livestream";
-type ChannelPerms = { slug: string; name?: string; requiredReadRole?: 'user' | 'staff' | 'admin'; requiredReadPlan?: 'base' | 'premium' | 'ultra'; locked?: boolean; locked_until?: string | null };
+type ChannelPerms = { slug: string; name?: string; requiredReadRole?: 'user' | 'staff' | 'admin'; requiredReadPlan?: 'minimum' | 'pro' | 'ultra'; locked?: boolean; locked_until?: string | null };
 
 type ChatProfile = {
   name?: string;
@@ -1355,21 +1355,21 @@ function DashboardShowroomPageInner() {
     if (required === 'admin') return userRole === 'admin';
     return false;
   }
-  function canonicalPlan(p?: string | null): 'base' | 'premium' | 'ultra' | null {
+  function canonicalPlan(p?: string | null): 'minimum' | 'pro' | 'ultra' | null {
     const s = (p || '').toLowerCase();
-    if (s === 'ultra' || s === 'pro') return 'ultra';
-    if (s === 'premium') return 'premium';
-    if (s === 'base' || s === 'basic' || s === 'minimum') return 'base';
+    if (s === 'ultra') return 'ultra';
+    if (s === 'pro' || s === 'premium') return 'pro';
+    if (s === 'minimum' || s === 'base' || s === 'basic') return 'minimum';
   return null;
 }
 
 // default export placed at end of module
-  function canAccessByPlan(userPlan?: string | null, required?: 'base' | 'premium' | 'ultra') {
+  function canAccessByPlan(userPlan?: string | null, required?: 'minimum' | 'pro' | 'ultra') {
     if (!required) return true;
     const p = canonicalPlan(userPlan);
     if (!p) return false;
-    if (required === 'base') return p === 'base' || p === 'premium' || p === 'ultra';
-    if (required === 'premium') return p === 'premium' || p === 'ultra';
+    if (required === 'minimum') return p === 'minimum' || p === 'pro' || p === 'ultra';
+    if (required === 'pro') return p === 'pro' || p === 'ultra';
     if (required === 'ultra') return p === 'ultra';
     return false;
   }
@@ -1429,16 +1429,16 @@ function DashboardShowroomPageInner() {
       </Popover>
     );
   }
-  const filterByChannelAccess = (u: { role?: string; plan?: string; status?: string; email?: string; name?: string; image?: string }) => {
+  const _filterByChannelAccess = (u: { role?: string; plan?: string; status?: string; email?: string; name?: string; image?: string }) => {
     if (!activeChannelPerms || activeChatType === 'dm') return true;
     const okRole = canAccessByRole(u.role as 'user' | 'staff' | 'admin' | undefined, activeChannelPerms.requiredReadRole);
-    const okPlan = canAccessByPlan(u.plan as 'base' | 'premium' | 'ultra' | undefined, activeChannelPerms.requiredReadPlan);
+    const okPlan = canAccessByPlan(u.plan as 'minimum' | 'pro' | 'ultra' | undefined, activeChannelPerms.requiredReadPlan);
     return okRole && okPlan;
   };
   // Treat online group as any non-offline user (online, idle, dnd; invisible stays in offline list)
+  // Note: We show ALL users in the sidebar regardless of channel access - the channel filter only affects message permissions
   const onlineUsers = presence
     .filter(u => (u.status !== 'offline' && u.status !== 'invisible'))
-    .filter(filterByChannelAccess)
     .map(u => ({
       email: u.email as string | undefined,
       name: (u.name || u.email || '') as string,
@@ -1451,19 +1451,24 @@ function DashboardShowroomPageInner() {
     .slice(0,30);
   const offlineUsers = presence
     .filter(u => (u.status === 'offline' || u.status === 'invisible'))
-    .filter(filterByChannelAccess)
     .map(u => ({ email: u.email as string | undefined, name: (u.name || u.email || '') as string, image: u.image as string | undefined, role: u.role as string | undefined, plan: u.plan as string | undefined }))
     .filter(u => !!u.name)
     .slice(0,50);
 
-  // Group helpers for elegant ordering: Admins → Pro → Members
-  const isProPlan = (p?: string) => canonicalPlan(p) === 'ultra';
+  // Group helpers for elegant ordering: Admins → Ultra → Pro → Members
+  const isUltraPlan = (p?: string) => (p || '').toLowerCase() === 'ultra';
+  const isProPlan = (p?: string) => {
+    const plan = (p || '').toLowerCase();
+    return plan === 'pro' || plan === 'premium';
+  };
   const onlineAdmins = onlineUsers.filter(u => (u.role || '').toLowerCase() === 'admin');
-  const onlinePros = onlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isProPlan(u.plan || undefined));
-  const onlineBase = onlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && !isProPlan(u.plan || undefined));
+  const onlineUltras = onlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isUltraPlan(u.plan));
+  const onlinePros = onlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isProPlan(u.plan));
+  const onlineBase = onlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && !isUltraPlan(u.plan) && !isProPlan(u.plan));
   const offlineAdmins = offlineUsers.filter(u => (u.role || '').toLowerCase() === 'admin');
-  const offlinePros = offlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isProPlan(u.plan || undefined));
-  const offlineBase = offlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && !isProPlan(u.plan || undefined));
+  const offlineUltras = offlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isUltraPlan(u.plan));
+  const offlinePros = offlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && isProPlan(u.plan));
+  const offlineBase = offlineUsers.filter(u => (u.role || '').toLowerCase() !== 'admin' && !isUltraPlan(u.plan) && !isProPlan(u.plan));
 
   // Use inline gridTemplateColumns to avoid Tailwind JIT missing dynamic arbitrary values
   const gridTemplateColumns = useMemo(() => {
@@ -1646,17 +1651,19 @@ function DashboardShowroomPageInner() {
   }, [pendingAttachments, attachmentPreviewMap, finalizeSentAttachments, markAttachmentsStatus, sendMessage, handleTextareaResize]);
 
   // Check if user has minimum plan (base plan)
-  const hasMinimumPlan = useMemo(() => {
+  const _hasMinimumPlan = useMemo(() => {
     const plan = canonicalPlan(me?.plan);
-    return plan === 'base';
+    return plan === 'minimum';
   }, [me?.plan]);
 
-  // Trigger pro upsell dialog on mount if user has minimum plan
+  // Comment out minimum plan check - all users now have showroom access
+  /*
   useEffect(() => {
     if (hasMinimumPlan && !loading) {
       try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {}
     }
   }, [hasMinimumPlan, loading]);
+  */
 
   // Reset textarea height when messages change (after sending)
   useEffect(() => {
@@ -1678,8 +1685,9 @@ function DashboardShowroomPageInner() {
   return (
     <div className={"relative grid h-[calc(100dvh-6rem)] min-h-[calc(100dvh-6rem)] min-w-0"} style={{ gridTemplateColumns }}>
         <SubscriptionGate />
+        {/* Comment out blur overlay - all users now have showroom access */}
         {/* Blur overlay for minimum plan users - cannot be removed via inspect element */}
-        {hasMinimumPlan && (
+        {/* hasMinimumPlan && (
           <>
             <div 
               className="fixed inset-0 z-[9999] backdrop-blur-[12px]" 
@@ -1708,7 +1716,7 @@ function DashboardShowroomPageInner() {
               </div>
             </div>
           </>
-        )}
+        ) */}
         {showroomView === 'showroom' && showChannels ? (
         <aside className="h-full min-h-0 border-r border-[color:var(--border)] overflow-y-auto p-2 bg-[var(--card)] md:static absolute inset-0 z-40"> 
           {/* Mobile close */}
@@ -1777,7 +1785,9 @@ function DashboardShowroomPageInner() {
             {dmConversations.map((u)=> {
               const p = presence.find(pp => (pp.email || '').toLowerCase() === (u.email || '').toLowerCase());
               const isAdm = (p?.role || '').toLowerCase() === 'admin';
-              const isPro = (() => { const s = (p?.plan || '').toLowerCase(); return canonicalPlan(s) === 'ultra'; })();
+              const userCanonicalPlan = canonicalPlan(p?.plan);
+              const isPro = userCanonicalPlan === 'pro';
+              const isUltra = userCanonicalPlan === 'ultra';
               const dmChatId = `dm:${u.email}`;
               const isMuted = mutedChats.has(dmChatId);
               return (
@@ -1805,13 +1815,15 @@ function DashboardShowroomPageInner() {
                         <AvatarImage src={u.image || undefined} alt={u.name || u.email} loading="lazy" decoding="async" />
                         <AvatarFallback className="bg-[color:var(--primary)]/15 text-[color:var(--primary)]"><CarFront className="size-3" /></AvatarFallback>
                       </Avatar>
-                        <span className={`truncate ${isAdm ? 'text-[#ef4444]' : (isPro ? 'text-[#ff6a00]' : '')}`}>{u.name || u.email}</span>
+                        <span className={`truncate ${isAdm ? 'text-[#ef4444]' : (isUltra ? 'text-[#8b5cf6]' : (isPro ? 'text-[#ff6a00]' : ''))}`}>{u.name || u.email}</span>
                         {isMuted && <BellOff className="h-3 w-3 text-white/40" />}
                         {isAdm ? (
                           <span className="ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(239,68,68,0.12)] text-[#ef4444] border border-[#ef4444]/30">Admin</span>
+                        ) : (isUltra ? (
+                          <span className="ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(139,92,246,0.12)] text-[#8b5cf6] border border-[#8b5cf6]/30">Ultra</span>
                         ) : (isPro ? (
                           <span className="ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(255,106,0,0.12)] text-[#ff6a00] border border-[#ff6a00]/30">Pro</span>
-                        ) : null)}
+                        ) : null))}
                     </div>
                   </ContextMenuTrigger>
                   <UserContextMenu
@@ -1892,14 +1904,20 @@ function DashboardShowroomPageInner() {
                       (()=>{
                         const dp = activeDm?.email ? presence.find(u => (u.email || '').toLowerCase() === (activeDm!.email || '').toLowerCase()) : undefined;
                         const isAdm = (dp?.role || '').toLowerCase() === 'admin';
-                        const isPro = (() => { const s = (dp?.plan || '').toLowerCase(); return canonicalPlan(s) === 'ultra'; })();
+                        const userCanonicalPlan = canonicalPlan(dp?.plan);
+                        const isPro = userCanonicalPlan === 'pro';
+                        const isUltra = userCanonicalPlan === 'ultra';
                         const name = activeDm?.name || activeDm?.email || 'self';
                         return (
                           <span className="inline-flex items-center gap-2">
-                            <span className={`${isAdm ? 'text-[#ef4444]' : (isPro ? 'text-[#ff6a00]' : '')}`}>@{name}</span>
+                            <span className={`${isAdm ? 'text-[#ef4444]' : (isUltra ? 'text-[#8b5cf6]' : (isPro ? 'text-[#ff6a00]' : ''))}`}>@{name}</span>
                             {isAdm ? (
                               <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[rgba(239,68,68,0.12)] text-[#ef4444] border border-[#ef4444]/30">Admin</span>
-                            ) : null}
+                            ) : (isUltra ? (
+                              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[rgba(139,92,246,0.12)] text-[#8b5cf6] border border-[#8b5cf6]/30">Ultra</span>
+                            ) : (isPro ? (
+                              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[rgba(255,106,0,0.12)] text-[#ff6a00] border border-[#ff6a00]/30">Pro</span>
+                            ) : null))}
                             {/* Ephemeral TTL indicator */}
                             <DmTtlNotice self={!!(me?.email && activeDm?.email && me.email.toLowerCase() === activeDm.email.toLowerCase())} ttlSeconds={dmTtlSeconds} />
                           </span>
@@ -2016,9 +2034,11 @@ function DashboardShowroomPageInner() {
                   ) : messages.map((m)=> {
                     const p = (m.userEmail ? presence.find(u => (u.email || '').toLowerCase() === (m.userEmail || '').toLowerCase()) : undefined);
                     const isAdminName = (p?.role || '').toLowerCase() === 'admin';
-                    const isProName = (() => { const s = (p?.plan || '').toLowerCase(); return canonicalPlan(s) === 'ultra'; })();
-                    const nameColorClass = isAdminName ? 'text-[#ef4444]' : (isProName ? 'text-[#ff6a00]' : 'text-white/60');
-                    const decoBase = isAdminName ? 'decoration-[#ef4444]/30 hover:decoration-[#ef4444]/60' : (isProName ? 'decoration-[#ff6a00]/30 hover:decoration-[#ff6a00]/60' : 'decoration-white/20 hover:decoration-white/60');
+                    const userCanonicalPlan = canonicalPlan(p?.plan);
+                    const isProName = userCanonicalPlan === 'pro';
+                    const isUltraName = userCanonicalPlan === 'ultra';
+                    const nameColorClass = isAdminName ? 'text-[#ef4444]' : (isUltraName ? 'text-[#8b5cf6]' : (isProName ? 'text-[#ff6a00]' : 'text-white/60'));
+                    const decoBase = isAdminName ? 'decoration-[#ef4444]/30 hover:decoration-[#ef4444]/60' : (isUltraName ? 'decoration-[#8b5cf6]/30 hover:decoration-[#8b5cf6]/60' : (isProName ? 'decoration-[#ff6a00]/30 hover:decoration-[#ff6a00]/60' : 'decoration-white/20 hover:decoration-white/60'));
                     const attachments = Array.isArray(m.attachments) ? m.attachments.filter((key) => typeof key === 'string' && key).slice(0, maxAttachments) : [];
                     const displayText = (m.text || '').replace(/\u200B/g, '').trim();
                     const hasText = displayText.length > 0;
@@ -2362,6 +2382,59 @@ function DashboardShowroomPageInner() {
                     </ContextMenu>
                   </li>
                   ))}
+                  {onlineUltras.length ? (
+                    <li className="text-xs px-1 pt-1 text-right text-[#8b5cf6]">Ultra</li>
+                  ) : null}
+                  {onlineUltras.map((u) => (
+                    <li key={`${u.email || u.name}`} className="flex items-center gap-2">
+                      <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                          <button className="flex items-center gap-2 justify-end w-full text-right rounded px-1 py-0.5 hover:bg-white/5" onClick={(e)=>{
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const ev = new MouseEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY });
+                            try { (e.currentTarget as HTMLElement).dispatchEvent(ev); } catch {}
+                        }}>
+                          <span className={`size-2 rounded-full ${u.status==='dnd' ? 'bg-red-400' : u.status==='idle' ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
+                            <span className={`truncate text-right text-[#8b5cf6]`}>{u.name}</span>
+                            <Avatar className="size-5">
+                              <AvatarImage src={u.image || undefined} alt={u.name || u.email} loading="lazy" decoding="async" />
+                              <AvatarFallback className="bg-[color:var(--primary)]/15 text-[color:var(--primary)]"><CarFront className="size-3" /></AvatarFallback>
+                            </Avatar>
+                        </button>
+                      </ContextMenuTrigger>
+                      {u.email ? (
+                          <UserContextMenu
+                            meEmail={me?.email ?? undefined}
+                            email={u.email}
+                            name={u.name}
+                            activeChannel={active}
+                            blocked={blocked}
+                            onBlockedChange={setBlocked}
+                            isAdmin={me?.role === 'admin'}
+                            userRole={u.role}
+                            userPlan={u.plan}
+                            onStartDm={async (email, name) => {
+                              setActiveChatType('dm');
+                              setActiveDm({ email, name, image: u.image ?? null });
+                              setShowroomView('showroom');
+                              router.push('/dashboard/showroom');
+                              closeChannelsIfMobile();
+                              setChatLoading(true);
+                            const dmMessagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                            setMessages((dmMessagesResponse.messages||[]).map((x)=>({
+                              ...x,
+                              status: 'sent',
+                              userEmail: typeof x.userEmail === 'string' ? x.userEmail : undefined,
+                            })));
+                              setChatLoading(false);
+                              setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
+                            }}
+                          />
+                          ) : null}
+                      </ContextMenu>
+                    </li>
+                  ))}
                   {onlinePros.length ? (
                     <li className="text-xs px-1 pt-1 text-right text-[#ff6a00]">Pro</li>
                   ) : null}
@@ -2533,6 +2606,58 @@ function DashboardShowroomPageInner() {
                       ) : null}
                     </ContextMenu>
                   </li>
+                  ))}
+                  {offlineUltras.length ? (
+                    <li className="text-xs px-1 pt-1 text-right text-[#8b5cf6]">Ultra</li>
+                  ) : null}
+                  {offlineUltras.map((u) => (
+                    <li key={`${u.email || u.name}`} className="flex items-center gap-2">
+                      <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                          <button className="flex items-center gap-2 justify-end w-full text-right rounded px-1 py-0.5 hover:bg-white/5" onClick={(e)=>{
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const ev = new MouseEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY });
+                            try { (e.currentTarget as HTMLElement).dispatchEvent(ev); } catch {}
+                        }}>
+                          <span className="size-2 rounded-full bg-white/30"></span>
+                            <span className={`truncate text-right text-[#8b5cf6]`}>{u.name}</span>
+                            <Avatar className="size-5">
+                              <AvatarImage src={u.image || undefined} alt={u.name || u.email} loading="lazy" decoding="async" />
+                              <AvatarFallback className="bg-[color:var(--primary)]/15 text-[color:var(--primary)]"><CarFront className="size-3" /></AvatarFallback>
+                            </Avatar>
+                        </button>
+                      </ContextMenuTrigger>
+                      {u.email ? (
+                          <UserContextMenu
+                            meEmail={me?.email ?? undefined}
+                            email={u.email}
+                            name={u.name}
+                            activeChannel={active}
+                            blocked={blocked}
+                            onBlockedChange={setBlocked}
+                            isAdmin={me?.role === 'admin'}
+                            userRole={u.role}
+                            userPlan={u.plan}
+                            onStartDm={async (email, name) => {
+                              setActiveChatType('dm');
+                            setActiveDm({ email, name, image: u.image ?? null });
+                              setShowroomView('showroom');
+                              router.push('/dashboard/showroom');
+                              setChatLoading(true);
+                              const dmMessagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                              setMessages((dmMessagesResponse.messages||[]).map((x)=>({
+                                ...x,
+                                status: 'sent',
+                                userEmail: typeof x.userEmail === 'string' ? x.userEmail : undefined,
+                              })));
+                              setChatLoading(false);
+                              setDmConversations(prev => prev.some(c => c.email === email) ? prev : [{ email, name, image: u.image }, ...prev]);
+                            }}
+                          />
+                          ) : null}
+                      </ContextMenu>
+                    </li>
                   ))}
                   {offlinePros.length ? (
                     <li className="text-xs px-1 pt-1 text-right text-[#ff6a00]">Pro</li>
@@ -2892,7 +3017,9 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
   const requestedPhotoKeysRef = useRef<Set<string>>(new Set());
   const isSelf = (meEmail || '').toLowerCase() === (email || '').toLowerCase();
   const isAdminUser = (userRole || '').toLowerCase() === 'admin';
-  const isProUser = (() => { const s = (userPlan || '').toLowerCase(); return s === 'pro' || s === 'ultra'; })();
+  const userCanonicalPlan = (() => { const s = (userPlan || '').toLowerCase(); if (s === 'ultra') return 'ultra'; if (s === 'pro' || s === 'premium') return 'pro'; if (s === 'base' || s === 'basic' || s === 'minimum') return 'minimum'; return null; })();
+  const isProUser = userCanonicalPlan === 'pro';
+  const isUltraUser = userCanonicalPlan === 'ultra';
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -2960,11 +3087,14 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
         </Avatar>
         <div className="min-w-0">
           <div className="flex items-center gap-2 min-w-0">
-            <div className={`text-sm font-medium truncate ${isAdminUser ? 'text-[#ef4444]' : (isProUser ? 'text-[#ff6a00]' : '')}`}>{profile?.name || name}</div>
+            <div className={`text-sm font-medium truncate ${isAdminUser ? 'text-[#ef4444]' : (isUltraUser ? 'text-[#8b5cf6]' : (isProUser ? 'text-[#ff6a00]' : ''))}`}>{profile?.name || name}</div>
             {isAdminUser ? (
               <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[rgba(239,68,68,0.12)] text-[#ef4444] border border-[#ef4444]/30">Admin</span>
             ) : null}
-            {!isAdminUser && isProUser ? (
+            {!isAdminUser && isUltraUser ? (
+              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[rgba(139,92,246,0.12)] text-[#8b5cf6] border border-[#8b5cf6]/30">Ultra</span>
+            ) : null}
+            {!isAdminUser && !isUltraUser && isProUser ? (
               <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[rgba(255,106,0,0.12)] text-[#ff6a00] border border-[#ff6a00]/30">Pro</span>
             ) : null}
           </div>

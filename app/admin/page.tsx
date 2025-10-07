@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { TrendingUp, CarFront } from "lucide-react";
 import { TemplateCard } from "@/components/templates/template-card";
+import { UseTemplateContent } from "@/components/templates/use-template-content";
 import { Bar, BarChart, CartesianGrid, Line, XAxis, YAxis, ResponsiveContainer } from "recharts";
  
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,6 +57,7 @@ type TemplateDisplay = {
   aspectRatio?: number;
   allowedImageSources?: Array<'vehicle' | 'user'>;
   proOnly?: boolean;
+  status?: 'draft' | 'public';
   maxUploadImages?: number;
   imageSize?: { width: number; height: number } | null;
   favoriteCount?: number;
@@ -109,6 +111,7 @@ type CreateTemplatePayload = {
   aspectRatio?: number;
   allowedImageSources: Array<'vehicle' | 'user'>;
   proOnly?: boolean;
+  status?: 'draft' | 'public';
   maxUploadImages?: number;
   autoOpenDesigner?: boolean;
   variables: Array<{
@@ -1062,6 +1065,7 @@ function NewTemplateButton(){
   const [allowVehicle, setAllowVehicle] = useState<boolean>(true);
   const [allowUser, setAllowUser] = useState<boolean>(true);
   const [proOnly, setProOnly] = useState<boolean>(false);
+  const [status, setStatus] = useState<'draft' | 'public'>('draft');
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>('');
   const [busy, setBusy] = useState(false);
   const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>({ enabled: false, prompt: '', duration: '5', resolution: '1080p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, previewKey: null });
@@ -1245,11 +1249,12 @@ function NewTemplateButton(){
         video: (videoCfg || undefined),
       } as unknown as CreateTemplatePayload;
       if (proOnly) payload.proOnly = true;
+      payload.status = status;
       if (/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug)) payload.imageSize = { width: imageWidth, height: imageHeight };
       const res = await fetch('/api/templates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!res.ok) { const data = await res.json().catch(()=>({})); toast.error(data?.error || 'Failed to create template'); return; }
       setOpen(false); setName(""); setDescription(""); setPrompt(""); setFalModelSlug("fal-ai/gemini-25-flash-image/edit"); setThumbnailFile(null); setAdminImageFiles([]); setAllowVehicle(true); setAllowUser(true); setImageWidth(1280); setImageHeight(1280); setImageSizeEdited(false); setMaxUploadImages('');
-      setProOnly(false);
+      setProOnly(false); setStatus('draft');
       try { const ev = new CustomEvent('admin:templates:created'); window.dispatchEvent(ev); } catch {}
     } finally { setBusy(false); }
   }
@@ -1309,6 +1314,16 @@ function NewTemplateButton(){
                 <div className="flex items-center gap-2"><span className="text-xs text-white/70">Car</span><Switch checked={allowVehicle} onCheckedChange={(v)=> setAllowVehicle(!!v)} /></div>
                 <div className="flex items-center gap-2"><span className="text-xs text-white/70">User</span><Switch checked={allowUser} onCheckedChange={(v)=> setAllowUser(!!v)} /></div>
                 <div className="flex items-center gap-2"><span className="text-xs text-white/70">Pro only</span><Switch checked={proOnly} onCheckedChange={(v)=> setProOnly(!!v)} /></div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-white/70">Status</span>
+                  <Select value={status} onValueChange={(v)=> setStatus((v as 'draft' | 'public') || 'draft')}>
+                    <SelectTrigger className="h-8 w-24"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="public">Public</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
             {Object.keys(tokenConfigs).length ? (
@@ -1486,6 +1501,7 @@ function TemplatesTab() {
           fixedAspectRatio: !!t?.fixedAspectRatio,
           aspectRatio: typeof t?.aspectRatio === 'number' ? Number(t?.aspectRatio) : undefined,
           proOnly: !!(t as unknown as { proOnly?: boolean })?.proOnly,
+          status: ((t as unknown as { status?: unknown })?.status === 'draft' || (t as unknown as { status?: unknown })?.status === 'public') ? (t as unknown as { status: 'draft' | 'public' }).status : 'draft',
           rembg: t?.rembg || null,
           allowedImageSources: Array.isArray(t?.allowedImageSources) ? t.allowedImageSources : ['vehicle','user'],
           maxUploadImages: typeof (t as { maxUploadImages?: unknown })?.maxUploadImages === 'number' ? Number((t as { maxUploadImages?: number }).maxUploadImages) : undefined,
@@ -1507,6 +1523,8 @@ function TemplatesTab() {
   },[]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<TemplateDisplay | null>(null);
+  const [testOpen, setTestOpen] = useState(false);
+  const [testTemplate, setTestTemplate] = useState<TemplateDisplay | null>(null);
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -1571,7 +1589,12 @@ function TemplatesTab() {
           {templates.map((t: TemplateDisplay)=> (
             <ContextMenu key={t.id || t.slug}>
               <ContextMenuTrigger asChild>
-                <div>
+                <div className="relative">
+                  {t.status === 'draft' && (
+                    <div className="absolute top-2 right-2 z-10 bg-yellow-500/90 text-black text-xs font-semibold px-2 py-0.5 rounded">
+                      Draft
+                    </div>
+                  )}
                   <TemplateCard
                     data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, blurhash: t.blurhash, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount, proOnly: !!t.proOnly, isVideoTemplate: Boolean(t.video?.enabled) }}
                     showNewBadge={true}
@@ -1582,6 +1605,7 @@ function TemplatesTab() {
                 </div>
               </ContextMenuTrigger>
               <ContextMenuContent className="w-48">
+                <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); setTestTemplate(t); setTestOpen(true); }}>Test Template</ContextMenuItem>
                 <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); setActive(t); setOpen(true); }}>Edit</ContextMenuItem>
                 <ContextMenuItem onSelect={async()=>{
                   const ok = await confirmToast({ title: `Delete template "${t.name}"?`, message: 'This action cannot be undone.' });
@@ -1603,6 +1627,35 @@ function TemplatesTab() {
           </DialogHeader>
           {active ? (
             <AdminEditTemplate template={active} onSaved={()=>{ setOpen(false); setRefreshKey((v)=> v+1); }} />
+          ) : (
+            <div className="text-sm text-white/70">No template selected</div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={testOpen} onOpenChange={setTestOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Test Template: {testTemplate?.name || 'Template'}</DialogTitle>
+          </DialogHeader>
+          {testTemplate ? (
+            <UseTemplateContent template={{
+              id: testTemplate.id,
+              name: testTemplate.name,
+              desc: testTemplate.description,
+              thumbUrl: testTemplate.thumbUrl,
+              slug: testTemplate.slug,
+              variables: testTemplate.variables,
+              prompt: testTemplate.prompt,
+              favoriteCount: testTemplate.favoriteCount,
+              isFavorited: false,
+              fixedAspectRatio: testTemplate.fixedAspectRatio,
+              aspectRatio: testTemplate.aspectRatio,
+              allowedImageSources: testTemplate.allowedImageSources,
+              autoOpenDesigner: testTemplate.autoOpenDesigner,
+              maxUploadImages: testTemplate.maxUploadImages,
+              video: testTemplate.video,
+            }} />
           ) : (
             <div className="text-sm text-white/70">No template selected</div>
           )}
@@ -2029,7 +2082,7 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
         open={cropOpen}
         imageUrl={cropUrl}
         aspectRatio={typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : 1}
-        title="Crop image to match aspect ratio"
+        title="Crop image to match template"
         onCancel={()=>{ setCropOpen(false); setCropUrl(null); setPendingKeys(null); }}
         onCropped={onCroppedBlob}
       />
@@ -2057,6 +2110,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     try { const a = Array.isArray(template?.allowedImageSources) ? template.allowedImageSources : ['vehicle','user']; return a.includes('user'); } catch { return true; }
   });
   const [proOnly, setProOnly] = useState<boolean>(!!template?.proOnly);
+  const [status, setStatus] = useState<'draft' | 'public'>((template?.status === 'draft' || template?.status === 'public') ? template.status : 'draft');
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>(()=>{ try { const n = Number(template?.maxUploadImages || 0); return Number.isFinite(n) && n>0 ? n : ''; } catch { return ''; } });
   
   const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>(template?.video as unknown as AdminVideoConfig || null);
@@ -2203,6 +2257,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       setAllowUser(srcs.includes('user'));
     } catch {}
     setProOnly(!!template?.proOnly);
+    setStatus((template?.status === 'draft' || template?.status === 'public') ? template.status : 'draft');
     try { const n = Number(template?.maxUploadImages || 0); setMaxUploadImages(Number.isFinite(n) && n>0 ? n : ''); } catch {}
     try { setVideoCfg(template?.video as unknown as AdminVideoConfig || null); } catch {}
   }, [template]);
@@ -2349,6 +2404,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
         aspectRatio: editorFixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined,
         allowedImageSources,
         proOnly: !!proOnly,
+        status,
         maxUploadImages: ((): number | undefined => {
           const n = Number(maxUploadImages);
           return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined;
@@ -2442,6 +2498,16 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
           <div className="flex items-center gap-2"><span className="text-xs text-white/70">Car</span><Switch checked={allowVehicle} onCheckedChange={(v)=> setAllowVehicle(!!v)} /></div>
           <div className="flex items-center gap-2"><span className="text-xs text-white/70">User</span><Switch checked={allowUser} onCheckedChange={(v)=> setAllowUser(!!v)} /></div>
           <div className="flex items-center gap-2"><span className="text-xs text-white/70">Pro only</span><Switch checked={proOnly} onCheckedChange={(v)=> setProOnly(!!v)} /></div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-white/70">Status</span>
+            <Select value={status} onValueChange={(v)=> setStatus((v as 'draft' | 'public') || 'draft')}>
+              <SelectTrigger className="h-8 w-24"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="public">Public</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 

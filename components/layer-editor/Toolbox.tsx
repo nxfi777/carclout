@@ -6,6 +6,7 @@ import { MousePointer2, Type, Images, Shapes, Layers } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import LayersPanel from "@/components/layer-editor/LayersPanel";
+import { SHOW_IMAGE_TOOL } from "@/components/layer-editor/config";
 
 type Item = {
   id: import("@/types/layer-editor").ToolId;
@@ -29,7 +30,7 @@ type ToolboxProps = {
 };
 
 // Temporarily hide specific tools from the UI without removing them
-const hiddenTools: Item["id"][] = ["shape", "image"];
+const hiddenTools: Item["id"][] = ["shape", ...(SHOW_IMAGE_TOOL ? [] : ["image"])] as Item["id"][];
 
 const items: Item[] = [
   { id: "select", icon: <MousePointer2 className="size-5" />, label: "Select" },

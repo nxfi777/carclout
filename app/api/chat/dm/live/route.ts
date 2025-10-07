@@ -45,6 +45,8 @@ export async function GET(request: Request) {
   const me = session?.user?.email as string | undefined;
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   
+  // Comment out plan check - all users now have showroom chat access
+  /*
   // Check if user has Pro plan (community access required)
   const userPlan = (session?.user as { plan?: string })?.plan;
   const canonicalPlan = ((p: string | null | undefined): 'base' | 'ultra' | null => {
@@ -56,6 +58,7 @@ export async function GET(request: Request) {
   if (canonicalPlan !== 'ultra' && (session?.user as { role?: string })?.role !== 'admin') {
     return NextResponse.json({ error: "Pro plan required for community access" }, { status: 403 });
   }
+  */
   
   const { searchParams } = new URL(request.url);
   const other = searchParams.get("user") || "";

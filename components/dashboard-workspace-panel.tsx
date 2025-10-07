@@ -32,6 +32,8 @@ import dynamic from "next/dynamic";
 import carLoadAnimation from "@/public/carload.json";
 import { getViewUrl, getViewUrls } from "@/lib/view-url-client";
 import ElectricBorder from "@/components/electric-border";
+import CreditDepletionDrawer from "@/components/credit-depletion-drawer";
+import { useCreditDepletion } from "@/lib/use-credit-depletion";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
@@ -109,11 +111,15 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [designKey, setDesignKey] = useState<string | null>(null);
   const [designProjectState, setDesignProjectState] = useState<import("@/lib/layer-export").DesignerProjectState | null>(null);
   const [upscaleBusy, setUpscaleBusy] = useState(false);
+  const [videoUpscaleBusy, setVideoUpscaleBusy] = useState(false);
+  const [videoInterpolateBusy, setVideoInterpolateBusy] = useState(false);
   const [previewVariants, setPreviewVariants] = useState<{ key?: string; name: string; url: string }[]>([]);
   const [activePreviewVariantIndex, setActivePreviewVariantIndex] = useState(0);
   const isManagedRootName = useMemo(() => (name: string) => isManagedRoot(name), []);
   const isManagedPath = useMemo(() => isManagedPathUtil(path || ''), [path]);
   const [_maskHint, setMaskHint] = useState<Record<string, 'exists' | 'missing' | 'checking' | 'unknown'>>({});
+  const creditDepletion = useCreditDepletion();
+  const [videoTemplates, setVideoTemplates] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -126,12 +132,40 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     return () => { cancelled = true; };
   }, []);
 
+  // Fetch templates with video enabled
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/templates?limit=200', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        const templates = Array.isArray(data?.templates) ? data.templates : [];
+        const videoSlugs = new Set<string>();
+        for (const t of templates) {
+          if (t?.video?.enabled && t?.slug) {
+            videoSlugs.add(String(t.slug).toLowerCase());
+          }
+        }
+        if (!cancelled) setVideoTemplates(videoSlugs);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   function canonicalPlan(p?: string | null): 'base' | 'premium' | 'ultra' | null {
     const s = (p || '').toLowerCase();
     if (s === 'ultra' || s === 'pro') return 'ultra';
     if (s === 'premium') return 'premium';
     if (s === 'base' || s === 'basic' || s === 'minimum') return 'base';
     return null;
+  }
+
+  async function getCredits(): Promise<number> {
+    try {
+      const r = await fetch('/api/credits', { cache: 'no-store' }).then(r=>r.json());
+      const c = typeof r?.credits === 'number' ? Number(r.credits) : 0;
+      return Number.isFinite(c) ? c : 0;
+    } catch { return 0; }
   }
 
   async function doUpscale(key: string) {
@@ -158,6 +192,60 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       await refresh(undefined, { force: true });
       setTreeVersion(v=>v+1);
     } catch {} finally { setUpscaleBusy(false); }
+  }
+
+  async function doVideoUpscale(key: string) {
+    setVideoUpscaleBusy(true);
+    try {
+      const res = await fetch('/api/tools/video-upscale', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ r2_key: key }) 
+      });
+      const data = await res.json().catch(() => ({}));
+      
+      if (res.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
+      if (res.status === 403) { toast.error('Video upscaling is only available on the Ultra plan.'); return; }
+      if (!res.ok || !data?.key) { toast.error(data?.error || 'Video upscale failed'); return; }
+      
+      toast.success(`Upscaled video saved to /library (${data.credits_used} credits used)`);
+      await refresh(undefined, { force: true });
+      setTreeVersion(v => v + 1);
+    } catch (e) {
+      console.error('Video upscale error:', e);
+      toast.error('Video upscale failed');
+    } finally { 
+      setVideoUpscaleBusy(false); 
+    }
+  }
+
+  async function doVideoInterpolate(key: string) {
+    setVideoInterpolateBusy(true);
+    try {
+      const res = await fetch('/api/tools/video-interpolate', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ r2_key: key }) 
+      });
+      const data = await res.json().catch(() => ({}));
+      
+      if (res.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
+      if (res.status === 403) { toast.error('60fps smoothing is only available on the Ultra plan.'); return; }
+      if (res.status === 400 && data?.code === 'UPSCALE_REQUIRED') {
+        toast.error('Please upscale the video first, then make it smoother.');
+        return;
+      }
+      if (!res.ok || !data?.key) { toast.error(data?.error || 'Video smoothing failed'); return; }
+      
+      toast.success(`Smooth 60fps video saved to /library (${data.credits_used} credits used)`);
+      await refresh(undefined, { force: true });
+      setTreeVersion(v => v + 1);
+    } catch (e) {
+      console.error('Video interpolate error:', e);
+      toast.error('Video smoothing failed');
+    } finally { 
+      setVideoInterpolateBusy(false); 
+    }
   }
 
   const refresh = useCallback(async (p = path, options?: { force?: boolean }) => {
@@ -1622,10 +1710,41 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                               <>
                                 <ContextMenuItem onSelect={()=>{ const key = it.key || `${path ? `${path}/` : ''}${it.name}`; setDesignKey(key); setDesignOpen(true); }}>Open in Designer</ContextMenuItem>
                                   <ContextMenuItem onSelect={async()=>{
-                                  if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                                  // Comment out plan check - all users now have video generation access
+                                  // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
                                   const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
                                   await doUpscale(key);
                                   }}>{`Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</ContextMenuItem>
+                              </>
+                            ) : null}
+                            {it.type==='file' && /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name) ? (
+                              <>
+                                {!it.name.includes('upscaled') && !it.name.includes('2x') ? (
+                                  <ContextMenuItem 
+                                    disabled={videoUpscaleBusy}
+                                    onSelect={async()=>{
+                                      // Comment out plan check - all users now have video generation access
+                                      // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                                      const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
+                                      await doVideoUpscale(key);
+                                    }}
+                                  >
+                                    {videoUpscaleBusy ? 'Upscaling...' : `Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                                  </ContextMenuItem>
+                                ) : null}
+                                {(it.name.includes('upscaled') || it.name.includes('2x')) && !it.name.includes('60fps') && !it.name.includes('interpolated') ? (
+                                  <ContextMenuItem 
+                                    disabled={videoInterpolateBusy}
+                                    onSelect={async()=>{
+                                      // Comment out plan check - all users now have video generation access
+                                      // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                                      const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
+                                      await doVideoInterpolate(key);
+                                    }}
+                                  >
+                                    {videoInterpolateBusy ? 'Processing...' : `Make Smoother (60fps)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                                  </ContextMenuItem>
+                                ) : null}
                               </>
                             ) : null}
                             {!isReservedHooksRoot ? (
@@ -1733,10 +1852,44 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                 <>
                                   <ContextMenuItem onSelect={()=>{ const key = it.key || `${path ? `${path}/` : ''}${it.name}`; setDesignKey(key); setDesignOpen(true); }}>Open in Designer</ContextMenuItem>
                                   <ContextMenuItem onSelect={async()=>{
-                                    if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                                    // All users now have upscale access
                                     const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
+                                    // Check credits before attempting upscale
+                                    const bal = await getCredits();
+                                    const insufficientCredits = creditDepletion.checkAndTrigger(bal, 20);
+                                    if (insufficientCredits) return;
                                     await doUpscale(key);
-                                  }}>{`Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</ContextMenuItem>
+                                  }}>Upscale</ContextMenuItem>
+                                </>
+                              ) : null}
+                              {it.type==='file' && /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name) ? (
+                                <>
+                                  {!it.name.includes('upscaled') && !it.name.includes('2x') ? (
+                                    <ContextMenuItem 
+                                      disabled={videoUpscaleBusy}
+                                      onSelect={async()=>{
+                                        // Comment out plan check - all users now have video generation access
+                                        // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                                        const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
+                                        await doVideoUpscale(key);
+                                      }}
+                                    >
+                                      {videoUpscaleBusy ? 'Upscaling...' : `Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                                    </ContextMenuItem>
+                                  ) : null}
+                                  {(it.name.includes('upscaled') || it.name.includes('2x')) && !it.name.includes('60fps') && !it.name.includes('interpolated') ? (
+                                    <ContextMenuItem 
+                                      disabled={videoInterpolateBusy}
+                                      onSelect={async()=>{
+                                        // Comment out plan check - all users now have video generation access
+                                        // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                                        const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
+                                        await doVideoInterpolate(key);
+                                      }}
+                                    >
+                                      {videoInterpolateBusy ? 'Processing...' : `Make Smoother (60fps)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                                    </ContextMenuItem>
+                                  ) : null}
                                 </>
                               ) : null}
                               {!isReservedHooksRoot ? (
@@ -1789,24 +1942,23 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                 ) : null}
               </div>
               <div className="grid w-full gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
-                <ElectricBorder color="#ff6a00" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
+                <ElectricBorder color="#6366f1" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
                   <Button
                     type="button"
                     variant="outline"
                     className="w-full sm:w-auto"
                     disabled={upscaleBusy}
                     onClick={async()=>{
-                      if (canonicalPlan(me?.plan) !== 'ultra') {
-                        try {
-                          window.dispatchEvent(new CustomEvent('open-pro-upsell'));
-                        } catch {}
-                        return;
-                      }
+                      // All users now have upscale access
                       if (!preview?.key) return;
+                      // Check credits before attempting upscale
+                      const bal = await getCredits();
+                      const insufficientCredits = creditDepletion.checkAndTrigger(bal, 20);
+                      if (insufficientCredits) return;
                       await doUpscale(preview.key);
                     }}
                   >
-                    {upscaleBusy ? 'Upscaling…' : `Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                    {upscaleBusy ? 'Upscaling…' : 'Upscale'}
                   </Button>
                 </ElectricBorder>
                 <Button
@@ -1863,10 +2015,19 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                 onClose={()=> { setDesignOpen(false); setPreview(null); }}
                 onSave={saveDesignToWorkspace}
                 onReplaceBgKey={(newKey)=>{ try { if (newKey) { setDesignKey(newKey); } } catch {} }}
-                showAnimate={(() => { try { const name = (designKey || '').split('/').pop() || ''; return /^[0-9T\-:.]+-[a-z0-9\-]+/i.test(name); } catch { return false; } })()}
+                showAnimate={(() => { 
+                  try { 
+                    const name = (designKey || '').split('/').pop() || ''; 
+                    const m = name.match(/^[0-9T\-:.]+-([a-z0-9\-]+)/i);
+                    if (!m || !m[1]) return false;
+                    const slug = m[1].toLowerCase();
+                    return videoTemplates.has(slug);
+                  } catch { return false; } 
+                })()}
                 onAnimate={async (getBlob)=>{
                   try {
-                    if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                    // Comment out plan check - all users now have video generation access
+                    // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
                     // Upload current canvas to workspace as start frame
                     const blob = await getBlob();
                     if (!blob) return;
@@ -1877,6 +2038,11 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                     const dj = await up.json().catch(()=>({}));
                     const key = typeof dj?.key === 'string' ? String(dj.key) : '';
                     if (!key) { toast.error('Failed to prepare animation'); return; }
+                    // Check credits before video generation (default estimate ~500 credits for typical video)
+                    const bal = await getCredits();
+                    const estimatedCredits = 500; // Conservative estimate
+                    const insufficientCredits = creditDepletion.checkAndTrigger(bal, estimatedCredits);
+                    if (insufficientCredits) return;
                     // Attempt to infer template slug from the filename prefix of the original key
                     let slug: string | undefined = undefined;
                     try {
@@ -1886,7 +2052,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                     } catch {}
                     const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateSlug: slug, startKey: key }) });
                     const out = await resp.json().catch(()=>({}));
-                    if (resp.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
+                    if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, estimatedCredits); return; }
                     if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); return; }
                     try { toast.success('Video saved to /library'); } catch {}
                     {
@@ -1931,6 +2097,13 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           </div>
         </DialogContent>
       </Dialog>
+      <CreditDepletionDrawer
+        open={creditDepletion.isOpen}
+        onOpenChange={creditDepletion.close}
+        currentPlan={creditDepletion.currentPlan}
+        creditsRemaining={creditDepletion.creditsRemaining}
+        requiredCredits={creditDepletion.requiredCredits}
+      />
     </div>
   );
 }

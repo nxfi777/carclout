@@ -21,6 +21,8 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { confirmToast } from "@/components/ui/toast-helpers";
 import { Separator } from "@/components/ui/separator";
 import { getViewUrl, getViewUrls } from "@/lib/view-url-client";
+import CreditDepletionDrawer from "@/components/credit-depletion-drawer";
+import { useCreditDepletion } from "@/lib/use-credit-depletion";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
@@ -68,6 +70,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   const [busy, setBusy] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultKey, setResultKey] = useState<string | null>(null);
+  const creditDepletion = useCreditDepletion();
   const [designOpen, setDesignOpen] = useState(false);
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const [uploadedPreviews, setUploadedPreviews] = useState<Record<string, string>>({});
@@ -654,11 +657,16 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
               <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70 flex-1 sm:flex-none min-w-[9rem]" onClick={() => setDesignOpen(true)}>Designer</Button>
               <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70 flex-1 sm:flex-none min-w-[12rem]" disabled={upscaleBusy || !resultKey} onClick={async () => {
-                if (canonicalPlan(me?.plan) !== "ultra") {
-                  try { window.dispatchEvent(new CustomEvent("open-pro-upsell")); } catch {}
-                  return;
-                }
+                // Comment out plan check - all users now have upscale access
+                // if (canonicalPlan(me?.plan) !== "ultra") {
+                //   try { window.dispatchEvent(new CustomEvent("open-pro-upsell")); } catch {}
+                //   return;
+                // }
                 if (!resultKey) return;
+                // Check credits before attempting upscale
+                const bal = await getCredits();
+                const insufficientCredits = creditDepletion.checkAndTrigger(bal, 20);
+                if (insufficientCredits) return;
                 setUpscaleBusy(true);
                 try {
                   let payloadObj: { r2_key: string; original_width?: number; original_height?: number } = { r2_key: String(resultKey) };
@@ -826,6 +834,8 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                       const data = await res.json().catch(()=>({}));
                       const key = typeof data?.key === 'string' ? String(data.key) : '';
                       if (!key) { toast.error('Failed to prepare animation'); return; }
+                      // Calculate credits and check if user has enough
+                      let estimatedCredits = 500; // Default fallback
                       try {
                         const { estimateVideoCredits } = await import('@/lib/credits-client');
                         const v = template?.video as { duration?: string|number; resolution?: '480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5' } | null | undefined;
@@ -834,13 +844,17 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                         const provider = (v?.provider === 'kling2_5') ? 'kling2_5' : 'seedance';
                         const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
                         const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
-                        const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
-                        const ok = confirm(`Animate this design into a ${duration}s video? This will use ~${credits} credits.`);
+                        estimatedCredits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
+                        const ok = confirm(`Animate this design into a ${duration}s video? This will use ~${estimatedCredits} credits.`);
                         if (!ok) return;
                       } catch {}
+                      // Check credits before calling API
+                      const bal = await getCredits();
+                      const insufficientCredits = creditDepletion.checkAndTrigger(bal, estimatedCredits);
+                      if (insufficientCredits) return;
                       const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: template?.id, templateSlug: template?.slug, startKey: key }) });
                       const out = await resp.json().catch(()=>({}));
-                      if (resp.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
+                      if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, estimatedCredits); return; }
                       if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); return; }
                       try { toast.success('Video is ready'); } catch {}
                       window.open(String(out.url), '_blank');
@@ -1134,7 +1148,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
             open={cropOpen}
             imageUrl={cropUrl}
             aspectRatio={typeof (template as { aspectRatio?: number })?.aspectRatio === "number" ? Number((template as { aspectRatio?: number }).aspectRatio) : 1}
-            title={`Crop image to match aspect ratio`}
+            title={`Crop image to match template`}
             onCancel={() => {
               setCropOpen(false);
               setCropUrl(null);
@@ -1211,6 +1225,13 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
           />
         </>
       )}
+      <CreditDepletionDrawer
+        open={creditDepletion.isOpen}
+        onOpenChange={creditDepletion.close}
+        currentPlan={creditDepletion.currentPlan}
+        creditsRemaining={creditDepletion.creditsRemaining}
+        requiredCredits={creditDepletion.requiredCredits}
+      />
     </div>
   );
 }

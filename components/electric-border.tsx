@@ -328,7 +328,7 @@ const ElectricBorder: React.FC<ElectricBorderProps> = ({
         {/* pulse removed per request */}
       </div>
 
-      <div className="relative" style={{ ...inheritRadius, zIndex: 1 }}>
+      <div className="relative h-full" style={{ ...inheritRadius, zIndex: 1 }}>
         {children}
       </div>
     </div>

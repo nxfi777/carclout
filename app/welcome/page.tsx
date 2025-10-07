@@ -38,7 +38,7 @@ function WelcomePageInner() {
         const _displayName = ("name" in (me as Record<string, unknown>) && typeof (me as Record<string, unknown>).name === 'string')
           ? String((me as Record<string, unknown>).name)
           : ("email" in (me as Record<string, unknown>) ? String((me as Record<string, unknown>).email) : "");
-        const isSubscribed = plan === 'minimum' || plan === 'basic' || plan === 'pro';
+        const isSubscribed = plan === 'minimum' || plan === 'basic' || plan === 'pro' || plan === 'ultra';
         if (isSubscribed) {
           router.replace('/dashboard/templates');
           return;

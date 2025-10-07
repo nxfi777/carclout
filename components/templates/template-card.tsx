@@ -2,7 +2,6 @@
 
 import { Heart } from "lucide-react";
 import * as React from "react";
-import { FaLock, FaLockOpen } from "react-icons/fa";
 import { BlurhashImage } from "@/components/ui/blurhash-image";
 
 export type TemplateCardData = {
@@ -33,7 +32,7 @@ type TemplateCardProps = {
 };
 
 export function TemplateCard(props: TemplateCardProps) {
-  const { data, className, showNewBadge = true, showLike = false, showFavoriteCount = false, userHasPro = false, onLikeToggle, onClick } = props;
+  const { data, className, showNewBadge = true, showLike = false, showFavoriteCount = false, userHasPro: _userHasPro = false, onLikeToggle, onClick } = props;
   const [hover, setHover] = React.useState(false);
   const isNew = React.useMemo(() => {
     if (!showNewBadge) return false;
@@ -65,12 +64,13 @@ export function TemplateCard(props: TemplateCardProps) {
       onMouseLeave={()=> setHover(false)}
       className={`relative text-left w-full h-full rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer flex flex-col justify-between ${className || ""}`}
     >
-      {data?.proOnly ? (
+      {/* Comment out proOnly badge - no more pro-only templates */}
+      {/* data?.proOnly ? (
         <span className="absolute top-[2.5rem] left-[0.5rem] z-10 inline-flex items-center gap-1 rounded-full bg-black/60 px-[0.6rem] py-[0.35rem] text-[0.625rem] uppercase tracking-wide text-[#ff6a00] border border-[#ff6a00]/40">
           {userHasPro ? <FaLockOpen className="text-[0.75rem]" /> : <FaLock className="text-[0.75rem]" />}
           <span>Pro</span>
         </span>
-      ) : null}
+      ) : null */}
 
       {isNew ? (
         <span className="absolute top-[0.5rem] left-[0.5rem] z-10 text-[0.625rem] px-[0.5em] py-[0.25em] rounded-full border shadow badge-new">
@@ -134,7 +134,7 @@ export function TemplateCard(props: TemplateCardProps) {
       )}
 
       {data?.isVideoTemplate ? (
-        <span className="absolute bottom-[0.5rem] right-[0.5rem] z-10 text-[0.625rem] px-[0.5rem] py-[0.25rem] rounded bg-black/60 text-[#ff6a00] uppercase tracking-wide">
+        <span className="absolute bottom-[0.5rem] right-[0.5rem] z-10 text-[0.625rem] px-[0.5rem] py-[0.25rem] rounded bg-black/60 text-[#8b5cf6] uppercase tracking-wide">
           Video
         </span>
       ) : null}

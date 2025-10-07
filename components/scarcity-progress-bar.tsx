@@ -63,7 +63,7 @@ export default function ScarcityProgressBar() {
 
         {/* Scarcity message */}
         <p className="text-[0.8rem] text-[color:var(--foreground)]/65 text-center lg:text-left leading-relaxed">
-          ⚡ The $1 trial is only available for the first{" "}
+          ⚡ The $1 access is only available for the first{" "}
           <span className="text-[color:var(--primary)] font-semibold">
             {nextMilestone.toLocaleString()}
           </span>{" "}

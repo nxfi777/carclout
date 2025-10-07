@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import PlanSelector from "@/components/plan-selector";
+import { isSubscribedPlan } from "@/lib/plans";
 
 type MeResponse = { email?: string; role?: string; plan?: string | null } | { error: string };
 
@@ -15,8 +16,7 @@ export default function SubscriptionGate() {
       try {
         const me: MeResponse = await fetch('/api/me', { cache: 'no-store' }).then(r=>r.json());
         const plan = 'plan' in me ? (me.plan ?? null) : null;
-        const isSubscribed = plan === 'minimum' || plan === 'basic' || plan === 'pro';
-        if (mounted) setOpen(!isSubscribed);
+        if (mounted) setOpen(!isSubscribedPlan(plan));
       } catch {
         if (mounted) setOpen(true);
       } finally {
@@ -29,17 +29,22 @@ export default function SubscriptionGate() {
   if (checking) return null;
 
   return (
-    <Dialog open={open} onOpenChange={(o)=>{ /* Prevent closing if not subscribed */ if (open && o === false) setOpen(true); }}>
-      <DialogContent showCloseButton={false} overlayClassName="backdrop-blur-sm">
-        <DialogHeader>
-          <DialogTitle>Choose your plan</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-6">
-          <p className="text-sm text-muted-foreground">Subscribe to access the dashboard. The background is disabled until you pick a plan.</p>
+    <Sheet open={open} onOpenChange={(o)=>{ /* Prevent closing if not subscribed */ if (open && o === false) setOpen(true); }}>
+      <SheetContent
+        side="bottom"
+        className="border-t border-[color:var(--border)] bg-[color:var(--popover)]/95 backdrop-blur-sm sm:mx-auto sm:max-w-3xl sm:rounded-t-3xl sm:border sm:border-[color:var(--border)] max-h-[calc(100dvh-6rem)] overflow-y-auto [&>button]:hidden"
+      >
+        <div className="px-5 pt-6 pb-5 sm:px-6">
+          <SheetHeader className="mb-4 text-center">
+            <SheetTitle className="text-2xl font-semibold">Choose your plan</SheetTitle>
+            <SheetDescription className="text-sm text-white/75">
+              Subscribe to access the dashboard
+            </SheetDescription>
+          </SheetHeader>
           <PlanSelector />
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
 

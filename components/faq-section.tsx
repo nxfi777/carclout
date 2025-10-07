@@ -39,7 +39,7 @@ export default function FAQSection() {
                 What happens after my $1 trial?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                After your trial, you can upgrade to Pro for $25/month to unlock unlimited edits, video generation, the designer, and all community features.
+                After your trial, you can upgrade to Pro for $13/month (billed yearly) or $17/month to unlock unlimited edits, video generation, the designer, and all community features. Or go Ultra for $39/month to get video upscaling, 60fps interpolation, and @nytforge collabs.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="credits" className="border-none">
@@ -57,11 +57,12 @@ export default function FAQSection() {
             </AccordionItem>
             <AccordionItem value="starter-vs-pro" className="border-none">
               <AccordionTrigger className="cursor-pointer px-[1rem] md:px-[1.25rem] py-[1rem]">
-                What&apos;s the difference between Starter ($1) and Pro ($25)?
+                What&apos;s the difference between Starter, Pro, and Ultra?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                <p className="mb-2"><strong>Starter:</strong> limited credits, 1 edit, basic community access.</p>
-                <p><strong>Pro:</strong> unlimited photo credits, monthly video credits, daily feature requests, designer, XP leaderboard, and exclusive templates.</p>
+                <p className="mb-2"><strong>Starter ($1/mo):</strong> limited credits, basic features, 1GB storage.</p>
+                <p className="mb-2"><strong>Pro ($13/mo yearly, $17/mo monthly):</strong> 139 posts, community access, video generation, 100GB storage, all templates unlocked.</p>
+                <p><strong>Ultra ($32/mo yearly, $39/mo monthly):</strong> 261 posts, everything in Pro, plus 2x video upscaling and 60fps smoothing (upscale first, then smooth for best quality), @nytforge collabs, 200GB storage, and priority support.</p>
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="waitlist-payment" className="border-none">
@@ -77,7 +78,7 @@ export default function FAQSection() {
                 What happens after the first 1,000 spots are gone?
               </AccordionTrigger>
               <AccordionContent className="px-[1rem] md:px-[1.25rem]">
-                The Founder&apos;s price disappears forever. After that, CarClout membership will be $25/month. The only way to keep it at $1 is to join now.
+                The Founder&apos;s price disappears forever. After that, CarClout membership starts at $13/month (yearly) or $17/month. The only way to keep the $1 Starter plan is to join now.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="change-mind" className="border-none">

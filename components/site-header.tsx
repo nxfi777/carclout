@@ -7,10 +7,11 @@ import DashboardCta from "@/components/dashboard-cta";
 import ProfileDialog from "@/components/profile-dialog";
 import { getSurreal } from "@/lib/surrealdb";
 import HeaderUser from "./header-user";
-import BillingDialog from "@/components/billing-dialog";
+import BillingDrawer from "@/components/billing-drawer";
 import HeaderDock from "./header-dock";
 import HeaderDockMenu from "./header-dock-menu";
-import ProUpsellDialog from "./pro-upsell-dialog";
+import ProUpsellDrawer from "./pro-upsell-drawer";
+import UltraUpsellDrawer from "./ultra-upsell-drawer";
 import HeaderNavLink from "./header-nav-link";
 import HeaderNotifications from "@/components/header-notifications";
 import { Home } from "lucide-react";
@@ -112,14 +113,15 @@ export default async function SiteHeader() {
                   <HeaderUser name={displayName} email={user.email!} image={displayImage} plan={displayPlan} />
                 </div>
                 <div className="hidden lg:flex items-center gap-2">
-                  <BillingDialog />
+                  <BillingDrawer />
                 </div>
               </>
             ) : null}
           </div>
         </div>
         {/* Global dialogs */}
-        <ProUpsellDialog />
+        <ProUpsellDrawer />
+        <UltraUpsellDrawer />
         {/* Mount dialogs globally so they work across breakpoints */}
         {user ? (
           <>

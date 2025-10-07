@@ -3,7 +3,7 @@ import { getSurreal } from "@/lib/surrealdb";
 import type { Session } from "next-auth";
 
 export type Role = "admin" | "staff" | "user";
-export type Plan = "base" | "premium" | "ultra" | null;
+export type Plan = "minimum" | "pro" | "ultra" | null;
 
 export interface ChannelPerms {
   requiredReadRole?: Role | "user";
@@ -20,10 +20,18 @@ export interface SessionLite {
 
 export async function getSessionLite(): Promise<SessionLite> {
   const session = (await auth().catch(() => null)) as Session | null;
+  // Normalize plan from session - treat as string to handle any variant
+  const rawPlan = session?.user?.plan as string | null | undefined;
+  const normalizedPlan: Plan = 
+    rawPlan === "base" || rawPlan === "basic" || rawPlan === "starter" ? "minimum" :
+    rawPlan === "premium" ? "pro" :
+    (rawPlan === "minimum" || rawPlan === "pro" || rawPlan === "ultra") ? rawPlan :
+    null;
+  
   const base: SessionLite = {
     email: session?.user?.email || null,
     role: session?.user?.role ?? "user",
-    plan: session?.user?.plan ?? null,
+    plan: normalizedPlan,
   };
   // Optionally load latest plan from DB if we have an email
   if (base.email) {
@@ -48,19 +56,19 @@ export function canAccessByRole(userRole: Role, required?: Role): boolean {
 }
 
 export function canAccessByPlan(plan: Plan, required?: Exclude<Plan, null>): boolean {
-  // Normalize plan names across the app ('minimum'|'basic'|'pro' synonyms)
+  // Normalize plan names across the app (legacy aliases converge on canonical plan ids)
   function canonicalize(p: string | null | undefined): Plan {
     const s = (p || "").toString().toLowerCase();
-    if (s === "ultra" || s === "pro") return "ultra";
-    if (s === "premium") return "premium";
-    if (s === "base" || s === "basic" || s === "minimum") return "base";
+    if (s === "ultra") return "ultra";
+    if (s === "pro" || s === "premium") return "pro";
+    if (s === "minimum" || s === "base" || s === "basic" || s === "starter") return "minimum";
     return null;
   }
   if (!required) return true;
   const canonical = canonicalize(plan);
   if (canonical === null) return false;
-  if (required === "base") return canonical === "base" || canonical === "premium" || canonical === "ultra";
-  if (required === "premium") return canonical === "premium" || canonical === "ultra";
+  if (required === "minimum") return canonical === "minimum" || canonical === "pro" || canonical === "ultra";
+  if (required === "pro") return canonical === "pro" || canonical === "ultra";
   if (required === "ultra") return canonical === "ultra";
   return false;
 }

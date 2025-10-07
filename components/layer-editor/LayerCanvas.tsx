@@ -207,64 +207,126 @@ export default function LayerCanvas({ className }: { className?: string }) {
     }
   }, [dispatch, state.tool, state.layers]);
 
+  // File input ref for image tool
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Handle drag and drop for images
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    if (state.tool !== 'image') return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, [state.tool]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    if (state.tool !== 'image') return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const files = Array.from(e.dataTransfer.files);
+    const imageFile = files.find(f => f.type.startsWith('image/'));
+    
+    if (imageFile) {
+      const url = URL.createObjectURL(imageFile);
+      const rect = (containerRef.current as HTMLDivElement).getBoundingClientRect();
+      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+      
+      import("@/types/layer-editor").then((m) => {
+        dispatch({ type: 'add_layer', layer: m.createImageLayer(url, xPct, yPct), atTop: true });
+      }).catch(() => {});
+    }
+  }, [dispatch, state.tool]);
+
+  // Handle click to upload when image tool is active
+  const onCanvasClickForImage = useCallback((e: React.MouseEvent) => {
+    // Only handle if image tool is active and clicking on canvas background
+    if (state.tool !== 'image' || e.target !== e.currentTarget) return;
+    
+    // Trigger file input
+    fileInputRef.current?.click();
+  }, [state.tool]);
+
   const selectionId = state.activeLayerId;
   const selectedIdsSet = new Set(state.selectedLayerIds && state.selectedLayerIds.length > 0 ? state.selectedLayerIds : (selectionId ? [selectionId] : []));
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          ref={containerRef}
-          data-canvas-root
-          onMouseDown={(e)=>{
-            if (state.tool !== 'select') return;
-            const target = e.target as HTMLElement | null;
-            if (target && target.closest('[data-layer-id]')) return; // only start marquee when clicking outside objects
-            const rect = (containerRef.current as HTMLDivElement).getBoundingClientRect();
-            const startX = e.clientX - rect.left; const startY = e.clientY - rect.top;
-            setSelectRect({ x: startX, y: startY, w: 0, h: 0 });
-            const move = (ev: MouseEvent)=>{
-              const cx = Math.min(Math.max(0, ev.clientX - rect.left), rect.width);
-              const cy = Math.min(Math.max(0, ev.clientY - rect.top), rect.height);
-              const left = Math.min(startX, cx);
-              const top = Math.min(startY, cy);
-              const w = Math.abs(cx - startX);
-              const h = Math.abs(cy - startY);
-              setSelectRect({ x: left, y: top, w, h });
-            };
-            const up = ()=>{
-              window.removeEventListener('mousemove', move);
-              window.removeEventListener('mouseup', up);
-              // Compute which layers fall in rect and select them
-              try {
-                const ids: string[] = [];
-                const left = Math.min(startX, (selectRect?.x || startX));
-                const top = Math.min(startY, (selectRect?.y || startY));
-                const w = Math.abs((selectRect?.w || 0));
-                const h = Math.abs((selectRect?.h || 0));
-                const sel = { x: left, y: top, w, h };
-                const r = (containerRef.current as HTMLDivElement).getBoundingClientRect();
-                for (const l of state.layers) {
-                  const cx = (l.xPct / 100) * r.width;
-                  const cy = (l.yPct / 100) * r.height;
-                  const lw = (l.widthPct / 100) * r.width;
-                  const lh = (l.heightPct / 100) * r.height;
-                  const lx = cx - lw / 2;
-                  const ly = cy - lh / 2;
-                  const intersects = !(lx + lw < sel.x || ly + lh < sel.y || lx > sel.x + sel.w || ly > sel.y + sel.h);
-                  if (intersects) ids.push(l.id);
-                }
-                dispatch({ type: 'select_layers', ids });
-              } catch {}
-              setSelectRect(null);
-            };
-            window.addEventListener('mousemove', move);
-            window.addEventListener('mouseup', up, { once: true } as AddEventListenerOptions);
-          }}
-          onClick={onCanvasClick}
-          onDoubleClick={onCanvasDblClick}
-          className={cn("relative w-full h-[45vh] sm:h-[55vh] rounded-xl border border-[var(--border)] bg-[var(--muted)] overflow-hidden select-none touch-none", className)}
-        >
+    <>
+      {/* Hidden file input for image tool */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            const url = URL.createObjectURL(file);
+            import("@/types/layer-editor").then((m) => {
+              dispatch({ type: 'add_layer', layer: m.createImageLayer(url, 50, 50), atTop: true });
+            }).catch(() => {});
+          }
+          e.target.value = ''; // Reset input
+        }}
+      />
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            ref={containerRef}
+            data-canvas-root
+            onMouseDown={(e)=>{
+              if (state.tool !== 'select') return;
+              const target = e.target as HTMLElement | null;
+              if (target && target.closest('[data-layer-id]')) return; // only start marquee when clicking outside objects
+              const rect = (containerRef.current as HTMLDivElement).getBoundingClientRect();
+              const startX = e.clientX - rect.left; const startY = e.clientY - rect.top;
+              setSelectRect({ x: startX, y: startY, w: 0, h: 0 });
+              const move = (ev: MouseEvent)=>{
+                const cx = Math.min(Math.max(0, ev.clientX - rect.left), rect.width);
+                const cy = Math.min(Math.max(0, ev.clientY - rect.top), rect.height);
+                const left = Math.min(startX, cx);
+                const top = Math.min(startY, cy);
+                const w = Math.abs(cx - startX);
+                const h = Math.abs(cy - startY);
+                setSelectRect({ x: left, y: top, w, h });
+              };
+              const up = ()=>{
+                window.removeEventListener('mousemove', move);
+                window.removeEventListener('mouseup', up);
+                // Compute which layers fall in rect and select them
+                try {
+                  const ids: string[] = [];
+                  const left = Math.min(startX, (selectRect?.x || startX));
+                  const top = Math.min(startY, (selectRect?.y || startY));
+                  const w = Math.abs((selectRect?.w || 0));
+                  const h = Math.abs((selectRect?.h || 0));
+                  const sel = { x: left, y: top, w, h };
+                  const r = (containerRef.current as HTMLDivElement).getBoundingClientRect();
+                  for (const l of state.layers) {
+                    const cx = (l.xPct / 100) * r.width;
+                    const cy = (l.yPct / 100) * r.height;
+                    const lw = (l.widthPct / 100) * r.width;
+                    const lh = (l.heightPct / 100) * r.height;
+                    const lx = cx - lw / 2;
+                    const ly = cy - lh / 2;
+                    const intersects = !(lx + lw < sel.x || ly + lh < sel.y || lx > sel.x + sel.w || ly > sel.y + sel.h);
+                    if (intersects) ids.push(l.id);
+                  }
+                  dispatch({ type: 'select_layers', ids });
+                } catch {}
+                setSelectRect(null);
+              };
+              window.addEventListener('mousemove', move);
+              window.addEventListener('mouseup', up, { once: true } as AddEventListenerOptions);
+            }}
+            onClick={(e) => {
+              onCanvasClick(e);
+              onCanvasClickForImage(e);
+            }}
+            onDoubleClick={onCanvasDblClick}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            className={cn("relative w-full h-[45vh] sm:h-[55vh] rounded-xl border border-[var(--border)] bg-[var(--muted)] overflow-hidden select-none touch-none", className)}
+          >
           {state.backgroundUrl ? (
             <>
               {/* Blurhash placeholder - shows while loading */}
@@ -352,6 +414,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
       </ContextMenuTrigger>
       <CanvasMenu />
     </ContextMenu>
+    </>
   );
 }
 
@@ -488,6 +551,10 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
         layer.effects.glow.enabled ? `${(layer.effects.glow.offsetX || 0)}px ${(layer.effects.glow.offsetY || 0)}px ${((layer.effects.glow.blur || 0) + (layer.effects.glow.size || 0))}px ${resolvedGlowColor || layer.effects.glow.color || '#ffffff'}` : '',
         layer.effects.shadow.enabled ? `${(layer.effects.shadow.offsetX || 0)}px ${(layer.effects.shadow.offsetY || 0)}px ${((layer.effects.shadow.blur || 0) + (layer.effects.shadow.size || 0))}px ${resolvedShadowColor || layer.effects.shadow.color || '#000000'}` : ''
       ].filter(Boolean).join(', ').trim(),
+      WebkitTextStroke: t.strokeEnabled && t.strokeWidth ? `${t.strokeWidth}px ${t.strokeColor || '#000000'}` : undefined,
+      paintOrder: t.strokeEnabled && t.strokeWidth ? 'stroke fill' : undefined,
+      backgroundColor: t.highlightEnabled ? t.highlightColor || 'rgba(255,255,0,0.3)' : undefined,
+      borderRadius: t.borderRadiusEm ? `${t.borderRadiusEm}em` : undefined,
       display: 'grid', alignItems: 'center', textAlign: (t.textAlign || 'center') as React.CSSProperties['textAlign'], width: '100%', height: '100%'
     };
     if (isEditing) {
@@ -584,7 +651,7 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
             wordWrap: 'break-word',
             overflowWrap: 'break-word',
             overflow: 'visible',
-            background: 'transparent',
+            backgroundColor: t.highlightEnabled ? (t.highlightColor || 'rgba(255,255,0,0.3)') : 'transparent',
             border: '1px dashed rgba(255,255,255,0.5)',
             outline: 'none',
             width: '100%',
@@ -615,6 +682,77 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
       rendered = (
         <svg viewBox="0 0 100 100" className="w-full h-full">
           <line x1="0" y1="50" x2="100" y2="50" stroke={s.stroke || '#fff'} strokeWidth={s.strokeWidth || 4} />
+        </svg>
+      );
+    } else if (s.shape === 'arrow') {
+      const curvature = s.curvature || 0;
+      const arrowHeadSize = s.arrowHeadSize || 0.15;
+      const strokeWidth = s.strokeWidth || 4;
+      
+      // Calculate curved path
+      let pathD: string;
+      if (Math.abs(curvature) < 0.01) {
+        // Straight arrow
+        pathD = 'M 0 50 L 100 50';
+      } else {
+        // Curved arrow using quadratic Bezier
+        const controlY = 50 - curvature * 50;
+        pathD = `M 0 50 Q 50 ${controlY} 100 50`;
+      }
+      
+      // Calculate arrow head position and angle
+      const headLength = 100 * arrowHeadSize;
+      const headWidth = headLength * 0.6;
+      
+      const endX = 100;
+      const endY = 50;
+      let angle = 0;
+      
+      if (Math.abs(curvature) < 0.01) {
+        angle = 0;
+      } else {
+        // Tangent angle at end of quadratic curve
+        const controlY = 50 - curvature * 50;
+        const dx = endX - 50;
+        const dy = endY - controlY;
+        angle = Math.atan2(dy, dx);
+      }
+      
+      // Arrow head points
+      const headPoint1X = endX - headLength * Math.cos(angle) + headWidth * Math.sin(angle);
+      const headPoint1Y = endY - headLength * Math.sin(angle) - headWidth * Math.cos(angle);
+      const headPoint2X = endX - headLength * Math.cos(angle) - headWidth * Math.sin(angle);
+      const headPoint2Y = endY - headLength * Math.sin(angle) + headWidth * Math.cos(angle);
+      
+      rendered = (
+        <svg viewBox="0 0 100 100" className="w-full h-full">
+          <defs>
+            <marker
+              id={`arrowhead-${layer.id}`}
+              markerWidth={headWidth * 2}
+              markerHeight={headWidth * 2}
+              refX="0"
+              refY="0"
+              orient="auto"
+            >
+              <polygon
+                points={`${endX},${endY} ${headPoint1X},${headPoint1Y} ${headPoint2X},${headPoint2Y}`}
+                fill={s.stroke || '#fff'}
+              />
+            </marker>
+          </defs>
+          <path
+            d={pathD}
+            stroke={s.stroke || '#fff'}
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <polygon
+            points={`${endX},${endY} ${headPoint1X},${headPoint1Y} ${headPoint2X},${headPoint2Y}`}
+            fill={s.stroke || '#fff'}
+          />
         </svg>
       );
     }

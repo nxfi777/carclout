@@ -25,9 +25,9 @@ export async function GET() {
     const welcomeShown = row?.welcomeProShown ?? false;
 
     // Show welcome if:
-    // 1. Current plan is 'pro'
+    // 1. Current plan is 'pro' or 'ultra'
     // 2. Welcome hasn't been shown yet
-    const shouldShowWelcome = currentPlan === "pro" && !welcomeShown;
+    const shouldShowWelcome = (currentPlan === "pro" || currentPlan === "ultra") && !welcomeShown;
 
     return NextResponse.json({ shouldShowWelcome });
   } catch (error) {

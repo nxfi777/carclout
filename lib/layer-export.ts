@@ -87,6 +87,43 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
     }
   });
 
+  // Draw highlight background if enabled
+  const hasHighlight = !!(layer as unknown as { highlightEnabled?: boolean; highlightColor?: string }).highlightEnabled;
+  if (hasHighlight) {
+    const highlightColor = (layer as unknown as { highlightEnabled?: boolean; highlightColor?: string }).highlightColor || 'rgba(255,255,0,0.3)';
+    const borderRadiusEm = (layer as unknown as { borderRadiusEm?: number }).borderRadiusEm || 0;
+    const borderRadiusPx = borderRadiusEm * fontSize;
+    
+    ctx.save();
+    ctx.translate(xCenter, yCenter);
+    ctx.rotate(rotationRad);
+    ctx.scale(layer.scaleX || 1, layer.scaleY || 1);
+    
+    ctx.fillStyle = highlightColor;
+    if (borderRadiusPx > 0) {
+      // Draw rounded rectangle for highlight
+      const x = -widthPx / 2;
+      const y = -_heightPx / 2;
+      const radius = Math.min(borderRadiusPx, Math.min(widthPx, _heightPx) / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + widthPx - radius, y);
+      ctx.quadraticCurveTo(x + widthPx, y, x + widthPx, y + radius);
+      ctx.lineTo(x + widthPx, y + _heightPx - radius);
+      ctx.quadraticCurveTo(x + widthPx, y + _heightPx, x + widthPx - radius, y + _heightPx);
+      ctx.lineTo(x + radius, y + _heightPx);
+      ctx.quadraticCurveTo(x, y + _heightPx, x, y + _heightPx - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Draw rectangle for highlight
+      ctx.fillRect(-widthPx / 2, -_heightPx / 2, widthPx, _heightPx);
+    }
+    ctx.restore();
+  }
+
   ctx.save();
   try {
     ctx.translate(xCenter, yCenter);
@@ -150,7 +187,7 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
     const totalH = (lines.length - 1) * lineHeight;
     const letterSpacingPx = (layer.letterSpacingEm || 0) * fontSize;
 
-    const drawOnce = () => {
+    const drawOnce = (drawStroke = false) => {
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
         const chars = Array.from(ln);
@@ -176,7 +213,11 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
         }
         for (let idx = 0; idx < chars.length; idx++) {
           const ch = chars[idx];
-          ctx.fillText(ch, cx, y);
+          if (drawStroke) {
+            ctx.strokeText(ch, cx, y);
+          } else {
+            ctx.fillText(ch, cx, y);
+          }
           cx += ctx.measureText(ch).width + (idx < chars.length - 1 ? letterSpacingPx : 0);
           if (justifyExtra > 0 && ch === ' ') {
             cx += justifyExtra;
@@ -190,6 +231,16 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
     ctx.fillStyle = layer.color || '#ffffff';
     ctx.globalAlpha = globalAlpha;
     
+    // Setup stroke if enabled
+    const hasStroke = !!(layer as unknown as { strokeEnabled?: boolean; strokeColor?: string; strokeWidth?: number }).strokeEnabled 
+      && !!(layer as unknown as { strokeEnabled?: boolean; strokeColor?: string; strokeWidth?: number }).strokeWidth;
+    if (hasStroke) {
+      ctx.strokeStyle = (layer as unknown as { strokeEnabled?: boolean; strokeColor?: string; strokeWidth?: number }).strokeColor || '#000000';
+      ctx.lineWidth = ((layer as unknown as { strokeEnabled?: boolean; strokeColor?: string; strokeWidth?: number }).strokeWidth || 2) * scaleFactor;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+    }
+    
     // First pass: draw drop shadow if enabled
     if (layer.effects?.shadow?.enabled) {
       const shadowBlur = (((layer.effects.shadow.blur || 0) + ((layer.effects.shadow as unknown as { size?: number }).size || 0)) || 0) * scaleFactor;
@@ -202,7 +253,8 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
       ctx.shadowOffsetX = shadowOffsetX;
       ctx.shadowOffsetY = shadowOffsetY;
       console.log('[drawTextLayer] Shadow:', { blur: shadowBlur, offsetX: shadowOffsetX, offsetY: shadowOffsetY });
-      drawOnce();
+      if (hasStroke) drawOnce(true);
+      drawOnce(false);
       ctx.restore();
     }
     
@@ -218,16 +270,18 @@ function drawTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer, cw: numb
       ctx.shadowOffsetX = glowOffsetX;
       ctx.shadowOffsetY = glowOffsetY;
       console.log('[drawTextLayer] Glow:', { blur: glowBlur, offsetX: glowOffsetX, offsetY: glowOffsetY });
-      drawOnce();
+      if (hasStroke) drawOnce(true);
+      drawOnce(false);
       ctx.restore();
     }
     
-    // Final pass: draw the actual text without shadows
+    // Final pass: draw the actual text without shadows (stroke first, then fill)
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
-    drawOnce();
+    if (hasStroke) drawOnce(true);
+    drawOnce(false);
   } finally {
     ctx.restore();
   }
@@ -335,6 +389,64 @@ function drawShapeLayer(ctx: CanvasRenderingContext2D, layer: ShapeLayer, cw: nu
       ctx.strokeStyle = layer.stroke || '#ffffff';
       ctx.lineWidth = layer.strokeWidth || 4;
       ctx.stroke();
+    } else if (layer.shape === 'arrow') {
+      const curvature = layer.curvature || 0;
+      const arrowHeadSize = layer.arrowHeadSize || 0.15;
+      const lineWidth = layer.strokeWidth || 4;
+      
+      ctx.strokeStyle = layer.stroke || '#ffffff';
+      ctx.fillStyle = layer.stroke || '#ffffff';
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      // Arrow shaft
+      const startX = -w / 2;
+      const endX = w / 2;
+      const startY = 0;
+      const endY = 0;
+      
+      ctx.beginPath();
+      if (Math.abs(curvature) < 0.01) {
+        // Straight arrow
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+      } else {
+        // Curved arrow using quadratic curve
+        const controlY = -curvature * w * 0.5; // Control point offset based on curvature
+        ctx.moveTo(startX, startY);
+        ctx.quadraticCurveTo(0, controlY, endX, endY);
+      }
+      ctx.stroke();
+      
+      // Arrow head
+      const headLength = w * arrowHeadSize;
+      const headWidth = headLength * 0.6;
+      
+      // Calculate angle at the end of the curve
+      let angle: number;
+      if (Math.abs(curvature) < 0.01) {
+        angle = 0;
+      } else {
+        // Tangent angle at end of quadratic curve
+        const controlY = -curvature * w * 0.5;
+        const dx = endX - 0;
+        const dy = endY - controlY;
+        angle = Math.atan2(dy, dx);
+      }
+      
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(
+        endX - headLength * Math.cos(angle) + headWidth * Math.sin(angle),
+        endY - headLength * Math.sin(angle) - headWidth * Math.cos(angle)
+      );
+      ctx.lineTo(
+        endX - headLength * Math.cos(angle) - headWidth * Math.sin(angle),
+        endY - headLength * Math.sin(angle) + headWidth * Math.cos(angle)
+      );
+      ctx.closePath();
+      ctx.fill();
     }
   } finally {
     ctx.restore();

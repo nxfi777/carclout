@@ -117,14 +117,14 @@ export async function POST(req: Request) {
             // Store customer ID if available
             const customerId = typeof session.customer === 'string' ? session.customer : null;
             
-            // Check if this is an upgrade from minimum to pro
-            if (plan === "pro") {
+            // Check if this is an upgrade from minimum to pro/ultra
+            if (plan === "pro" || plan === "ultra") {
               const userResult = await surreal.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email: customerEmail });
               const previousPlan = Array.isArray(userResult) && Array.isArray(userResult[0]) 
                 ? (userResult[0][0] as { plan?: Plan } | undefined)?.plan
                 : null;
               
-              // If upgrading from minimum to pro, reset welcome flag and store customer ID
+              // If upgrading from minimum to pro/ultra, reset welcome flag and store customer ID
               if (previousPlan === "minimum") {
                 if (customerId) {
                   await surreal.query(
@@ -151,8 +151,8 @@ export async function POST(req: Request) {
           }
           // Seed included credits on first-time plan purchase
           if (customerEmail && plan) {
-            const creditTier: "$1" | "$20" | "$200" | "basic" | "pro" | "ultra" =
-              plan === "minimum" ? "$1" : (plan === "basic" ? "basic" : "pro");
+            const creditTier: "$1" | "$20" | "$200" | "minimum" | "pro" | "ultra" =
+              plan === "minimum" ? "$1" : plan;
             const included = includedMonthlyCreditsForPlan(creditTier);
             if (included > 0) {
               await adjustCredits(customerEmail, included, "plan_included", session.id);

@@ -14,7 +14,7 @@ export default function OnboardingPlanPageClient() {
       try {
         const me = await fetch("/api/me", { cache: "no-store" }).then((response) => response.json());
         const plan = me?.plan as string | null | undefined;
-        const isSubscribed = plan === "minimum" || plan === "basic" || plan === "pro";
+        const isSubscribed = plan === "minimum" || plan === "basic" || plan === "pro" || plan === "ultra";
         if (isSubscribed) router.replace("/dashboard/templates");
       } finally {
         if (mounted) setChecking(false);

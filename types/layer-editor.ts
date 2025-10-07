@@ -7,7 +7,7 @@ export type ToolId =
   | 'fill';
 
 export type MarqueeMode = 'rectangle' | 'ellipse' | 'lasso' | 'polygon';
-export type ShapeKind = 'rectangle' | 'ellipse' | 'triangle' | 'line';
+export type ShapeKind = 'rectangle' | 'ellipse' | 'triangle' | 'line' | 'arrow';
 
 export type EffectShadow = {
   enabled: boolean;
@@ -65,6 +65,15 @@ export type TextLayer = LayerBase & {
   fontSizeEm?: number;
   letterSpacingEm: number;
   lineHeightEm: number;
+  // Text stroke properties
+  strokeEnabled?: boolean;
+  strokeColor?: string;
+  strokeWidth?: number;
+  // Text highlight (background) properties
+  highlightEnabled?: boolean;
+  highlightColor?: string;
+  // Text box corner radius
+  borderRadiusEm?: number;
 };
 
 export type ShapeLayer = LayerBase & {
@@ -74,6 +83,9 @@ export type ShapeLayer = LayerBase & {
   stroke?: string;
   strokeWidth?: number;
   radiusPct?: number;
+  // Arrow-specific properties
+  arrowHeadSize?: number; // 0..1, relative to arrow length
+  curvature?: number; // -1..1, negative curves left, positive curves right
 };
 
 export type ImageLayer = LayerBase & {
@@ -230,6 +242,30 @@ export function createDefaultEllipse(xPct = 50, yPct = 50): ShapeLayer {
     yPct,
     widthPct: 36,
     heightPct: 20,
+    rotationDeg: 0,
+    tiltXDeg: 0,
+    tiltYDeg: 0,
+    scaleX: 1,
+    scaleY: 1,
+    effects: { shadow: { ...defaultShadow }, glow: { ...defaultGlow } },
+  };
+}
+
+export function createDefaultArrow(xPct = 50, yPct = 50): ShapeLayer {
+  return {
+    id: generateId('shape'),
+    type: 'shape',
+    name: 'Arrow',
+    shape: 'arrow',
+    fill: 'transparent',
+    stroke: 'rgba(255,255,255,0.9)',
+    strokeWidth: 4,
+    arrowHeadSize: 0.15,
+    curvature: 0,
+    xPct,
+    yPct,
+    widthPct: 40,
+    heightPct: 10,
     rotationDeg: 0,
     tiltXDeg: 0,
     tiltYDeg: 0,
