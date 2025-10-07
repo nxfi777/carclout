@@ -266,8 +266,8 @@ export async function POST(req: Request) {
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [{ price, quantity: 1 }],
-      customer_email: email,
       customer: existingCustomerId || undefined, // Use existing customer if available
+      customer_email: !existingCustomerId ? email : undefined, // Only use email if no customer
       client_reference_id: userIdString || undefined,
       metadata: { plan: key, userId: userIdString, userEmail: email },
       subscription_data: { metadata: { plan: key, userId: userIdString, userEmail: email } },
