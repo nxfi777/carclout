@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { checkChannelRead, checkChannelWrite, getSessionLite, type ChannelLike, type Role, type Plan } from "@/lib/chatPerms";
 import { sanitizeUserId } from "@/lib/user";
 import { RecordId } from "surrealdb";
+import { parseMentions, matchUserByMention } from "@/lib/mention-parser";
 
 const ALLOWED_ATTACHMENT_ROOTS = new Set(["chat-uploads", "car-photos", "vehicles", "library"]);
 
@@ -270,6 +271,84 @@ export async function POST(request: Request) {
     attachments,
   });
   const row = Array.isArray(created) ? created[0] : created;
+  
+  // Parse mentions and create notifications (fire-and-forget)
+  try {
+    const messageId = typeof row?.id === 'object' && 'toString' in row.id ? row.id.toString() : String(row?.id || '');
+    const { hasEveryone, mentions } = parseMentions(text);
+    const senderEmail = session.user.email;
+    const isAdmin = ((session.user as { role?: Role } | undefined)?.role) === "admin";
+    
+    // Handle @everyone (admin-only)
+    if (hasEveryone && isAdmin) {
+      // Get all users who have access to this channel
+      const channelUsersRes = await db.query(`
+        SELECT email, displayName, name FROM user 
+        WHERE email != $senderEmail
+        LIMIT 1000;
+      `, { senderEmail });
+      const channelUsers = Array.isArray(channelUsersRes) && Array.isArray(channelUsersRes[0]) 
+        ? (channelUsersRes[0] as Array<{ email?: string; displayName?: string; name?: string }>) 
+        : [];
+      
+      // Create notification for each user
+      for (const u of channelUsers) {
+        if (u.email) {
+          await db.create("notification", {
+            recipientEmail: u.email,
+            senderEmail,
+            senderName: userName,
+            messageId,
+            messageText: text.substring(0, 200),
+            channel,
+            type: "everyone",
+            read: false,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+    }
+    
+    // Handle @mentions
+    if (mentions.length > 0) {
+      // Get all users to match mentions
+      const allUsersRes = await db.query(`
+        SELECT email, displayName, name FROM user 
+        WHERE email != $senderEmail
+        LIMIT 1000;
+      `, { senderEmail });
+      const allUsers = Array.isArray(allUsersRes) && Array.isArray(allUsersRes[0]) 
+        ? (allUsersRes[0] as Array<{ email?: string; displayName?: string; name?: string }>) 
+        : [];
+      
+      const notifiedEmails = new Set<string>();
+      
+      for (const mention of mentions) {
+        const matchedEmails = matchUserByMention(mention, allUsers);
+        
+        for (const recipientEmail of matchedEmails) {
+          // Skip if already notified (e.g. from @everyone)
+          if (notifiedEmails.has(recipientEmail)) continue;
+          notifiedEmails.add(recipientEmail);
+          
+          await db.create("notification", {
+            recipientEmail,
+            senderEmail,
+            senderName: userName,
+            messageId,
+            messageText: text.substring(0, 200),
+            channel,
+            type: "mention",
+            read: false,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[mentions] Failed to create notifications:", err);
+  }
+  
   try {
     // fire-and-forget XP reward for chat message
     await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/xp`, { method: "POST", body: JSON.stringify({ reason: "chat-message" }) });

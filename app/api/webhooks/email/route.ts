@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSurreal } from '@/lib/surrealdb';
-import { trackEvent } from '@/lib/umami-server';
+import { trackEmailEvent } from '@/lib/analytics-server';
 
 export const runtime = 'nodejs';
 
@@ -83,12 +83,13 @@ async function handleEmailOpened(webhook: EmailWebhook) {
     const updatedUsers = result?.[0] as unknown[];
     
     if (updatedUsers && Array.isArray(updatedUsers) && updatedUsers.length > 0) {
-      // Track in Umami
-      await trackEvent('email_opened', {
-        campaign_id: webhook.campaign.id,
-        campaign_name: webhook.campaign.name || 'unknown',
-        contact_id: webhook.recipient.id,
-      });
+      // Track in analytics database
+      await trackEmailEvent(
+        'opened',
+        webhook.campaign.id,
+        webhook.campaign.name || 'unknown',
+        webhook.recipient.id
+      );
     } else {
       console.warn('User not found for contact ID:', webhook.recipient.id);
     }
@@ -120,13 +121,14 @@ async function handleEmailClicked(webhook: EmailWebhook) {
     const updatedUsers = result?.[0] as unknown[];
     
     if (updatedUsers && Array.isArray(updatedUsers) && updatedUsers.length > 0) {
-      // Track in Umami
-      await trackEvent('email_clicked', {
-        campaign_id: webhook.campaign.id,
-        campaign_name: webhook.campaign.name || 'unknown',
-        contact_id: webhook.recipient.id,
-        link_url: webhook.data?.url || 'unknown',
-      });
+      // Track in analytics database
+      await trackEmailEvent(
+        'clicked',
+        webhook.campaign.id,
+        webhook.campaign.name || 'unknown',
+        webhook.recipient.id,
+        webhook.data?.url
+      );
     } else {
       console.warn('User not found for contact ID:', webhook.recipient.id);
     }

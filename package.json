@@ -7,7 +7,8 @@
     "build": "next build",
     "build:analyze": "ANALYZE=true next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "init:analytics": "bun run scripts/init-analytics-schema.ts"
   },
   "dependencies": {
     "@auth/surrealdb-adapter": "^2.1.0",

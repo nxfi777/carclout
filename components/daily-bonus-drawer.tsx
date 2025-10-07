@@ -151,10 +151,12 @@ export default function DailyBonusDrawer() {
     }
 
     async function claimBonus() {
+      console.log("[DailyBonus] claimBonus called, cancelled:", cancelled);
       if (cancelled) return;
       const todayKey = currentDayKey();
       
       try {
+        console.log("[DailyBonus] Setting state to claiming");
         setState("claiming");
         await refreshXpDetails();
 
@@ -209,6 +211,7 @@ export default function DailyBonusDrawer() {
         }
 
         if (awarded > 0) {
+          console.log("[DailyBonus] Setting state to awarded, added:", awarded);
           setState("awarded");
           hasClaimedRef.current = true;
           lastPromptKeyRef.current = todayKey;
@@ -228,6 +231,7 @@ export default function DailyBonusDrawer() {
             }, 1000);
           }
         } else {
+          console.log("[DailyBonus] No XP awarded, setting state to already");
           setState("already");
           hasClaimedRef.current = true;
           lastPromptKeyRef.current = todayKey;
@@ -267,14 +271,17 @@ export default function DailyBonusDrawer() {
       claimingRef.current = true;
       setState("idle"); // Reset to idle before showing
       
+      console.log("[DailyBonus] Requesting to show drawer");
       // Request to show via queue system with medium priority
       requestShow(
         "daily-bonus",
         DRAWER_PRIORITY.MEDIUM,
         () => {
+          console.log("[DailyBonus] Drawer show callback triggered");
           setOpen(true);
           // Start the claim process after drawer opens
           setTimeout(() => {
+            console.log("[DailyBonus] Timeout fired, calling claimBonus");
             claimBonus();
           }, 300);
         },
@@ -289,7 +296,8 @@ export default function DailyBonusDrawer() {
       cancelled = true;
       window.removeEventListener("prompt-daily-bonus", handlePrompt as EventListener);
     };
-  }, [isDashboard, requestShow]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDashboard]);
 
   const progressValue = useMemo(() => {
     if (xpIntoLevel == null || levelSpan == null || levelSpan <= 0) return 0;
@@ -352,7 +360,7 @@ export default function DailyBonusDrawer() {
                   <Loader2 className="size-10 animate-spin text-[color:var(--primary)]" />
                   <span className="text-sm">Claiming your bonus…</span>
                 </div>
-              ) : (
+              ) : state === "awarded" ? (
                 <div className="space-y-4">
                   <div className="text-xs uppercase tracking-[0.24em] text-white/60">
                     Today&apos;s XP
@@ -364,6 +372,18 @@ export default function DailyBonusDrawer() {
                       Streak +{streakDelta}
                     </div>
                   ) : null}
+                </div>
+              ) : state === "already" ? (
+                <div className="flex flex-col items-center gap-3 text-white/80">
+                  <div className="rounded-full bg-[color:var(--primary)]/20 p-4">
+                    <Sparkles className="size-8 text-[color:var(--primary)]" />
+                  </div>
+                  <span className="text-sm">Already claimed today</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3 text-white/80">
+                  <Loader2 className="size-10 animate-spin text-[color:var(--primary)]" />
+                  <span className="text-sm">Preparing your bonus…</span>
                 </div>
               )}
             </div>

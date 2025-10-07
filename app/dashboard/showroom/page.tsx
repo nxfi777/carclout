@@ -31,6 +31,8 @@ import Image from "next/image";
 import { BlurhashImage } from "@/components/ui/blurhash-image";
 
 import { uploadFilesToChat } from "@/lib/r2-upload";
+import { ChatNotifications } from "@/components/chat-notifications";
+import { HighlightMentions } from "@/lib/mention-highlighter";
 
 type ChatMessage = {
   id?: string
@@ -232,6 +234,7 @@ function DashboardShowroomPageInner() {
   const [attachmentPreviewMap, setAttachmentPreviewMap] = useState<Record<string, string>>({});
   const [attachmentCanLoadDirect, setAttachmentCanLoadDirect] = useState<Record<string, boolean>>({});
   const [attachmentStatusMap, setAttachmentStatusMap] = useState<Record<string, AttachmentStatus>>({});
+  const [showEveryoneHint, setShowEveryoneHint] = useState(false);
   const [sessionUploadKeys, setSessionUploadKeys] = useState<string[]>([]);
   const [messageAttachmentUrls, setMessageAttachmentUrls] = useState<Record<string, string>>({});
   const libraryLoadedRef = useRef(false);
@@ -390,7 +393,7 @@ function DashboardShowroomPageInner() {
     });
   }, []);
   // Helper to show notification (desktop or in-app toast)
-  const showNotification = useCallback((chatId: string, userName: string, text: string, isDm: boolean) => {
+  const showNotification = useCallback((chatId: string, userName: string, text: string, isDm: boolean, senderEmail?: string) => {
     // Don't show notifications for feature-request or leaderboard channels
     if (!isDm && (chatId === 'request-a-feature' || chatId === 'leaderboard')) {
       return;
@@ -402,8 +405,22 @@ function DashboardShowroomPageInner() {
     }
 
     // Don't notify for own messages
-    if (me?.email && text.includes(me.email)) {
+    if (me?.email && senderEmail && senderEmail.toLowerCase() === me.email.toLowerCase()) {
       return;
+    }
+
+    // For channel messages, only notify if:
+    // 1. Message contains @everyone, OR
+    // 2. Message mentions the current user
+    if (!isDm && me?.email) {
+      const hasEveryone = /@everyone\b/i.test(text);
+      const emailPrefix = me.email.split('@')[0].toLowerCase();
+      const hasMention = new RegExp(`@${emailPrefix}\\b`, 'i').test(text);
+      
+      // Skip notification if it's not a DM and doesn't have @everyone or mention
+      if (!hasEveryone && !hasMention) {
+        return;
+      }
     }
 
     // Determine if this notification is for the currently active chat
@@ -698,6 +715,42 @@ function DashboardShowroomPageInner() {
     if (["showroom", "forge", "livestream"].includes(v)) {
       setShowroomView(v);
       // track last non-showroom view if extended tabs return in future
+    }
+    
+    // Handle channel/DM navigation from query params
+    const channelParam = searchParams.get("channel");
+    const dmParam = searchParams.get("dm");
+    
+    if (channelParam && v === "showroom") {
+      setActiveChatType('channel');
+      setActive(channelParam);
+      setChatLoading(true);
+      fetch(`/api/chat/messages?channel=${encodeURIComponent(channelParam)}`)
+        .then(r => r.json())
+        .then((data: { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] }) => {
+          setMessages((data.messages || []).map(m => ({
+            ...m,
+            status: 'sent' as const,
+            userEmail: typeof m.userEmail === 'string' ? m.userEmail : undefined,
+          })));
+        })
+        .catch(() => {})
+        .finally(() => setChatLoading(false));
+    } else if (dmParam && v === "showroom") {
+      setActiveChatType('dm');
+      setActiveDm({ email: dmParam, name: undefined, image: null });
+      setChatLoading(true);
+      fetch(`/api/chat/dm/messages?user=${encodeURIComponent(dmParam)}`)
+        .then(r => r.json())
+        .then((data: { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] }) => {
+          setMessages((data.messages || []).map(m => ({
+            ...m,
+            status: 'sent' as const,
+            userEmail: typeof m.userEmail === 'string' ? m.userEmail : undefined,
+          })));
+        })
+        .catch(() => {})
+        .finally(() => setChatLoading(false));
     }
   }, [searchParams]);
 
@@ -1217,7 +1270,7 @@ function DashboardShowroomPageInner() {
               if (isNewMessage && normalizedEmail !== me?.email?.toLowerCase()) {
                 const dmChatId = `dm:${activeDm?.email || ''}`;
                 const displayText = rawText.replace(/\u200B/g, '').trim() || (attachments.length > 0 ? `Sent ${attachments.length} image${attachments.length > 1 ? 's' : ''}` : '');
-                showNotification(dmChatId, userName, displayText, true);
+                showNotification(dmChatId, userName, displayText, true, normalizedEmail);
               }
               
               next.push(message);
@@ -1323,7 +1376,7 @@ function DashboardShowroomPageInner() {
               const isNewMessage = !next.some(m => m.id === id);
               if (isNewMessage && normalizedEmail !== me?.email?.toLowerCase()) {
                 const displayText = rawText.replace(/\u200B/g, '').trim() || (attachments.length > 0 ? `Sent ${attachments.length} image${attachments.length > 1 ? 's' : ''}` : '');
-                showNotification(active, userName, displayText, false);
+                showNotification(active, userName, displayText, false, normalizedEmail);
               }
               
               next.push(message);
@@ -1933,13 +1986,16 @@ function DashboardShowroomPageInner() {
                     ) : null}
                   </div>
                 </div>
-                {activeChatType === 'channel' ? (
-                  <button className="text-xs px-2 py-1 rounded hover:bg-white/5" onClick={()=> setShowMembers(v=>{
-                    const next = !v;
-                    try { if (next && typeof window !== 'undefined' && window.innerWidth < 768) setShowChannels(false); } catch {}
-                    return next;
-                  })}>{showMembers ? 'Hide Members' : 'Show Members'}</button>
-                ) : null}
+                <div className="flex items-center gap-2">
+                  <ChatNotifications />
+                  {activeChatType === 'channel' ? (
+                    <button className="text-xs px-2 py-1 rounded hover:bg-white/5" onClick={()=> setShowMembers(v=>{
+                      const next = !v;
+                      try { if (next && typeof window !== 'undefined' && window.innerWidth < 768) setShowChannels(false); } catch {}
+                      return next;
+                    })}>{showMembers ? 'Hide Members' : 'Show Members'}</button>
+                  ) : null}
+                </div>
               </div>
               {/* Admin confirmation dialogs */}
               <AlertDialog open={!!confirmOpen} onOpenChange={(o)=>{ if(!o) setConfirmOpen(null); }}>
@@ -2065,7 +2121,9 @@ function DashboardShowroomPageInner() {
                               <span className="text-white/60 mr-1">{m.userName}</span>
                             )}
                             {hasText ? (
-                              <span className={m.status==='pending' ? 'opacity-70' : ''}>{displayText}</span>
+                              <span className={m.status==='pending' ? 'opacity-70' : ''}>
+                                <HighlightMentions text={displayText} currentUserEmail={meEmail} />
+                              </span>
                             ) : null}
                             {m.status==='failed' ? (
                               <button className="text-xs text-red-400 underline" onClick={()=>sendMessage(m.text, m.tempId)}>Retry</button>
@@ -2189,11 +2247,13 @@ function DashboardShowroomPageInner() {
                   const handled = await tryHandleSlashCommand(text); 
                   inputRef.current!.value = ""; 
                   handleTextareaResize();
+                  setShowEveryoneHint(false);
                   if (handled) return; 
                 }
                 if (muted?.active) return;
                 inputRef.current!.value="";
                 handleTextareaResize();
+                setShowEveryoneHint(false);
                 if (active === 'request-a-feature' || active === 'leaderboard') return; // no chat send in special channels
                 await sendMessage(text, undefined, pendingAttachments.map((key) => ({ key, url: attachmentPreviewMap[key] || "" })));
                 setPendingAttachments([]);
@@ -2222,21 +2282,35 @@ function DashboardShowroomPageInner() {
                   </div>
                 ) : (
                   <>
-                    <textarea 
-                      ref={inputRef} 
-                      className="flex-1 min-w-0 rounded bg-white/5 px-3 py-2 disabled:opacity-60 resize-none overflow-y-auto" 
-                      style={{ fontSize: '16px', minHeight: '2.5rem', height: '2.5rem' }}
-                      placeholder={activeChatType==='dm' ? `Message @${activeDm?.name || activeDm?.email || 'self'}` : `Message #${active}`} 
-                      disabled={lockedForMe}
-                      rows={1}
-                      onInput={handleTextareaResize}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          e.currentTarget.form?.requestSubmit();
-                        }
-                      }}
-                    />
+                    <div className="flex-1 relative">
+                      <textarea 
+                        ref={inputRef} 
+                        className="w-full rounded bg-white/5 px-3 py-2 disabled:opacity-60 resize-none overflow-y-auto" 
+                        style={{ fontSize: '16px', minHeight: '2.5rem', height: '2.5rem' }}
+                        placeholder={activeChatType==='dm' ? `Message @${activeDm?.name || activeDm?.email || 'self'}` : (me?.role === 'admin' ? `Message #${active} (Use @username or @everyone)` : `Message #${active} (Use @username to mention)`)} 
+                        disabled={lockedForMe}
+                        rows={1}
+                        onInput={(e) => {
+                          handleTextareaResize();
+                          // Show hint when typing @everyone (admin only)
+                          if (me?.role === 'admin' && activeChatType === 'channel') {
+                            const text = e.currentTarget.value;
+                            setShowEveryoneHint(/@everyone/i.test(text));
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            e.currentTarget.form?.requestSubmit();
+                          }
+                        }}
+                      />
+                      {showEveryoneHint && me?.role === 'admin' && activeChatType === 'channel' && (
+                        <div className="absolute bottom-full left-0 mb-1 px-2 py-1 text-xs bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded">
+                          📢 @everyone will notify all users
+                        </div>
+                      )}
+                    </div>
                     <button
                       type="button"
                       className="flex-shrink-0 inline-flex items-center justify-center px-3 py-2 h-10 rounded bg-white/5 hover:bg-white/10 text-sm"

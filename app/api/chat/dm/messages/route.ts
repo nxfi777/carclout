@@ -3,6 +3,7 @@ import { getSurreal } from "@/lib/surrealdb";
 import { auth } from "@/lib/auth";
 import { sanitizeUserId } from "@/lib/user";
 import { RecordId } from "surrealdb";
+import { parseMentions } from "@/lib/mention-parser";
 
 const ALLOWED_ATTACHMENT_ROOTS = new Set(["chat-uploads", "car-photos", "vehicles", "library"]);
 
@@ -287,6 +288,30 @@ export async function POST(request: Request) {
     attachments,
   });
   const row = Array.isArray(created) ? created[0] : created;
+  
+  // Create notification for DM recipient (fire-and-forget)
+  try {
+    const messageId = typeof row?.id === 'object' && 'toString' in row.id ? row.id.toString() : String(row?.id || '');
+    const { mentions } = parseMentions(text);
+    
+    // Always notify DM recipient (unless it's a self-DM)
+    if (targetEmail.toLowerCase() !== meEmail.toLowerCase()) {
+      await db.create("notification", {
+        recipientEmail: targetEmail,
+        senderEmail: meEmail,
+        senderName,
+        messageId,
+        messageText: text.substring(0, 200),
+        dmKey: key,
+        type: mentions.length > 0 ? "mention" : "mention", // DMs are always treated as direct mentions
+        read: false,
+        created_at: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    console.error("[dm notifications] Failed to create notification:", err);
+  }
+  
   return NextResponse.json({ message: { ...row, userName: senderName } });
 }
 

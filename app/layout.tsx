@@ -16,6 +16,7 @@ import { auth } from "@/lib/auth";
 import { createMetadata } from "@/lib/seo";
 import { DrawerQueueProvider } from "@/lib/drawer-queue";
 import InstagramBrowserPrompt from "@/components/instagram-browser-prompt";
+import { ChatNotificationListener } from "@/components/chat-notification-listener";
 import { headers } from "next/headers";
 
 const poppins = Poppins({
@@ -106,6 +107,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <SessionProviderWrapper session={session}>
           <DrawerQueueProvider>
             <InstagramBrowserPrompt />
+            <ChatNotificationListener />
             <WebVitals />
             <UmamiTracker session={session} />
             <HeaderGate>

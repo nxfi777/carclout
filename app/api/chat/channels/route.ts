@@ -7,11 +7,11 @@ async function ensureGeneral(db: Awaited<ReturnType<typeof getSurreal>>) {
   const res = await db.query("SELECT * FROM channel WHERE slug = 'general' LIMIT 1;");
   const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
   if (!row) {
-    // General channel now requires Pro plan (ultra) for community access
-    await db.create("channel", { name: "General", slug: "general", requiredReadPlan: 'ultra', requiredWritePlan: 'ultra', created_at: new Date().toISOString() });
+    // General channel requires minimum plan for showroom chat access
+    await db.create("channel", { name: "General", slug: "general", requiredReadPlan: 'minimum', requiredWritePlan: 'minimum', created_at: new Date().toISOString() });
   } else {
-    // Update existing general channel to require Pro plan
-    await db.query("UPDATE channel SET requiredReadPlan = 'ultra', requiredWritePlan = 'ultra' WHERE slug = 'general';");
+    // Update existing general channel to require minimum plan
+    await db.query("UPDATE channel SET requiredReadPlan = 'minimum', requiredWritePlan = 'minimum' WHERE slug = 'general';");
   }
 }
 
@@ -36,11 +36,11 @@ async function ensureFeatureRequests(db: Awaited<ReturnType<typeof getSurreal>>)
   const res = await db.query("SELECT * FROM channel WHERE slug = 'request-a-feature' LIMIT 1;");
   const row = Array.isArray(res) && Array.isArray(res[0]) ? (res[0][0] as unknown) : null;
   if (!row) {
-    // Feature requests also requires Pro plan for community access
-    await db.create("channel", { name: "Request a Feature", slug: "request-a-feature", requiredReadPlan: 'ultra', requiredWritePlan: 'ultra', created_at: new Date().toISOString() });
+    // Feature requests requires minimum plan for access
+    await db.create("channel", { name: "Request a Feature", slug: "request-a-feature", requiredReadPlan: 'minimum', requiredWritePlan: 'minimum', created_at: new Date().toISOString() });
   } else {
-    // Update existing channel to require Pro plan
-    await db.query("UPDATE channel SET requiredReadPlan = 'ultra', requiredWritePlan = 'ultra' WHERE slug = 'request-a-feature';");
+    // Update existing channel to require minimum plan
+    await db.query("UPDATE channel SET requiredReadPlan = 'minimum', requiredWritePlan = 'minimum' WHERE slug = 'request-a-feature';");
   }
 }
 
