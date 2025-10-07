@@ -911,6 +911,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                           templateSlug: template?.slug,
                           startKey: key,
                           duration: selectedDuration,
+                          variables: varState,
                         }),
                       });
                       const out = await resp.json().catch(()=>({}));
@@ -937,12 +938,23 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                     (v) => tokensInPrompt.has(String(v?.key || "")) && !builtin.has(String(v?.key || ""))
                   )
                 : [];
-              if (!needBuiltins.length && !customVarDefs.length) return null;
+              // Extract custom tokens from video prompt
+              const videoPromptTokens = (() => {
+                if (!template?.video?.enabled || !template?.video?.prompt) return [];
+                const matches = String(template.video.prompt).match(/\[([A-Z0-9_]+)\]/g);
+                if (!matches) return [];
+                const tokens = matches.map((m) => m.replace(/^[\[]|[\]]$/g, ""));
+                const builtin = new Set(["BRAND", "BRAND_CAPS", "MODEL", "COLOR_FINISH", "ACCENTS", "COLOR_FINISH_ACCENTS"]);
+                // Only show custom tokens (not built-in ones) that aren't already in the image prompt
+                const customOnly = tokens.filter((t) => !builtin.has(t) && !tokensInPrompt.has(t));
+                return Array.from(new Set(customOnly));
+              })();
+              if (!needBuiltins.length && !customVarDefs.length && !videoPromptTokens.length) return null;
               return (
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Options</div>
                   <div className="space-y-2">
-                    {template?.video?.enabled ? (
+                    {template?.video?.enabled && availableDurations.length > 1 ? (
                       <div className="space-y-1">
                         <div className="text-xs text-white/70">Video duration</div>
                         <Select value={String(selectedDuration)} onValueChange={(val) => setSelectedDuration(val as typeof selectedDuration)}>
@@ -958,6 +970,16 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                         <div className="text-xs text-white/60">Longer clips cost more credits. Sora 2 is billed at $0.10 per second.</div>
                       </div>
                     ) : null}
+                    {videoPromptTokens.map((token) => (
+                      <div key={`video-${token}`} className="space-y-1">
+                        <div className="text-xs text-white/70">{token.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}</div>
+                        <Input 
+                          value={varState[token] || ""} 
+                          onChange={(e) => setVarState((prev) => ({ ...prev, [token]: e.target.value }))} 
+                          placeholder={`Enter ${token.replace(/_/g, " ").toLowerCase()}`} 
+                        />
+                      </div>
+                    ))}
                     {needBuiltins.map((key) => {
                       if (key === "BRAND") {
                         const makeOptions = Array.from(new Set(MAKES)).map((m) => ({ value: m, label: m }));

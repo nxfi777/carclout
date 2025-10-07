@@ -24,6 +24,7 @@ type AnimateVideoRequest = {
   camera_fixed?: boolean;
   seed?: number | null;
   fps?: number;
+  variables?: Record<string, string>;
 };
 
 const PROVIDER_DURATION_OPTIONS: Record<VideoProvider, ReadonlyArray<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>> = {
@@ -114,8 +115,19 @@ export async function POST(req: Request) {
       if (raw === 'sora2') return 'sora2';
       return 'seedance';
     })();
-    const videoPrompt = String((body?.prompt ?? vconf?.prompt ?? '') || '').trim();
+    let videoPrompt = String((body?.prompt ?? vconf?.prompt ?? '') || '').trim();
     if (!enabled || !videoPrompt) return NextResponse.json({ error: 'This template does not support video' }, { status: 400 });
+    
+    // Process custom tokens in video prompt
+    if (body?.variables && typeof body.variables === 'object') {
+      const variables = body.variables as Record<string, string>;
+      for (const [key, value] of Object.entries(variables)) {
+        if (typeof key === 'string' && typeof value === 'string') {
+          const token = `[${key}]`;
+          videoPrompt = videoPrompt.replace(new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+        }
+      }
+    }
 
     const providerDefaultDurations = PROVIDER_DURATION_OPTIONS[provider];
     const rawAllowedDurations = Array.isArray((vconf as { allowedDurations?: unknown })?.allowedDurations)

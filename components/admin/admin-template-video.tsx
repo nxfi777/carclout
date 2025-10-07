@@ -124,6 +124,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
           <div className="sm:col-span-2">
             <div className="text-xs text-white/70 mb-1">Video prompt</div>
             <Textarea value={String(v.prompt||'')} onChange={(e)=> onChange({ ...(v||{}), prompt: e.currentTarget.value })} placeholder="Describe the motion/style, e.g. Smooth camera move around the car with neon reflections" rows={3} />
+            <div className="mt-1 text-[0.8rem] text-white/60">You can use custom tokens like [CUSTOM_MOTION] to let users customize the prompt. These will appear as input fields in the user interface.</div>
           </div>
           <div>
             <div className="text-xs text-white/70 mb-1">Admin Duration (default)</div>
