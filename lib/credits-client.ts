@@ -1,8 +1,8 @@
 // Client-safe credit estimation helpers (no DB access)
 
-export type VideoResolution = '480p' | '720p' | '1080p';
+export type VideoResolution = 'auto' | '480p' | '720p' | '1080p';
 export type VideoAspectRatio = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16' | 'auto';
-export type VideoProvider = 'seedance' | 'kling2_5';
+export type VideoProvider = 'seedance' | 'kling2_5' | 'sora2';
 
 export const PRICE_PER_CREDIT_USD = 0.001; // 1 credit = $0.001 (10x scale)
 export const CREDITS_PER_DOLLAR = Math.round(1 / PRICE_PER_CREDIT_USD); // 1000
@@ -10,9 +10,14 @@ export const CREDITS_PER_DOLLAR = Math.round(1 / PRICE_PER_CREDIT_USD); // 1000
 export const DEFAULT_VIDEO_FPS = 24;
 export const VIDEO_VENDOR_USD_PER_MILLION_TOKENS = 2.5;
 export const VIDEO_MARKUP_MULTIPLIER = 2.25; // ~125% margin aligned with image pricing
+// Sora 2 pricing
+export const SORA2_VENDOR_USD_PER_SECOND = 0.1; // our cost
+export const SORA2_USER_USD_PER_SECOND = 0.25; // user charge target => 250 credits/sec
 
 function heightForResolution(resolution: VideoResolution): number {
   switch (resolution) {
+    case 'auto':
+      return 1080;
     case '480p': return 480;
     case '720p': return 720;
     case '1080p':
@@ -66,6 +71,10 @@ export function estimateVideoVendorUsd(
     const blocks = Math.max(1, Math.ceil(Math.max(1, Math.round(durationSeconds)) / 5));
     return Math.max(0, 0.35 * blocks);
   }
+  if (provider === 'sora2') {
+    const duration = Math.max(1, Math.round(durationSeconds));
+    return Math.max(0, SORA2_VENDOR_USD_PER_SECOND * duration);
+  }
   const tokens = estimateVideoTokens(resolution, durationSeconds, fps, aspect);
   return Math.max(0, (tokens / 1_000_000) * VIDEO_VENDOR_USD_PER_MILLION_TOKENS);
 }
@@ -77,7 +86,10 @@ export function estimateVideoCredits(
   aspect: VideoAspectRatio = 'auto',
   provider: VideoProvider = 'seedance'
 ): number {
-  const usd = estimateVideoVendorUsd(resolution, durationSeconds, fps, aspect, provider) * VIDEO_MARKUP_MULTIPLIER;
+  const vendorUsd = estimateVideoVendorUsd(resolution, durationSeconds, fps, aspect, provider);
+  const usd = provider === 'sora2'
+    ? SORA2_USER_USD_PER_SECOND * Math.max(1, Math.round(durationSeconds))
+    : vendorUsd * VIDEO_MARKUP_MULTIPLIER;
   const credits = Math.ceil(usd * CREDITS_PER_DOLLAR);
   return Math.max(1, credits);
 }

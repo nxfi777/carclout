@@ -187,16 +187,21 @@ export function includedMonthlyCreditsForPlan(plan: "minimum" | "pro" | "ultra" 
 
 
 // Video pricing helpers
-export type VideoResolution = '480p' | '720p' | '1080p';
+export type VideoResolution = 'auto' | '480p' | '720p' | '1080p';
 export type VideoAspectRatio = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16' | 'auto';
-export type VideoProvider = 'seedance' | 'kling2_5';
+export type VideoProvider = 'seedance' | 'kling2_5' | 'sora2';
 
 export const DEFAULT_VIDEO_FPS = 24; // aligns with ~ $0.62 for 1080p 5s
 export const VIDEO_VENDOR_USD_PER_MILLION_TOKENS = 2.5; // vendor guidance
 export const VIDEO_MARKUP_MULTIPLIER = 2.25; // ~125% margin aligned with image pricing
+// Sora 2 pricing
+export const SORA2_VENDOR_USD_PER_SECOND = 0.1; // our cost
+export const SORA2_USER_USD_PER_SECOND = 0.25; // user charge target => 250 credits/sec
 
 function heightForResolution(resolution: VideoResolution): number {
   switch (resolution) {
+    case 'auto':
+      return 1080;
     case '480p': return 480;
     case '720p': return 720;
     case '1080p':
@@ -255,6 +260,12 @@ export function estimateVideoVendorUsd(
     const usd = 0.35 * blocks;
     return Math.max(0, usd);
   }
+  if (provider === 'sora2') {
+    // Sora 2 flat vendor rate: $0.1 per second
+    const duration = Math.max(1, Math.round(durationSeconds));
+    const usd = SORA2_VENDOR_USD_PER_SECOND * duration;
+    return Math.max(0, usd);
+  }
   const tokens = estimateVideoTokens(resolution, durationSeconds, fps, aspect);
   const usd = (tokens / 1_000_000) * VIDEO_VENDOR_USD_PER_MILLION_TOKENS;
   return Math.max(0, usd);
@@ -268,7 +279,9 @@ export function estimateVideoCredits(
   provider: VideoProvider = 'seedance'
 ): number {
   const usd = estimateVideoVendorUsd(resolution, durationSeconds, fps, aspect, provider);
-  const withMargin = usd * VIDEO_MARKUP_MULTIPLIER;
+  const withMargin = provider === 'sora2'
+    ? Math.max(0, SORA2_USER_USD_PER_SECOND * Math.max(1, Math.round(durationSeconds)))
+    : usd * VIDEO_MARKUP_MULTIPLIER;
   const credits = Math.ceil(withMargin * CREDITS_PER_DOLLAR);
   return Math.max(1, credits);
 }

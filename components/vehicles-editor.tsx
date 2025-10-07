@@ -97,7 +97,7 @@ export default function VehiclesEditor({ value, onChange, onWillRemoveVehicle, c
           <div className="text-sm font-medium mb-1">Vehicles owned</div>
           <ul className="text-sm space-y-3">
             {value.map((c, i) => (
-              <li key={`${c.make}-${c.model}-${i}`} className="space-y-2 border rounded-md p-2">
+              <li key={i} className="space-y-2 border rounded-md p-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="grid sm:grid-cols-2 gap-2 flex-1">
                     <div>

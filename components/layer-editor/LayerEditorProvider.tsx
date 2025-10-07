@@ -138,10 +138,46 @@ function reducer(state: LayerEditorState, action: LayerEditorAction): LayerEdito
         editingLayerId: action.tool === 'text' ? state.editingLayerId : null,
         // Clear selection when switching to text tool so first click creates text immediately
         activeLayerId: action.tool === 'text' ? null : state.activeLayerId,
-        selectedLayerIds: action.tool === 'text' ? [] : state.selectedLayerIds
+        selectedLayerIds: action.tool === 'text' ? [] : state.selectedLayerIds,
+        // Clear draw-to-edit annotation when switching away from brush tool
+        drawToEditAnnotation: action.tool === 'brush' ? state.drawToEditAnnotation : null,
       };
     case "set_marquee_mode":
       return { ...state, marqueeMode: action.mode };
+    case "start_draw_to_edit":
+      return { 
+        ...state, 
+        drawToEditAnnotation: { 
+          id: `draw_${Date.now()}`, 
+          strokes: [] 
+        } 
+      };
+    case "add_brush_stroke":
+      if (!state.drawToEditAnnotation) return state;
+      return {
+        ...state,
+        drawToEditAnnotation: {
+          ...state.drawToEditAnnotation,
+          strokes: [...state.drawToEditAnnotation.strokes, action.stroke],
+        },
+      };
+    case "clear_draw_to_edit":
+      return { ...state, drawToEditAnnotation: null };
+    case "finalize_draw_to_edit":
+      if (!state.drawToEditAnnotation) return state;
+      return {
+        ...state,
+        drawToEditAnnotation: {
+          ...state.drawToEditAnnotation,
+          boundingBox: action.boundingBox,
+        },
+      };
+    case "apply_draw_to_edit_result":
+      return {
+        ...state,
+        backgroundUrl: action.newBackgroundUrl,
+        drawToEditAnnotation: null,
+      };
     case "add_layer": {
       const layers = action.atTop ? [...state.layers, action.layer] : [action.layer, ...state.layers];
       return { ...state, layers, activeLayerId: action.layer.id, selectedLayerIds: [action.layer.id], editingLayerId: action.layer.type === 'text' ? action.layer.id : state.editingLayerId };
@@ -330,6 +366,7 @@ export function LayerEditorProvider({ children, initial, onDirtyChange }: LayerE
       case 'set_mask':
       case 'set_mask_offset':
       case 'reset_mask':
+      case 'apply_draw_to_edit_result':
         return true;
       default:
         return false;

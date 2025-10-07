@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+const PROVIDER_DURATION_OPTIONS: Record<'seedance' | 'kling2_5' | 'sora2', ReadonlyArray<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>> = {
+  seedance: ['3','4','5','6','7','8','9','10','11','12'],
+  kling2_5: ['5','10'],
+  sora2: ['4','8','12'],
+} as const;
+
 import { motion } from "framer-motion";
 import NextImage from "next/image";
 import { BlurhashImage } from "@/components/ui/blurhash-image";
@@ -7,7 +13,9 @@ import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
+import { MAKES } from "@/lib/vehicles";
 // import { R2FileTree } from "@/components/ui/file-tree";
 import FixedAspectCropper from "@/components/ui/fixed-aspect-cropper";
 import Designer from "@/components/layer-editor/designer";
@@ -45,12 +53,14 @@ export type UseTemplateTemplate = {
   maxUploadImages?: number;
   video?: {
     enabled?: boolean;
+    provider?: 'seedance' | 'kling2_5' | 'sora2';
     prompt?: string;
     duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
-    resolution?: '480p'|'720p'|'1080p';
+    resolution?: 'auto'|'480p'|'720p'|'1080p';
     aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
     camera_fixed?: boolean;
     fps?: number;
+    allowedDurations?: Array<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>;
   } | null;
 };
 
@@ -70,6 +80,37 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   const [busy, setBusy] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultKey, setResultKey] = useState<string | null>(null);
+  const videoConfig = template?.video || null;
+  const resolvedProvider: 'seedance' | 'kling2_5' | 'sora2' = (() => {
+    const raw = String(videoConfig?.provider || '').toLowerCase();
+    if (raw === 'kling2_5') return 'kling2_5';
+    if (raw === 'sora2' || !raw) return 'sora2';
+    return 'seedance';
+  })();
+  const _allowedDurationsKey = useMemo(() => {
+    if (!Array.isArray(videoConfig?.allowedDurations) || !videoConfig.allowedDurations.length) return '';
+    return videoConfig.allowedDurations.join(',');
+  }, [videoConfig?.allowedDurations]);
+  const availableDurations = useMemo(() => {
+    const allowed = Array.isArray(videoConfig?.allowedDurations) && videoConfig.allowedDurations.length
+      ? videoConfig.allowedDurations
+      : PROVIDER_DURATION_OPTIONS[resolvedProvider];
+    const unique = Array.from(new Set(allowed.map((d) => String(d) as typeof allowed[number])));
+    const filtered = unique.filter((d) => (PROVIDER_DURATION_OPTIONS[resolvedProvider] as ReadonlyArray<string>).includes(d));
+    return filtered as Array<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>;
+  }, [resolvedProvider, videoConfig?.allowedDurations]);
+  const defaultDuration = useMemo(() => {
+    const raw = String(videoConfig?.duration || '').trim();
+    if (availableDurations.includes(raw as typeof availableDurations[number])) return raw as typeof availableDurations[number];
+    return availableDurations[0] || '4';
+  }, [availableDurations, videoConfig?.duration]);
+  const [selectedDuration, setSelectedDuration] = useState<typeof availableDurations[number] | '4'>(defaultDuration);
+  useEffect(() => {
+    setSelectedDuration((prev) => {
+      if (availableDurations.includes(prev as typeof availableDurations[number])) return prev;
+      return defaultDuration;
+    });
+  }, [template?.id, resolvedProvider, defaultDuration, availableDurations]);
   const creditDepletion = useCreditDepletion();
   const [designOpen, setDesignOpen] = useState(false);
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
@@ -838,21 +879,40 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                       let estimatedCredits = 500; // Default fallback
                       try {
                         const { estimateVideoCredits } = await import('@/lib/credits-client');
-                        const v = template?.video as { duration?: string|number; resolution?: '480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5' } | null | undefined;
-                        const duration = Number(v?.duration || 5);
-                        const resolution = (v?.resolution || '1080p') as '480p'|'720p'|'1080p';
-                        const provider = (v?.provider === 'kling2_5') ? 'kling2_5' : 'seedance';
+                        const v = template?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2' } | null | undefined;
+                        const duration = Number(selectedDuration || v?.duration || defaultDuration || 4);
+                        const resolution = ((): 'auto'|'480p'|'720p'|'1080p' => {
+                          if (resolvedProvider === 'sora2') {
+                            return (v?.resolution === 'auto' ? 'auto' : '720p');
+                          }
+                          return (v?.resolution || '1080p') as 'auto'|'480p'|'720p'|'1080p';
+                        })();
+                        const provider = resolvedProvider;
                         const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
                         const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
                         estimatedCredits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
-                        const ok = confirm(`Animate this design into a ${duration}s video? This will use ~${estimatedCredits} credits.`);
+                        const providerNames: Record<'seedance' | 'kling2_5' | 'sora2', string> = {
+                          seedance: 'Seedance',
+                          kling2_5: 'Kling 2.5',
+                          sora2: 'Sora 2',
+                        };
+                        const ok = confirm(`Animate this design into a ${duration}s ${providerNames[provider]} video? This will use ~${estimatedCredits} credits.`);
                         if (!ok) return;
                       } catch {}
                       // Check credits before calling API
                       const bal = await getCredits();
                       const insufficientCredits = creditDepletion.checkAndTrigger(bal, estimatedCredits);
                       if (insufficientCredits) return;
-                      const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: template?.id, templateSlug: template?.slug, startKey: key }) });
+                      const resp = await fetch('/api/templates/video', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          templateId: template?.id,
+                          templateSlug: template?.slug,
+                          startKey: key,
+                          duration: selectedDuration,
+                        }),
+                      });
                       const out = await resp.json().catch(()=>({}));
                       if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, estimatedCredits); return; }
                       if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); return; }
@@ -882,12 +942,48 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Options</div>
                   <div className="space-y-2">
-                    {needBuiltins.map((key) => (
-                      <div key={key} className="space-y-1">
-                        <div className="text-xs text-white/70">{key.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}</div>
-                        <Input value={varState[key] || ""} onChange={(e) => setVarState((prev) => ({ ...prev, [key]: e.target.value }))} placeholder={key} />
+                    {template?.video?.enabled ? (
+                      <div className="space-y-1">
+                        <div className="text-xs text-white/70">Video duration</div>
+                        <Select value={String(selectedDuration)} onValueChange={(val) => setSelectedDuration(val as typeof selectedDuration)}>
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Duration" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableDurations.map((dur) => (
+                              <SelectItem key={dur} value={dur}>{dur}s</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="text-xs text-white/60">Longer clips cost more credits. Sora 2 is billed at $0.10 per second.</div>
                       </div>
-                    ))}
+                    ) : null}
+                    {needBuiltins.map((key) => {
+                      if (key === "BRAND") {
+                        const makeOptions = Array.from(new Set(MAKES)).map((m) => ({ value: m, label: m }));
+                        return (
+                          <div key={key} className="space-y-1">
+                            <div className="text-xs text-white/70">Brand</div>
+                            <Combobox
+                              options={makeOptions}
+                              value={varState[key] || ""}
+                              onValueChange={(val) => setVarState((prev) => ({ ...prev, [key]: val }))}
+                              placeholder="Search brand..."
+                              searchPlaceholder="Search..."
+                              emptyText="No brand found."
+                              allowCustom={false}
+                              className="bg-white/5"
+                            />
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={key} className="space-y-1">
+                          <div className="text-xs text-white/70">{key.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}</div>
+                          <Input value={varState[key] || ""} onChange={(e) => setVarState((prev) => ({ ...prev, [key]: e.target.value }))} placeholder={key} />
+                        </div>
+                      );
+                    })}
                     {customVarDefs.map((v) => {
                       const key = String(v?.key || "").trim();
                       if (!key) return null;

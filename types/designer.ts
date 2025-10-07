@@ -162,9 +162,9 @@ export const defaultGlow: EffectGlow = {
 };
 
 export function createDefaultText(xPct = 50, yPct = 50): TextLayer {
-  // Use wider width on mobile (70% of viewport) to prevent text from wrapping too early
+  // Use wider width on mobile (80% of viewport) to prevent text from wrapping too early
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-  const widthPct = isMobile ? 70 : 28;
+  const widthPct = isMobile ? 80 : 36;
   
   return {
     id: generateId('text'),
@@ -181,7 +181,7 @@ export function createDefaultText(xPct = 50, yPct = 50): TextLayer {
     xPct,
     yPct,
     widthPct,
-    heightPct: 12,
+    heightPct: 10,
     rotationDeg: 0,
     scaleX: 1,
     scaleY: 1,

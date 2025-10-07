@@ -35,19 +35,20 @@ type TemplateDoc = {
   designerDefaults?: {
     headline?: string | null;
   } | null;
-  // Video generation config (Seedance image-to-video)
+  // Video generation config (Seedance/Kling/Sora 2 image-to-video)
   video?: {
     enabled?: boolean;
-    provider?: 'seedance' | 'kling2_5';
+    provider?: 'seedance' | 'kling2_5' | 'sora2';
     prompt?: string;
     duration?: '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12';
-    resolution?: '480p' | '720p' | '1080p';
+    resolution?: 'auto' | '480p' | '720p' | '1080p';
     aspect_ratio?: '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16' | 'auto';
     camera_fixed?: boolean;
     seed?: number | null;
     fps?: number; // for cost estimation only
     cfg_scale?: number; // Kling only (0..1)
     previewKey?: string | null; // admin-scope R2 key for hover preview
+    allowedDurations?: Array<'3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12'>; // User-selectable durations
   } | null;
   created_at?: string;
   created_by?: string;
@@ -267,14 +268,14 @@ export async function POST(req: Request) {
           const durRaw = String((v as { duration?: unknown })?.duration || '5');
           const durations = ['3','4','5','6','7','8','9','10','11','12'] as const;
           const dur = (durations as readonly string[]).includes(durRaw) ? (durRaw as (typeof durations)[number]) : '5';
-          const resRaw = String((v as { resolution?: unknown })?.resolution || '1080p');
-          const resolutions = ['480p','720p','1080p'] as const;
-          const res = (resolutions as readonly string[]).includes(resRaw) ? (resRaw as (typeof resolutions)[number]) : '1080p';
+          const resRaw = String((v as { resolution?: unknown })?.resolution || 'auto');
+          const resolutions = ['auto','480p','720p','1080p'] as const;
+          const res = (resolutions as readonly string[]).includes(resRaw) ? (resRaw as (typeof resolutions)[number]) : 'auto';
           const arRaw = String((v as { aspect_ratio?: unknown })?.aspect_ratio || 'auto');
           const aspectRatios = ['21:9','16:9','4:3','1:1','3:4','9:16','auto'] as const;
           const ar = (aspectRatios as readonly string[]).includes(arRaw) ? (arRaw as (typeof aspectRatios)[number]) : 'auto';
-          const provRaw = String((v as { provider?: unknown })?.provider || 'seedance');
-          const provider: 'seedance' | 'kling2_5' = provRaw === 'kling2_5' ? 'kling2_5' : 'seedance';
+          const provRaw = String((v as { provider?: unknown })?.provider || 'sora2');
+          const provider: 'seedance' | 'kling2_5' | 'sora2' = provRaw === 'kling2_5' ? 'kling2_5' : provRaw === 'sora2' ? 'sora2' : 'seedance';
           const cfg_scale = ((): number | undefined => {
             try {
               const n = Number((v as { cfg_scale?: unknown })?.cfg_scale);
@@ -282,6 +283,14 @@ export async function POST(req: Request) {
               const clamped = Math.min(1, Math.max(0, n));
               return clamped;
             } catch { return undefined; }
+          })();
+          const allowedDurations = ((): NonNullable<TemplateDoc['video']>['allowedDurations'] => {
+            const ad = (v as { allowedDurations?: unknown })?.allowedDurations;
+            if (Array.isArray(ad)) {
+              const filtered = ad.filter(d => (durations as readonly string[]).includes(String(d))) as Array<'3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12'>;
+              return filtered.length > 0 ? filtered : undefined;
+            }
+            return undefined;
           })();
           return {
             enabled: !!(v as { enabled?: unknown })?.enabled,
@@ -295,10 +304,11 @@ export async function POST(req: Request) {
             fps: ((): number | undefined => { const n = Number((v as { fps?: unknown })?.fps); return Number.isFinite(n) && n>0 ? Math.round(n) : undefined; })(),
             cfg_scale,
             previewKey: typeof (v as { previewKey?: unknown })?.previewKey === 'string' ? String((v as { previewKey?: unknown }).previewKey) : null,
+            allowedDurations,
           } as TemplateDoc['video'];
         }
       } catch {}
-      return { enabled: false, provider: 'seedance', prompt: '', duration: '5', resolution: '1080p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, cfg_scale: undefined, previewKey: null } as TemplateDoc['video'];
+      return { enabled: false, provider: 'sora2', prompt: '', duration: '4', resolution: 'auto', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, cfg_scale: undefined, previewKey: null, allowedDurations: undefined } as TemplateDoc['video'];
     })(),
     created_at: createdIso,
     created_by: user.email,

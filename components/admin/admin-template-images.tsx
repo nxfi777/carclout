@@ -76,7 +76,7 @@ export function AdminTemplateImages(props: AdminTemplateImagesProps) {
                             className="h-6 px-2 text-xs"
                             onClick={() => props.onSetThumbFromAdminIndex(i)}
                           >
-                            <Check className="w-3.5 h-3.5 mr-1" /> Set thumb
+                            <Check className="w-3.5 h-3.5 mr-1" /> Thumb
                           </Button>
                         </div>
                         {props.selectedThumbAdminIndex === i ? (
@@ -128,7 +128,7 @@ export function AdminTemplateImages(props: AdminTemplateImagesProps) {
                               className="h-6 px-2 text-xs"
                               onClick={() => (props as EditModeProps).onSetThumbExisting(k)}
                             >
-                              <Check className="w-3.5 h-3.5 mr-1" /> Set thumb
+                              <Check className="w-3.5 h-3.5 mr-1" /> Thumb
                             </Button>
                           </div>
                           {(props as EditModeProps).selectedThumbExistingKey === k ? (
@@ -163,14 +163,14 @@ export function AdminTemplateImages(props: AdminTemplateImagesProps) {
                             ×
                           </Button>
                           <div className="absolute bottom-1 left-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              className="h-6 px-2 text-xs"
-                              onClick={() => (props as EditModeProps).onSetThumbAdminIndex(i)}
-                            >
-                              <Check className="w-3.5 h-3.5 mr-1" /> Set thumb
-                            </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => (props as EditModeProps).onSetThumbAdminIndex(i)}
+                          >
+                            <Check className="w-3.5 h-3.5 mr-1" /> Thumb
+                          </Button>
                           </div>
                           {(props as EditModeProps).selectedThumbAdminIndex === i ? (
                             <div className="absolute top-1 left-1 rounded bg-black/70 text-white text-[10px] px-1.5 py-0.5">Thumbnail</div>

@@ -97,6 +97,32 @@ export async function POST(req: Request) {
           if (credits > 0) {
             await adjustCredits(customerEmail, credits, "topup", session.id);
           }
+          
+          // Capture and store customer ID from top-up session
+          const customerId = typeof session.customer === 'string' ? session.customer : null;
+          if (customerId) {
+            try {
+              // Check if user already has this customer ID stored
+              const userResult = await surreal.query(
+                "SELECT stripeCustomerId FROM user WHERE email = $email LIMIT 1;", 
+                { email: customerEmail }
+              );
+              const existingCustomerId = Array.isArray(userResult) && Array.isArray(userResult[0]) 
+                ? (userResult[0][0] as { stripeCustomerId?: string } | undefined)?.stripeCustomerId
+                : null;
+              
+              // Only update if missing or different
+              if (!existingCustomerId || existingCustomerId !== customerId) {
+                await surreal.query(
+                  "UPDATE user SET stripeCustomerId = $customerId WHERE email = $email;", 
+                  { customerId, email: customerEmail }
+                );
+                console.log(`[Webhook] Stored Stripe customer ID for ${customerEmail} from top-up`);
+              }
+            } catch (e) {
+              console.error("[Webhook] Failed to store customer ID from top-up:", e);
+            }
+          }
         } else {
           let plan: Plan | null = (session.metadata?.plan as Plan) || null;
           if (!plan) {

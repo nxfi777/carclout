@@ -9,15 +9,19 @@ import TransformControls from "@/components/layer-editor/TransformControls";
 // import MarqueeOverlay from "@/components/layer-editor/MarqueeOverlay";
 import { createDefaultRect, createDefaultText } from "@/types/layer-editor";
 import { blurHashToDataURLCached, BLUR_DATA_URLS } from "@/lib/blur-placeholder";
+import DrawToEditOverlay from "@/components/layer-editor/DrawToEditOverlay";
 
 export default function LayerCanvas({ className }: { className?: string }) {
   const { state, dispatch } = useLayerEditor();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number; lx: number; ly: number; id: string } | null>(null);
+  const layerBoundsRef = useRef<HTMLDivElement | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number; lx: number; ly: number; id: string; boundsWidth: number; boundsHeight: number } | null>(null);
   const [selectRect, setSelectRect] = useState<null | { x: number; y: number; w: number; h: number }>(null);
   const [maskDrag, setMaskDrag] = useState<null | { x: number; y: number; tx: number; ty: number }>(null);
   const [canvasHeight, setCanvasHeight] = useState(600); // Track canvas height for font sizing
   const [backgroundLoaded, setBackgroundLoaded] = useState(false);
+  const [imageBounds, setImageBounds] = useState<{ width: string; height: string; left: string; top: string } | null>(null);
+  const [maskNaturalDimensions, setMaskNaturalDimensions] = useState<{ width: number; height: number } | null>(null);
   
   // Track when we just exited editing mode to prevent immediate new text creation
   const justExitedEditingRef = useRef(false);
@@ -32,6 +36,69 @@ export default function LayerCanvas({ className }: { className?: string }) {
   useEffect(() => {
     setBackgroundLoaded(false);
   }, [state.backgroundUrl]);
+  
+  // Load mask dimensions when mask URL changes
+  useEffect(() => {
+    if (!state.carMaskUrl) {
+      setMaskNaturalDimensions(null);
+      return;
+    }
+    
+    const img = new Image();
+    img.onload = () => {
+      setMaskNaturalDimensions({
+        width: img.naturalWidth || img.width,
+        height: img.naturalHeight || img.height
+      });
+    };
+    img.onerror = () => {
+      setMaskNaturalDimensions(null);
+    };
+    img.src = state.carMaskUrl;
+  }, [state.carMaskUrl]);
+  
+  // Calculate correct mask transform accounting for coordinate space
+  // The issue: maskTranslateXPct is percentage of container, but CSS translate(%) is percentage of element
+  const maskTransform = useMemo(() => {
+    if (!imageBounds || !maskNaturalDimensions) {
+      // Fallback to old behavior if we don't have dimensions yet
+      return `translate(${state.maskTranslateXPct || 0}%, ${state.maskTranslateYPct || 0}%)`;
+    }
+    
+    // Parse container dimensions
+    const containerWidth = parseFloat(imageBounds.width);
+    const containerHeight = parseFloat(imageBounds.height);
+    
+    if (!containerWidth || !containerHeight) {
+      return `translate(${state.maskTranslateXPct || 0}%, ${state.maskTranslateYPct || 0}%)`;
+    }
+    
+    // Calculate mask display size with object-contain behavior
+    const maskAspect = maskNaturalDimensions.width / maskNaturalDimensions.height;
+    const containerAspect = containerWidth / containerHeight;
+    
+    let maskDisplayWidth: number;
+    let maskDisplayHeight: number;
+    
+    if (maskAspect > containerAspect) {
+      // Mask is wider - constrained by container width
+      maskDisplayWidth = containerWidth;
+      maskDisplayHeight = containerWidth / maskAspect;
+    } else {
+      // Mask is taller - constrained by container height
+      maskDisplayHeight = containerHeight;
+      maskDisplayWidth = containerHeight * maskAspect;
+    }
+    
+    // Convert container-based percentage to element-based percentage
+    // containerOffsetPx = (maskTranslateXPct / 100) * containerWidth
+    // We want: (translateX / 100) * maskDisplayWidth = containerOffsetPx
+    // So: translateX = (maskTranslateXPct * containerWidth / maskDisplayWidth)
+    const translateX = maskDisplayWidth > 0 ? (state.maskTranslateXPct || 0) * containerWidth / maskDisplayWidth : 0;
+    const translateY = maskDisplayHeight > 0 ? (state.maskTranslateYPct || 0) * containerHeight / maskDisplayHeight : 0;
+    
+    return `translate(${translateX}%, ${translateY}%)`;
+  }, [imageBounds, maskNaturalDimensions, state.maskTranslateXPct, state.maskTranslateYPct]);
   
   // Decode blurhash to data URL (memoized for performance)
   const blurDataURL = useMemo(() => {
@@ -48,21 +115,64 @@ export default function LayerCanvas({ className }: { className?: string }) {
     }
   }, [state.tool]);
 
-  // Track canvas height for font sizing calculations
+  // Calculate image bounds to constrain canvas to actual image area
   useEffect(() => {
-    const updateCanvasHeight = () => {
-      const el = containerRef.current;
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        if (rect.height > 0) {
-          setCanvasHeight(rect.height);
-        }
+    const updateImageBounds = () => {
+      const bgImg = document.querySelector('[data-canvas-root] img[alt="bg"]') as HTMLImageElement | null;
+      const container = containerRef.current;
+      
+      if (!bgImg || !container || !state.backgroundUrl) {
+        setImageBounds(null);
+        return;
       }
+      
+      const containerRect = container.getBoundingClientRect();
+      const imgWidth = bgImg.naturalWidth || bgImg.width;
+      const imgHeight = bgImg.naturalHeight || bgImg.height;
+      
+      if (!imgWidth || !imgHeight) {
+        setImageBounds(null);
+        return;
+      }
+      
+      const containerAspect = containerRect.width / containerRect.height;
+      const imageAspect = imgWidth / imgHeight;
+      
+      let displayWidth, displayHeight, offsetX, offsetY;
+      if (imageAspect > containerAspect) {
+        // Image is wider - constrained by width
+        displayWidth = containerRect.width;
+        displayHeight = containerRect.width / imageAspect;
+        offsetX = 0;
+        offsetY = (containerRect.height - displayHeight) / 2;
+      } else {
+        // Image is taller - constrained by height
+        displayHeight = containerRect.height;
+        displayWidth = containerRect.height * imageAspect;
+        offsetX = (containerRect.width - displayWidth) / 2;
+        offsetY = 0;
+      }
+      
+      setImageBounds({
+        width: `${displayWidth}px`,
+        height: `${displayHeight}px`,
+        left: `${offsetX}px`,
+        top: `${offsetY}px`
+      });
+      
+      // Also update canvas height for font sizing
+      setCanvasHeight(displayHeight);
     };
-    updateCanvasHeight();
-    window.addEventListener('resize', updateCanvasHeight);
-    return () => window.removeEventListener('resize', updateCanvasHeight);
-  }, []);
+    
+    // Update on background load
+    const bgImg = document.querySelector('[data-canvas-root] img[alt="bg"]') as HTMLImageElement | null;
+    if (bgImg && bgImg.complete) {
+      updateImageBounds();
+    }
+    
+    window.addEventListener('resize', updateImageBounds);
+    return () => window.removeEventListener('resize', updateImageBounds);
+  }, [state.backgroundUrl, backgroundLoaded]);
 
   const onPointerDownLayer = useCallback((e: React.PointerEvent, layer: Layer) => {
     e.stopPropagation();
@@ -79,18 +189,23 @@ export default function LayerCanvas({ className }: { className?: string }) {
     dispatch({ type: 'select_layer', id: layer.id });
     // single click selects; drag only when cursor moves
     const x = e.clientX; const y = e.clientY;
-    setDragStart({ x, y, lx: layer.xPct, ly: layer.yPct, id: layer.id });
+    const boundsRect = layerBoundsRef.current?.getBoundingClientRect() ?? containerRef.current?.getBoundingClientRect() ?? null;
+    const boundsWidth = boundsRect?.width && Number.isFinite(boundsRect.width) ? boundsRect.width : 1;
+    const boundsHeight = boundsRect?.height && Number.isFinite(boundsRect.height) ? boundsRect.height : 1;
+    setDragStart({ x, y, lx: layer.xPct, ly: layer.yPct, id: layer.id, boundsWidth, boundsHeight });
   }, [dispatch]);
 
   useEffect(() => {
     function onMove(ev: PointerEvent) {
       if (!dragStart) return;
-      const rect = containerRef.current?.getBoundingClientRect();
+      const rect = layerBoundsRef.current?.getBoundingClientRect() ?? containerRef.current?.getBoundingClientRect() ?? null;
       if (!rect) { setDragStart(null); return; }
       const dx = ev.clientX - dragStart.x;
       const dy = ev.clientY - dragStart.y;
-      const nx = Math.min(100, Math.max(0, dragStart.lx + (dx / rect.width) * 100));
-      const ny = Math.min(100, Math.max(0, dragStart.ly + (dy / rect.height) * 100));
+      const boundsWidth = dragStart.boundsWidth || rect.width;
+      const boundsHeight = dragStart.boundsHeight || rect.height;
+      const nx = Math.min(100, Math.max(0, dragStart.lx + (dx / boundsWidth) * 100));
+      const ny = Math.min(100, Math.max(0, dragStart.ly + (dy / boundsHeight) * 100));
       dispatch({ type: 'update_layer', id: dragStart.id, patch: { xPct: nx, yPct: ny } });
     }
     function onUp() { setDragStart(null); }
@@ -103,7 +218,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
   useEffect(() => {
     function onMove(ev: PointerEvent) {
       if (!maskDrag) return;
-      const rect = containerRef.current?.getBoundingClientRect();
+      const rect = layerBoundsRef.current?.getBoundingClientRect() ?? containerRef.current?.getBoundingClientRect();
       if (!rect) { setMaskDrag(null); return; }
       const dx = ev.clientX - maskDrag.x;
       const dy = ev.clientY - maskDrag.y;
@@ -357,44 +472,52 @@ export default function LayerCanvas({ className }: { className?: string }) {
             <div className="absolute inset-0 grid place-items-center text-sm text-white/50">Tap to add content</div>
           )}
 
-          {state.layers.filter(l=> !l.aboveMask).map((layer)=> {
-            const tiltKey = layer.type === 'text' 
-              ? `${layer.id}-${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}-${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}`
-              : layer.id;
-            return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} canvasHeight={canvasHeight} />;
-          })}
+          {/* Constrained layer container - matches actual image bounds */}
+          <div 
+            className="absolute pointer-events-none"
+            style={imageBounds || { inset: 0 }}
+            ref={layerBoundsRef}
+            data-layer-bounds
+          >
+            {state.layers.filter(l=> !l.aboveMask).map((layer)=> {
+              const tiltKey = layer.type === 'text' 
+                ? `${layer.id}-${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}-${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}`
+                : layer.id;
+              return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} canvasHeight={canvasHeight} />;
+            })}
 
-          {state.carMaskUrl && !state.maskHidden ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              alt="mask"
-              src={state.carMaskUrl}
-              onPointerDown={(e)=>{
-                if (state.tool !== 'select' || state.maskLocked) return;
-                e.stopPropagation();
-                const _rect = containerRef.current?.getBoundingClientRect();
-                const tx = state.maskTranslateXPct || 0;
-                const ty = state.maskTranslateYPct || 0;
-                setMaskDrag({ x: e.clientX, y: e.clientY, tx, ty });
-                // do not auto-select unless explicitly clicking the cutout
-                dispatch({ type: 'select_layer', id: '::mask::' });
-              }}
-              className={cn("absolute inset-0 w-full h-full object-contain select-none", (state.activeLayerId === '::mask::' && state.tool === 'select' && !state.maskLocked) ? 'cursor-move' : 'cursor-auto')}
-              draggable={false}
-              style={{ transform: `translate(${state.maskTranslateXPct || 0}%, ${state.maskTranslateYPct || 0}%)`, pointerEvents: (state.activeLayerId === '::mask::' && state.tool === 'select') ? 'auto' as const : 'none' as const }}
-            />
-          ) : null}
+            {state.carMaskUrl && !state.maskHidden ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                alt="mask"
+                src={state.carMaskUrl}
+                onPointerDown={(e)=>{
+                  if (state.tool !== 'select' || state.maskLocked) return;
+                  e.stopPropagation();
+                  const _rect = containerRef.current?.getBoundingClientRect();
+                  const tx = state.maskTranslateXPct || 0;
+                  const ty = state.maskTranslateYPct || 0;
+                  setMaskDrag({ x: e.clientX, y: e.clientY, tx, ty });
+                  // do not auto-select unless explicitly clicking the cutout
+                  dispatch({ type: 'select_layer', id: '::mask::' });
+                }}
+                className={cn("absolute inset-0 w-full h-full object-contain select-none", (state.activeLayerId === '::mask::' && state.tool === 'select' && !state.maskLocked) ? 'cursor-move' : 'cursor-auto')}
+                draggable={false}
+                style={{ transform: maskTransform, pointerEvents: (state.activeLayerId === '::mask::' && state.tool === 'select') ? 'auto' as const : 'none' as const }}
+              />
+            ) : null}
 
-          {state.layers.filter(l=> !!l.aboveMask).map((layer)=> {
-            const tiltKey = layer.type === 'text' 
-              ? `${layer.id}-${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}-${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}`
-              : layer.id;
-            return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} canvasHeight={canvasHeight} />;
-          })}
+            {state.layers.filter(l=> !!l.aboveMask).map((layer)=> {
+              const tiltKey = layer.type === 'text' 
+                ? `${layer.id}-${(layer as import("@/types/layer-editor").TextLayer).tiltXDeg || 0}-${(layer as import("@/types/layer-editor").TextLayer).tiltYDeg || 0}`
+                : layer.id;
+              return <LayerView key={tiltKey} layer={layer} selected={selectedIdsSet.has(layer.id)} onPointerDown={onPointerDownLayer} justExitedEditingRef={justExitedEditingRef} canvasHeight={canvasHeight} />;
+            })}
 
-          {state.activeLayerId === '::mask::' ? (
-            <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-[var(--primary)]/70" />
-          ) : null}
+            {state.activeLayerId === '::mask::' ? (
+              <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-[var(--primary)]/70" />
+            ) : null}
+          </div>{/* End of layer bounds container */}
 
           {(state.maskTranslateXPct || 0) !== 0 || (state.maskTranslateYPct || 0) !== 0 ? (
             <button
@@ -410,6 +533,9 @@ export default function LayerCanvas({ className }: { className?: string }) {
               <div className="absolute border-2 border-primary/70 bg-primary/10" style={{ left: selectRect.x, top: selectRect.y, width: selectRect.w, height: selectRect.h }} />
             </div>
           ) : null}
+          
+          {/* Draw-to-edit overlay */}
+          <DrawToEditOverlay />
         </div>
       </ContextMenuTrigger>
       <CanvasMenu />
@@ -443,7 +569,9 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
     }
     requestAnimationFrame(() => {
       try {
-        const root = el.closest('[data-canvas-root]') as HTMLElement | null;
+        // Use layer bounds container if available, fallback to canvas root
+        const layerBounds = el.closest('[data-layer-bounds]') as HTMLElement | null;
+        const root = layerBounds || el.closest('[data-canvas-root]') as HTMLElement | null;
         const canvasHeight = root?.getBoundingClientRect().height || 0;
         const contentHeight = Math.max(el.scrollHeight, 0);
         const computed = window.getComputedStyle(el);
@@ -473,7 +601,9 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
     if (!el) return;
     const resize = () => {
       try {
-        const root = el.closest('[data-canvas-root]') as HTMLElement | null;
+        // Use layer bounds container if available, fallback to canvas root
+        const layerBounds = el.closest('[data-layer-bounds]') as HTMLElement | null;
+        const root = layerBounds || el.closest('[data-canvas-root]') as HTMLElement | null;
         const canvasHeight = root?.getBoundingClientRect().height || 0;
         const contentHeight = Math.max(el.scrollHeight, 0);
         const computed = window.getComputedStyle(el);
@@ -588,7 +718,9 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
               const el = e.currentTarget as HTMLDivElement;
               requestAnimationFrame(() => {
                 try {
-                  const root = el.closest('[data-canvas-root]') as HTMLElement | null;
+                  // Use layer bounds container if available, fallback to canvas root
+                  const layerBounds = el.closest('[data-layer-bounds]') as HTMLElement | null;
+                  const root = layerBounds || el.closest('[data-canvas-root]') as HTMLElement | null;
                   const ch = root?.getBoundingClientRect().height || 0;
                   if (ch > 0) {
                     const contentPx = el.scrollHeight;
@@ -604,7 +736,9 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
               const el = e.currentTarget as HTMLDivElement;
               requestAnimationFrame(() => {
                 try {
-                  const root = el.closest('[data-canvas-root]') as HTMLElement | null;
+                  // Use layer bounds container if available, fallback to canvas root
+                  const layerBounds = el.closest('[data-layer-bounds]') as HTMLElement | null;
+                  const root = layerBounds || el.closest('[data-canvas-root]') as HTMLElement | null;
                   const ch = root?.getBoundingClientRect().height || 0;
                   if (ch > 0) {
                     const contentPx = el.scrollHeight;
@@ -646,7 +780,7 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
             ...textStyle,
           display: 'block',
           textAlign: (t.textAlign || 'center') as React.CSSProperties['textAlign'],
-            padding: '0.5em',
+            padding: '0.25em 0.5em',
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word',
             overflowWrap: 'break-word',
@@ -655,7 +789,7 @@ function LayerView({ layer, selected, onPointerDown, justExitedEditingRef, canva
             border: '1px dashed rgba(255,255,255,0.5)',
             outline: 'none',
             width: '100%',
-            minHeight: '100%',
+            minHeight: 'fit-content',
           }}
         />
       );

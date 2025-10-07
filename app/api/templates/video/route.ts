@@ -6,7 +6,7 @@ import { createViewUrl, ensureFolder, r2, bucket } from "@/lib/r2";
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { fal } from "@fal-ai/client";
 import { RecordId } from "surrealdb";
-import { estimateVideoCredits, DEFAULT_VIDEO_FPS, chargeCreditsOnce } from "@/lib/credits";
+import { estimateVideoCredits, DEFAULT_VIDEO_FPS, chargeCreditsOnce, type VideoResolution, type VideoAspectRatio, type VideoProvider } from "@/lib/credits";
 export const runtime = "nodejs";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
@@ -19,12 +19,30 @@ type AnimateVideoRequest = {
   // Optional overrides (admin testing); normally taken from template.video
   prompt?: string;
   duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
-  resolution?: '480p'|'720p'|'1080p';
+  resolution?: 'auto'|'480p'|'720p'|'1080p';
   aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
   camera_fixed?: boolean;
   seed?: number | null;
   fps?: number;
 };
+
+const PROVIDER_DURATION_OPTIONS: Record<VideoProvider, ReadonlyArray<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>> = {
+  seedance: ['3','4','5','6','7','8','9','10','11','12'],
+  kling2_5: ['5','10'],
+  sora2: ['4','8','12'],
+} as const;
+
+const PROVIDER_RESOLUTION_OPTIONS: Record<VideoProvider, ReadonlyArray<VideoResolution>> = {
+  seedance: ['480p','720p','1080p'],
+  kling2_5: ['720p','1080p'],
+  sora2: ['auto','720p'],
+} as const;
+
+const PROVIDER_ASPECT_OPTIONS: Record<VideoProvider, ReadonlyArray<VideoAspectRatio>> = {
+  seedance: ['21:9','16:9','4:3','1:1','3:4','9:16','auto'],
+  kling2_5: ['16:9','1:1','9:16','auto'],
+  sora2: ['auto','9:16','16:9'],
+} as const;
 
 function coerceRecordId(raw: string): RecordId<string> | string {
   try {
@@ -90,17 +108,37 @@ export async function POST(req: Request) {
 
     const vconf = (template?.video && typeof template.video === 'object') ? template.video as any : null;
     const enabled = !!(vconf?.enabled);
-    const provider: 'seedance' | 'kling2_5' = ((): 'seedance' | 'kling2_5' => {
-      const raw = String((vconf?.provider || 'seedance')).toLowerCase();
-      return raw === 'kling2_5' ? 'kling2_5' : 'seedance';
+    const provider: VideoProvider = ((): VideoProvider => {
+      const raw = String((vconf?.provider || 'sora2')).toLowerCase();
+      if (raw === 'kling2_5') return 'kling2_5';
+      if (raw === 'sora2') return 'sora2';
+      return 'seedance';
     })();
     const videoPrompt = String((body?.prompt ?? vconf?.prompt ?? '') || '').trim();
     if (!enabled || !videoPrompt) return NextResponse.json({ error: 'This template does not support video' }, { status: 400 });
 
-    const durationStr = (body?.duration ?? vconf?.duration ?? '5') as AnimateVideoRequest['duration'];
-    const resolution = (body?.resolution ?? vconf?.resolution ?? '1080p') as NonNullable<AnimateVideoRequest['resolution']>;
-    const aspect_ratio = (body?.aspect_ratio ?? vconf?.aspect_ratio ?? 'auto') as NonNullable<AnimateVideoRequest['aspect_ratio']>;
-    const camera_fixed = !!(body?.camera_fixed ?? vconf?.camera_fixed ?? false);
+    const providerDefaultDurations = PROVIDER_DURATION_OPTIONS[provider];
+    const rawAllowedDurations = Array.isArray((vconf as { allowedDurations?: unknown })?.allowedDurations)
+      ? ((vconf as { allowedDurations?: unknown })?.allowedDurations as Array<string>)
+      : undefined;
+    const allowedDurations = (rawAllowedDurations && rawAllowedDurations.length
+      ? rawAllowedDurations
+      : providerDefaultDurations).filter((d) => providerDefaultDurations.includes(String(d) as typeof providerDefaultDurations[number])) as ReadonlyArray<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>;
+    const requestedDurationRaw = String(body?.duration ?? vconf?.duration ?? providerDefaultDurations[0] ?? '5');
+    const normalizedDurationLabel = allowedDurations.includes(requestedDurationRaw as typeof allowedDurations[number])
+      ? requestedDurationRaw as typeof allowedDurations[number]
+      : (allowedDurations[0] ?? providerDefaultDurations[0] ?? '5');
+    const durationSeconds = Math.max(1, Math.min(120, Math.round(Number(normalizedDurationLabel)))) || Number(providerDefaultDurations[0] ?? 5);
+
+    const providerResOptions = PROVIDER_RESOLUTION_OPTIONS[provider];
+    const requestedResolution = String(body?.resolution ?? vconf?.resolution ?? (provider === 'sora2' ? 'auto' : '1080p')) as VideoResolution;
+    const resolution = providerResOptions.includes(requestedResolution) ? requestedResolution : providerResOptions[0];
+
+    const providerAspectOptions = PROVIDER_ASPECT_OPTIONS[provider];
+    const requestedAspect = String(body?.aspect_ratio ?? vconf?.aspect_ratio ?? 'auto') as VideoAspectRatio;
+    const aspect_ratio = providerAspectOptions.includes(requestedAspect) ? requestedAspect : providerAspectOptions[0];
+
+    const camera_fixed = provider === 'seedance' ? !!(body?.camera_fixed ?? vconf?.camera_fixed ?? false) : false;
     const seed = ((): number | null => {
       const n = Number(body?.seed ?? vconf?.seed);
       return Number.isFinite(n) ? Math.round(n) : null;
@@ -110,10 +148,8 @@ export async function POST(req: Request) {
       return Number.isFinite(n) && n > 0 ? Math.round(n) : DEFAULT_VIDEO_FPS;
     })();
 
-    const duration = Math.max(1, Math.min(120, Math.round(Number(durationStr || 5))));
-
     // Pricing: estimate credits for display/check purposes only; we'll charge post-success
-    const credits = estimateVideoCredits(resolution, duration, fps, aspect_ratio, provider);
+    const credits = estimateVideoCredits(resolution, durationSeconds, fps, aspect_ratio, provider);
 
     // Resolve the start image, upload to FAL storage
     const userRoot = `users/${sanitizeUserId(user.email)}`;
@@ -130,7 +166,7 @@ export async function POST(req: Request) {
     let result: any;
     try {
       if (provider === 'kling2_5') {
-        const klingDuration = duration >= 10 ? '10' : '5';
+        const klingDuration = durationSeconds >= 10 ? '10' : '5';
         const cfgScale = ((): number => {
           try { const n = Number((vconf as { cfg_scale?: number })?.cfg_scale); return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.5; } catch { return 0.5; }
         })();
@@ -153,13 +189,33 @@ export async function POST(req: Request) {
             } catch {}
           },
         });
+      } else if (provider === 'sora2') {
+        const input = {
+          prompt: videoPrompt,
+          image_url,
+          aspect_ratio,
+          resolution,
+          duration: durationSeconds,
+        } as const;
+        try { console.log("[FAL INPUT]", JSON.stringify({ model: "fal-ai/sora-2/image-to-video", input }, null, 2)); } catch {}
+        result = await fal.subscribe("fal-ai/sora-2/image-to-video", {
+          input: input as any,
+          logs: true,
+          onQueueUpdate: (update: any) => {
+            try {
+              if (update?.status === 'IN_PROGRESS') {
+                (update.logs || []).map((l: any)=> l?.message).filter(Boolean).forEach((m: string)=> console.log(`[FAL VIDEO-SORA2] ${m}`));
+              }
+            } catch {}
+          },
+        });
       } else {
         const input = {
           prompt: videoPrompt,
           image_url,
           aspect_ratio,
           resolution,
-          duration: String(duration) as AnimateVideoRequest['duration'],
+          duration: String(durationSeconds) as AnimateVideoRequest['duration'],
           camera_fixed,
           enable_safety_checker: true,
           ...(typeof seed === 'number' ? { seed } : {}),

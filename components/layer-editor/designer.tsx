@@ -164,8 +164,14 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
         }))
       });
       // Get the actual designer canvas height for accurate scaling
-      const canvasEl = document.querySelector('[data-canvas-root]') as HTMLElement | null;
-      const referenceViewportHeight = canvasEl?.getBoundingClientRect().height || 600;
+      // Use data-layer-bounds which represents the actual displayed image area (not the container)
+      // Force a layout flush to ensure we get the correct bounds
+      const layerBoundsEl = document.querySelector('[data-layer-bounds]') as HTMLElement | null;
+      if (layerBoundsEl) {
+        // Force layout recalculation to get accurate bounds
+        void layerBoundsEl.offsetHeight;
+      }
+      const referenceViewportHeight = layerBoundsEl?.getBoundingClientRect().height || 600;
       
       const blob = await composeLayersToBlob({ 
         backgroundUrl: snap.backgroundUrl || bgUrl, 

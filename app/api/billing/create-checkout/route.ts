@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { stripe, type Plan } from "@/lib/stripe";
+import { stripe, type Plan, type BillingInterval, PLAN_PRICE_IDS } from "@/lib/stripe";
 import { auth } from "@/lib/auth";
 import { getSurreal } from "@/lib/surrealdb";
+import { RecordId } from "surrealdb";
 
 function resolveOrigin(req: Request): string {
   const envUrl =
@@ -27,23 +28,73 @@ export async function POST(req: Request) {
     const { plan: _plan, topup, interval: _interval } = (await req.json().catch(()=>({} as Record<string, unknown>))) as { plan?: unknown; topup?: unknown; interval?: unknown };
     // Credits top-up flow (one-time payment)
     if (typeof topup === "number") {
-      // Load plan for differential credit rates
+      // Load plan for differential credit rates AND existing Stripe customer ID
       let currentPlan: Plan | null = null;
+      let existingCustomerId: string | null = null;
       try {
         const db = await getSurreal();
-        const r = await db.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email });
-        const row = Array.isArray(r) && Array.isArray(r[0]) ? (r[0][0] as { plan?: Plan }) : null;
+        const r = await db.query("SELECT plan, stripeCustomerId FROM user WHERE email = $email LIMIT 1;", { email });
+        const row = Array.isArray(r) && Array.isArray(r[0]) ? (r[0][0] as { plan?: Plan; stripeCustomerId?: string }) : null;
         const p = row?.plan as Plan | undefined;
         currentPlan = (p === "pro" || p === "ultra") ? p : "minimum"; // default minimum if unset
+        existingCustomerId = row?.stripeCustomerId || null;
       } catch {}
 
-      const minUsd = 3;
+      // If no customer ID in database, search Stripe for existing customer
+      if (!existingCustomerId) {
+        try {
+          const customers = await stripe.customers.search({ query: `email:'${email}'` });
+          if (customers.data.length > 0) {
+            existingCustomerId = customers.data[0].id;
+            // Backfill the database
+            try {
+              const db = await getSurreal();
+              await db.query(
+                "UPDATE user SET stripeCustomerId = $customerId WHERE email = $email;",
+                { customerId: existingCustomerId, email }
+              );
+              console.log(`[Top-up] Backfilled Stripe customer ID for ${email}`);
+            } catch (e) {
+              console.error("[Top-up] Failed to backfill customer ID:", e);
+            }
+          }
+        } catch (e) {
+          console.error("[Top-up] Failed to search Stripe for existing customer:", e);
+        }
+      }
+
+      // If still no customer, create one in Stripe
+      if (!existingCustomerId) {
+        try {
+          const customer = await stripe.customers.create({
+            email,
+            metadata: { source: "carclout_topup" }
+          });
+          existingCustomerId = customer.id;
+          // Store in database
+          try {
+            const db = await getSurreal();
+            await db.query(
+              "UPDATE user SET stripeCustomerId = $customerId WHERE email = $email;",
+              { customerId: existingCustomerId, email }
+            );
+            console.log(`[Top-up] Created and stored Stripe customer for ${email}`);
+          } catch (e) {
+            console.error("[Top-up] Failed to store new customer ID:", e);
+          }
+        } catch (e) {
+          console.error("[Top-up] Failed to create Stripe customer:", e);
+          // Continue without customer - will use email only as fallback
+        }
+      }
+
+      const minUsd = 1;
       const amountUsd = Math.max(minUsd, Math.floor(Number(topup)));
       if (!Number.isFinite(amountUsd) || amountUsd < minUsd) {
         return NextResponse.json({ error: `Minimum top-up is $${minUsd}` }, { status: 400 });
       }
       
-      // Single plan pricing: 1100 credits per dollar (3300 credits for $3 minimum)
+      // Single plan pricing: 1100 credits per dollar (1100 credits for $1 minimum)
       const ratePerDollar = 1100; // 1100 credits per dollar
       
       // Comment out pro/ultra differential pricing - single plan model
@@ -99,7 +150,8 @@ export async function POST(req: Request) {
             quantity: 1,
           },
         ],
-        customer_email: email,
+        customer: existingCustomerId || undefined, // Use existing customer if available
+        customer_email: !existingCustomerId ? email : undefined, // Only use email if no customer
         metadata: { intent: "credits_topup", credits: String(credits), amount_usd: String(amountUsd), userEmail: email, planAtPurchase: currentPlan || "minimum" },
         success_url: `${origin}/dashboard?topup=success`,
         cancel_url: `${origin}/dashboard?topup=cancelled`,
@@ -107,16 +159,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ url: session.url });
     }
 
-    // Comment out pro/ultra plan checkout logic - single plan model
-    /*
-    const key = ((plan as Plan) || "minimum") as Plan;
-    if (key === "basic") {
-      return NextResponse.json({ error: "This plan is coming soon." }, { status: 400 });
-    }
+    // Plan subscription checkout logic
+    const key = (_plan as Plan) || "minimum";
     
     // Determine billing interval (default to yearly for pro and ultra, monthly for minimum)
-    const billingInterval: BillingInterval = (typeof interval === "string" && (interval === "monthly" || interval === "yearly")) 
-      ? interval 
+    const billingInterval: BillingInterval = (typeof _interval === "string" && (_interval === "monthly" || _interval === "yearly")) 
+      ? _interval 
       : (key === "pro" || key === "ultra" ? "yearly" : "monthly");
     
     const priceIds = PLAN_PRICE_IDS[key];
@@ -171,7 +219,7 @@ export async function POST(req: Request) {
                 "UPDATE user SET stripeCustomerId = $customerId, stripeSubscriptionId = $subscriptionId WHERE email = $email;",
                 { customerId: existingCustomerId, subscriptionId: existingSubscriptionId, email }
               );
-              console.log(`Backfilled Stripe IDs for ${email}`);
+              console.log(`[Subscription] Backfilled Stripe IDs for ${email}`);
             } catch (e) {
               console.error("Failed to backfill Stripe IDs:", e);
             }
@@ -229,10 +277,6 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ url: session.url });
-    */
-    
-    // For now, return error for plan subscriptions since we're moving to single $1 plan
-    return NextResponse.json({ error: "Plan subscriptions are currently being updated. Please use credit top-ups." }, { status: 400 });
 
   } catch (e) {
     const err = e as { message?: string } & { raw?: { message?: string } };

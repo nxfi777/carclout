@@ -11,8 +11,10 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import Designer from '@/components/layer-editor/designer';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Vehicle } from '@/components/vehicles-editor';
+import { MAKES } from '@/lib/vehicles';
 // import CircularGallery from '@/components/ui/circular-gallery';
 import ThreeDCarousel from '@/components/ui/three-d-carousel';
 import { Button } from '@/components/ui/button';
@@ -567,7 +569,7 @@ type Template = {
     enabled?: boolean;
     prompt?: string;
     duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
-    resolution?: '480p'|'720p'|'1080p';
+  resolution?: 'auto'|'480p'|'720p'|'1080p';
     aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
     camera_fixed?: boolean;
     fps?: number;
@@ -752,7 +754,7 @@ export function TemplatesTabContent(){
                   enabled: !!(v as { enabled?: unknown })?.enabled,
                   prompt: typeof v?.prompt === 'string' ? (v?.prompt as string) : undefined,
                   duration: typeof v?.duration === 'string' ? (v?.duration as '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12') : undefined,
-                  resolution: typeof v?.resolution === 'string' ? (v?.resolution as '480p'|'720p'|'1080p') : undefined,
+                  resolution: typeof v?.resolution === 'string' ? (v?.resolution as 'auto'|'480p'|'720p'|'1080p') : undefined,
                   aspect_ratio: typeof v?.aspect_ratio === 'string' ? (v?.aspect_ratio as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto') : undefined,
                   camera_fixed: !!(v as { camera_fixed?: unknown })?.camera_fixed,
                   fps: ((): number | undefined => { const n = Number((v as { fps?: unknown })?.fps); return Number.isFinite(n) && n>0 ? Math.round(n) : undefined; })(),
@@ -1547,7 +1549,7 @@ export function TemplatesTabContent(){
                     <div className="w-[14rem] h-[8rem] sm:w-[17.5rem] sm:h-[10.5rem]">
                       <Lottie animationData={carLoadAnimation as object} loop style={{ width: '100%', height: '100%' }} />
                     </div>
-                    <div className="text-sm text-white/80 text-center px-2">Generating video…</div>
+                    <div className="text-sm text-white/80 text-center px-2">Generating video. This may take a couple of minutes...</div>
                   </div>
                 </div>
               ) : animResultUrl ? (
@@ -1683,10 +1685,10 @@ export function TemplatesTabContent(){
 
                             try {
                               const { estimateVideoCredits } = await import('@/lib/credits-client');
-                              const v = activeTemplate?.video as { duration?: string|number; resolution?: '480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5' } | null | undefined;
+                              const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2' } | null | undefined;
                               const duration = Number(v?.duration || 5);
-                              const resolution = (v?.resolution || '1080p') as '480p'|'720p'|'1080p';
-                              const provider = (v?.provider === 'kling2_5') ? 'kling2_5' : 'seedance';
+                              const resolution = (v?.resolution || (v?.provider === 'sora2' ? 'auto' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
+                              const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : 'seedance';
                               const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
                               const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
                               const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
@@ -1817,12 +1819,32 @@ export function TemplatesTabContent(){
                     <div className="space-y-2">
                       <div className="text-sm font-medium">Options</div>
                       <div className="space-y-2">
-                        {needBuiltins.map((key)=> (
-                          <div key={key} className="space-y-1">
-                            <div className="text-xs text-white/70">{key.replace(/_/g,' ').toLowerCase().replace(/\b\w/g, (c)=> c.toUpperCase())}</div>
-                            <Input value={varState[key] || ''} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder={key} />
-                          </div>
-                        ))}
+                        {needBuiltins.map((key)=> {
+                          if (key === 'BRAND') {
+                            const makeOptions = Array.from(new Set(MAKES)).map((m)=> ({ value: m, label: m }));
+                            return (
+                              <div key={key} className="space-y-1">
+                                <div className="text-xs text-white/70">Brand</div>
+                                <Combobox
+                                  options={makeOptions}
+                                  value={varState[key] || ''}
+                                  onValueChange={(val)=> setVarState((prev)=> ({ ...prev, [key]: val }))}
+                                  placeholder="Search brand..."
+                                  searchPlaceholder="Search..."
+                                  emptyText="No brand found."
+                                  allowCustom={false}
+                                  className="bg-white/5"
+                                />
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={key} className="space-y-1">
+                              <div className="text-xs text-white/70">{key.replace(/_/g,' ').toLowerCase().replace(/\b\w/g, (c)=> c.toUpperCase())}</div>
+                              <Input value={varState[key] || ''} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder={key} />
+                            </div>
+                          );
+                        })}
                         {customVarDefs.map((v)=> {
                           const key = String(v?.key || '').trim();
                           if (!key) return null;

@@ -102,6 +102,7 @@ export function FixedAspectCropper({ open, imageUrl, aspectRatio, title = 'Crop 
   }, [open, imageUrl, onImageLoaded]);
 
   // Compute canvas size responsive but proportional to image
+  // Use higher resolution for crisp rendering (2x pixel ratio)
   useEffect(() => {
     if (!imgDims) return;
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -112,7 +113,9 @@ export function FixedAspectCropper({ open, imageUrl, aspectRatio, title = 'Crop 
     let cw = maxW;
     let ch = Math.round(maxW / ar);
     if (ch > maxH) { ch = maxH; cw = Math.round(maxH * ar); }
-    setCanvasSize({ width: cw, height: ch });
+    // Multiply by 2 for higher quality rendering (retina-like)
+    const pixelRatio = 2;
+    setCanvasSize({ width: cw * pixelRatio, height: ch * pixelRatio });
   }, [imgDims]);
 
   // Compute placeholder box using template aspect ratio so the loading state matches the final size
@@ -135,6 +138,9 @@ export function FixedAspectCropper({ open, imageUrl, aspectRatio, title = 'Crop 
     const ctx = canvas.getContext('2d'); if (!ctx) return;
     canvas.width = canvasSize.width;
     canvas.height = canvasSize.height;
+    // Enable high-quality image smoothing
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     // Draw base image scaled to canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -284,7 +290,13 @@ export function FixedAspectCropper({ open, imageUrl, aspectRatio, title = 'Crop 
               <canvas
                 ref={canvasRef}
                 className="rounded border border-[color:var(--border)]"
-                style={{ maxWidth: '100%', height: 'auto', touchAction: 'none' }}
+                style={{ 
+                  width: `${canvasSize.width / 2}px`,
+                  height: `${canvasSize.height / 2}px`,
+                  maxWidth: '100%', 
+                  touchAction: 'none',
+                  imageRendering: 'auto'
+                }}
                 onMouseDown={(e)=> onPointerDown(e)}
                 onMouseMove={(e)=> onPointerMove(e)}
                 onMouseUp={onPointerUp}

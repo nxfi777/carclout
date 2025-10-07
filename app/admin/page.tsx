@@ -74,15 +74,16 @@ type TemplateDisplay = {
   } | null;
   video?: {
     enabled?: boolean;
-    provider?: 'seedance' | 'kling2_5';
+    provider?: 'seedance' | 'kling2_5' | 'sora2';
     prompt?: string;
     duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
-    resolution?: '480p'|'720p'|'1080p';
+    resolution?: 'auto'|'480p'|'720p'|'1080p';
     aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
     camera_fixed?: boolean;
     seed?: number | null;
     fps?: number;
     previewKey?: string | null;
+    allowedDurations?: Array<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>;
   } | null;
   designerDefaults?: {
     headline?: string | null;
@@ -124,15 +125,16 @@ type CreateTemplatePayload = {
   }>;
   video?: {
     enabled?: boolean;
-    provider?: 'seedance' | 'kling2_5';
+    provider?: 'seedance' | 'kling2_5' | 'sora2';
     prompt?: string;
     duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
-    resolution?: '480p'|'720p'|'1080p';
+    resolution?: 'auto'|'480p'|'720p'|'1080p';
     aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
     camera_fixed?: boolean;
     seed?: number | null;
     fps?: number;
     previewKey?: string | null;
+    allowedDurations?: Array<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>;
   } | null;
   designerDefaults?: {
     headline?: string | null;

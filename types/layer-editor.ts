@@ -4,7 +4,8 @@ export type ToolId =
   | 'marquee'
   | 'shape'
   | 'image'
-  | 'fill';
+  | 'fill'
+  | 'brush';
 
 export type MarqueeMode = 'rectangle' | 'ellipse' | 'lasso' | 'polygon';
 export type ShapeKind = 'rectangle' | 'ellipse' | 'triangle' | 'line' | 'arrow';
@@ -102,6 +103,18 @@ export type MaskLayer = LayerBase & {
 
 export type Layer = TextLayer | ShapeLayer | ImageLayer | MaskLayer;
 
+export type BrushStroke = {
+  points: { x: number; y: number }[];
+  color: string;
+  width: number;
+};
+
+export type DrawToEditAnnotation = {
+  id: string;
+  strokes: BrushStroke[];
+  boundingBox?: { x: number; y: number; width: number; height: number };
+};
+
 export type LayerEditorState = {
   tool: ToolId;
   marqueeMode: MarqueeMode;
@@ -120,6 +133,8 @@ export type LayerEditorState = {
   maskTranslateYPct?: number; // translation relative to canvas height
   canvasAspectRatio?: number | null;
   editingLayerId?: string | null;
+  // Draw-to-edit state
+  drawToEditAnnotation?: DrawToEditAnnotation | null;
 };
 
 export type LayerEditorAction =
@@ -145,6 +160,12 @@ export type LayerEditorAction =
   | { type: 'toggle_mask_hide' }
   | { type: 'start_edit_text'; id: string }
   | { type: 'stop_edit_text' }
+  // Draw-to-edit actions
+  | { type: 'start_draw_to_edit' }
+  | { type: 'add_brush_stroke'; stroke: BrushStroke }
+  | { type: 'clear_draw_to_edit' }
+  | { type: 'finalize_draw_to_edit'; boundingBox: { x: number; y: number; width: number; height: number } }
+  | { type: 'apply_draw_to_edit_result'; newBackgroundUrl: string; originalImageDataUrl: string }
   // Internal: used to restore snapshots during undo/redo in provider
   | { type: 'replace_state'; next: LayerEditorState };
 
@@ -173,9 +194,9 @@ export const defaultGlow: EffectGlow = {
 };
 
 export function createDefaultText(xPct = 50, yPct = 50): TextLayer {
-  // Use wider width on mobile (70% of viewport) to prevent text from wrapping too early
+  // Use wider width on mobile (80% of viewport) to prevent text from wrapping too early
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-  const widthPct = isMobile ? 70 : 28;
+  const widthPct = isMobile ? 84 : 70;
   
   return {
     id: generateId('text'),
@@ -192,7 +213,7 @@ export function createDefaultText(xPct = 50, yPct = 50): TextLayer {
     xPct,
     yPct,
     widthPct,
-    heightPct: 16, // Increased from 12 for better spacing and larger default text
+    heightPct: 2.5,
     rotationDeg: 0,
     tiltXDeg: 0,
     tiltYDeg: 0,

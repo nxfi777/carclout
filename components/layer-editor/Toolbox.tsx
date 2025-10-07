@@ -2,7 +2,7 @@
 import React from "react";
 import { useLayerEditor } from "@/components/layer-editor/LayerEditorProvider";
 import { cn } from "@/lib/utils";
-import { MousePointer2, Type, Images, Shapes, Layers } from "lucide-react";
+import { MousePointer2, Type, Images, Shapes, Layers, Paintbrush } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import LayersPanel from "@/components/layer-editor/LayersPanel";
@@ -35,6 +35,7 @@ const hiddenTools: Item["id"][] = ["shape", ...(SHOW_IMAGE_TOOL ? [] : ["image"]
 const items: Item[] = [
   { id: "select", icon: <MousePointer2 className="size-5" />, label: "Select" },
   { id: "text", icon: <Type className="size-5" />, label: "Text" },
+  { id: "brush", icon: <Paintbrush className="size-5" />, label: "Draw to Edit" },
   { id: "shape", icon: <Shapes className="size-5" />, label: "Shapes" },
   { id: "image", icon: <Images className="size-5" />, label: "Image" },
 ];
