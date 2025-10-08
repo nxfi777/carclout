@@ -31,6 +31,13 @@
   --font-mono: var(--font-geist-mono);
   --font-poppins: var(--font-poppins);
   --font-roboto: var(--font-roboto);
+  
+  /* Normalized z-index scale (tighter increments) */
+  --z-1: 1;
+  --z-2: 2;
+  --z-3: 3;
+  --z-4: 4;
+  --z-5: 5;
 }
 
 body {
@@ -265,7 +272,7 @@ html, body { max-width: 100vw; overflow-x: hidden; }
   background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 55%, var(--background)) 0%, #15c0f6 100%);
   filter: blur(8px);
   opacity: 0.45;
-  z-index: -1;
+  z-index: -1; /* Behind the badge content */
 }
 
 @keyframes attachment-error-shake {

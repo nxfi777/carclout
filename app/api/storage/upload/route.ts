@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { r2, bucket, listAllObjects } from "@/lib/r2";
 import { getSurreal } from "@/lib/surrealdb";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { generateBlurHash } from "@/lib/blurhash-server";
 import type { LibraryImage } from "@/lib/library-image";
 import type { VehiclePhoto } from "@/lib/vehicle-photo";
 import sharp from "sharp";
+import { nanoid } from "nanoid";
 
 export async function POST(req: Request) {
   const user = await getSessionUser();
@@ -48,7 +49,37 @@ export async function POST(req: Request) {
       }
     }
     const keyBase = isAdminScope ? (folder ? `admin/${folder}` : `admin`) : (folder ? `users/${cleanUser}/${folder}` : `users/${cleanUser}`);
-    const key = `${keyBase}/${file.name}`;
+    
+    // Generate random filename for admin template images/thumbnails (with collision prevention)
+    let fileName = file.name;
+    const isTemplateAsset = isAdminScope && folder.startsWith('templates/');
+    if (isTemplateAsset) {
+      const ext = file.name.match(/\.([^.]+)$/)?.[1] || 'jpg';
+      // Try up to 10 times to find a unique filename (nanoid collisions are astronomically rare)
+      let attempts = 0;
+      let candidateKey = '';
+      while (attempts < 10) {
+        fileName = `${nanoid(12)}.${ext}`;
+        candidateKey = `${keyBase}/${fileName}`;
+        
+        // Check if key already exists
+        try {
+          await r2.send(new HeadObjectCommand({ Bucket: bucket, Key: candidateKey }));
+          // If no error, file exists - try again
+          attempts++;
+          console.warn(`Filename collision detected: ${fileName}, retrying...`);
+        } catch {
+          // Error means file doesn't exist - we can use this name
+          break;
+        }
+      }
+      
+      if (attempts >= 10) {
+        return NextResponse.json({ error: "Unable to generate unique filename" }, { status: 500 });
+      }
+    }
+    
+    const key = `${keyBase}/${fileName}`;
 
     // Enforce storage quota for non-admin scope
     if (!isAdminScope) {
@@ -75,13 +106,34 @@ export async function POST(req: Request) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    let buffer: Buffer = Buffer.from(arrayBuffer);
+    let finalKey = key;
+    let finalContentType = file.type || "application/octet-stream";
+    
+    // Auto-convert template assets (both thumbnails and images) to webp
+    const isConvertibleImage = /\.(jpe?g|png|gif|bmp)$/i.test(fileName);
+    
+    if (isTemplateAsset && isConvertibleImage) {
+      try {
+        console.log(`Converting template asset to webp: ${fileName}`);
+        buffer = await sharp(buffer)
+          .webp({ quality: 90 })
+          .toBuffer() as Buffer;
+        // Update key to use .webp extension
+        finalKey = key.replace(/\.(jpe?g|png|gif|bmp)$/i, '.webp');
+        finalContentType = 'image/webp';
+        console.log(`✓ Converted to webp: ${finalKey}`);
+      } catch (error) {
+        console.error('WebP conversion failed, using original:', error);
+        // Fall back to original if conversion fails
+      }
+    }
     
     await r2.send(new PutObjectCommand({
       Bucket: bucket,
-      Key: key,
-      Body: new Uint8Array(arrayBuffer),
-      ContentType: file.type || "application/octet-stream",
+      Key: finalKey,
+      Body: buffer,
+      ContentType: finalContentType,
     }));
 
     // Generate blurhash for images (async, don't block response)
@@ -109,7 +161,7 @@ export async function POST(req: Request) {
       try {
         const db = await getSurreal();
         const libraryImageData: Omit<LibraryImage, 'id'> = {
-          key,
+          key: finalKey,
           email: user.email,
           blurhash,
           width,
@@ -122,7 +174,7 @@ export async function POST(req: Request) {
         // Check if record exists, update or create
         const existing = await db.query(
           "SELECT id FROM library_image WHERE key = $key AND email = $email LIMIT 1;",
-          { key, email: user.email }
+          { key: finalKey, email: user.email }
         );
         
         const existingId = Array.isArray(existing) && Array.isArray(existing[0]) && existing[0][0]
@@ -145,7 +197,7 @@ export async function POST(req: Request) {
           await db.create('library_image', libraryImageData);
         }
         
-        console.log(`Stored library image metadata for ${key}`);
+        console.log(`Stored library image metadata for ${finalKey}`);
       } catch (error) {
         console.error('Failed to store library image metadata (non-fatal):', error);
         // Don't fail upload if database fails
@@ -158,7 +210,7 @@ export async function POST(req: Request) {
       try {
         const db = await getSurreal();
         const vehiclePhotoData: Omit<VehiclePhoto, 'id'> = {
-          key,
+          key: finalKey,
           email: user.email,
           blurhash,
           width,
@@ -171,7 +223,7 @@ export async function POST(req: Request) {
         // Check if record exists, update or create
         const existing = await db.query(
           "SELECT id FROM vehicle_photo WHERE key = $key AND email = $email LIMIT 1;",
-          { key, email: user.email }
+          { key: finalKey, email: user.email }
         );
         
         const existingId = Array.isArray(existing) && Array.isArray(existing[0]) && existing[0][0]
@@ -194,14 +246,14 @@ export async function POST(req: Request) {
           await db.create('vehicle_photo', vehiclePhotoData);
         }
         
-        console.log(`Stored vehicle photo metadata for ${key}`);
+        console.log(`Stored vehicle photo metadata for ${finalKey}`);
       } catch (error) {
         console.error('Failed to store vehicle photo metadata (non-fatal):', error);
         // Don't fail upload if database fails
       }
     }
 
-    return NextResponse.json({ key, blurhash });
+    return NextResponse.json({ key: finalKey, blurhash });
   } catch (e) {
     console.error("upload error", e);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });

@@ -2464,8 +2464,8 @@ export function TemplatesTabContent(){
                                           </button>
                                         </li>
                                       </ContextMenuTrigger>
-                                      <ContextMenuContent className="w-48 z-[60]">
-                                        <ContextMenuItem onSelect={async()=>{
+                                      <ContextMenuContent className="w-48">
+                                        <ContextMenuItem variant="destructive" onSelect={async()=>{
                                           const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
                                           if (!ok) return;
                                           try {
@@ -2548,8 +2548,8 @@ export function TemplatesTabContent(){
                                         </button>
                                       </li>
                                     </ContextMenuTrigger>
-                                    <ContextMenuContent className="w-48 z-[60]">
-                                      <ContextMenuItem onSelect={async()=>{
+                                    <ContextMenuContent className="w-48">
+                                      <ContextMenuItem variant="destructive" onSelect={async()=>{
                                         const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
                                         if (!ok) return;
                                         try {
