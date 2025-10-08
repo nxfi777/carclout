@@ -15,11 +15,20 @@ export async function POST(req: Request) {
   if (typeof path !== "string") return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   const root = isAdminScope ? `admin` : `users/${sanitizeUserId(user.email)}`;
   const clean = path.replace(/^\/+|\/+$/g, "");
-  // Disallow creating folders directly under immutable 'vehicles' root
+  // Disallow creating folders directly under managed roots
   if (!isAdminScope) {
     const parts = clean.split('/').filter(Boolean);
     if (parts[0] === 'vehicles' && parts.length === 1) {
       return NextResponse.json({ error: "Cannot create folders directly in 'vehicles'. Use a specific car folder." }, { status: 400 });
+    }
+    if (parts[0] === 'designer_masks' && parts.length === 1) {
+      return NextResponse.json({ error: "Cannot create folders directly in 'designer_masks'. This is managed automatically." }, { status: 400 });
+    }
+    if (parts[0] === 'designer_states' && parts.length === 1) {
+      return NextResponse.json({ error: "Cannot create folders directly in 'designer_states'. This is managed automatically." }, { status: 400 });
+    }
+    if (parts[0] === 'chat-uploads' && parts.length === 1) {
+      return NextResponse.json({ error: "Cannot create folders directly in 'chat-uploads'. This is managed automatically." }, { status: 400 });
     }
   }
   // Protect admin/templates root from being created outside ensure step

@@ -40,6 +40,18 @@ export async function POST(req: Request) {
     if (toNorm === `${root}/designer_masks/`) {
       return NextResponse.json({ error: "Cannot overwrite reserved folder 'designer_masks'" }, { status: 400 });
     }
+    if (fromNorm === `${root}/designer_states/`) {
+      return NextResponse.json({ error: "Cannot rename reserved folder 'designer_states'" }, { status: 400 });
+    }
+    if (toNorm === `${root}/designer_states/`) {
+      return NextResponse.json({ error: "Cannot overwrite reserved folder 'designer_states'" }, { status: 400 });
+    }
+    if (fromNorm === `${root}/chat-uploads/`) {
+      return NextResponse.json({ error: "Cannot rename reserved folder 'chat-uploads'" }, { status: 400 });
+    }
+    if (toNorm === `${root}/chat-uploads/`) {
+      return NextResponse.json({ error: "Cannot overwrite reserved folder 'chat-uploads'" }, { status: 400 });
+    }
     if (fromNorm === `${root}/templates/`) {
       return NextResponse.json({ error: "Cannot rename reserved folder 'templates'" }, { status: 400 });
     }
@@ -49,13 +61,19 @@ export async function POST(req: Request) {
   }
 
   if (!isFolder) {
-    // Disallow moving a file directly into the immutable vehicles or designer_masks roots
+    // Disallow moving a file directly into the immutable vehicles, designer_masks, designer_states, or chat-uploads roots
     const toDir = toFull.slice(0, Math.max(0, toFull.lastIndexOf('/') + 1));
     if (toDir === `${root}/vehicles/`) {
       return NextResponse.json({ error: "Cannot place files directly in 'vehicles'. Move into a specific vehicle folder." }, { status: 400 });
     }
     if (toDir === `${root}/designer_masks/`) {
       return NextResponse.json({ error: "Cannot place files directly in 'designer_masks'." }, { status: 400 });
+    }
+    if (toDir === `${root}/designer_states/`) {
+      return NextResponse.json({ error: "Cannot place files directly in 'designer_states'." }, { status: 400 });
+    }
+    if (toDir === `${root}/chat-uploads/`) {
+      return NextResponse.json({ error: "Cannot place files directly in 'chat-uploads'." }, { status: 400 });
     }
     await moveObject(fromFull, toFull);
     return NextResponse.json({ ok: true });

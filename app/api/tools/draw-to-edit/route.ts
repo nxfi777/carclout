@@ -202,10 +202,10 @@ export async function POST(req: Request) {
     // Stitch the edited region back onto the original image
     const stitchedDataUrl = await stitchImages(originalImageDataUrl, editedDataUrl, boundingBox);
 
-    // Save the stitched result to R2
+    // Save the stitched result to R2 library folder
     const timestamp = Date.now();
     const userId = sanitizeUserId(user.email);
-    const key = `users/${userId}/draw-to-edit/result-${timestamp}.png`;
+    const key = `users/${userId}/library/draw-to-edit-${timestamp}.png`;
     
     const stitchedBuffer = await dataUrlToBuffer(stitchedDataUrl);
     

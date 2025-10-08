@@ -22,7 +22,7 @@ export async function POST(request: Request) {
         "UPDATE user SET presence_status = $status, presence_updated_at = $now WHERE email = $email;",
         { status, now, email: session.user.email }
       );
-    });
+    }, { context: 'Presence status update' });
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Failed to update presence after retries:", error);

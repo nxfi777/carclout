@@ -31,6 +31,7 @@ import { getViewUrl, getViewUrls } from '@/lib/view-url-client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import CreditDepletionDrawer from '@/components/credit-depletion-drawer';
 import { useCreditDepletion } from '@/lib/use-credit-depletion';
+import { useAsyncVideoGeneration } from '@/lib/use-async-video-generation';
  
 
 export function HooksTabContent() {
@@ -625,6 +626,7 @@ export function TemplatesTabContent(){
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [activeUrl, setActiveUrl] = useState<string | null>(null);
   const [upscaleBusy, setUpscaleBusy] = useState<boolean>(false);
+  const [_interpolateBusy, _setInterpolateBusy] = useState<boolean>(false);
   const [cropOpen, setCropOpen] = useState(false);
   const [cropUrl, setCropUrl] = useState<string | null>(null);
   const [pendingKeys, setPendingKeys] = useState<string[] | null>(null);
@@ -645,6 +647,25 @@ export function TemplatesTabContent(){
 
   // Credit depletion drawer hook
   const creditDepletion = useCreditDepletion();
+  const videoGeneration = useAsyncVideoGeneration();
+
+  // Helper function to get deselect message based on where images are selected from
+  const getDeselectMessage = useCallback(() => {
+    const sources = selectedImageKeys.map(key => {
+      if (vehiclePhotos.includes(key)) return 'Vehicles';
+      if (uploadedKeys.includes(key)) return 'Upload';
+      if (libraryItems.some(item => item.key === key)) return 'Library';
+      return null;
+    }).filter(Boolean);
+    
+    const uniqueSources = Array.from(new Set(sources));
+    
+    if (uniqueSources.length === 0) return 'Deselect an image first';
+    if (uniqueSources.length === 1) return `Deselect an image from ${uniqueSources[0]} first`;
+    
+    const lastSource = uniqueSources.pop();
+    return `Deselect an image from ${uniqueSources.join(', ')} or ${lastSource} first`;
+  }, [selectedImageKeys, vehiclePhotos, uploadedKeys, libraryItems]);
 
   // Cleanup object URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -1850,6 +1871,7 @@ export function TemplatesTabContent(){
                         </Button>
                       ) : null}
                       {/* Smooth (60fps) button - available for all users with indigo styling */}
+                      {/*
                       {animResultKey && (String(animResultKey).includes('upscaled') || String(animResultKey).includes('2x')) && !String(animResultKey).includes('60fps') && !String(animResultKey).includes('interpolated') ? (
                         <Button 
                           size="sm" 
@@ -1863,6 +1885,7 @@ export function TemplatesTabContent(){
                           Smooth (60fps)
                         </Button>
                       ) : null}
+                      */}
                       <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={async()=>{
                         const ok = await confirmToast({ title: 'Delete video?', message: 'This will delete it from your workspace library.' });
                         if (!ok) return;
@@ -2033,13 +2056,7 @@ export function TemplatesTabContent(){
                           if (!animHasPending || !animPendingBlobRef.current) return;
                           setAnimBusy(true);
                           try {
-                            const filename = `design-${Date.now()}.png`;
-                            const file = new File([animPendingBlobRef.current], filename, { type: 'image/png' });
-                            const form = new FormData(); form.append('file', file, filename); form.append('path', 'library');
-                            const up = await fetch('/api/storage/upload', { method: 'POST', body: form });
-                            const dj = await up.json().catch(()=>({}));
-                            const startKey = typeof dj?.key === 'string' ? String(dj.key) : '';
-                            if (!startKey) { toast.error('Failed to prepare animation'); return; }
+                            const startBlob = animPendingBlobRef.current;
 
                             try {
                               const { estimateVideoCredits } = await import('@/lib/credits-client');
@@ -2061,14 +2078,33 @@ export function TemplatesTabContent(){
                             setAnimLoading(true);
                             // Merge varState with animVariables for video generation
                             const allVariables = { ...varState, ...animVariables };
-                            const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: active?.id, templateSlug: active?.slug, startKey, duration: animDuration, variables: allVariables }) });
-                            const out = await resp.json().catch(()=>({}));
-                            if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, animCredits || 500); setAnimLoading(false); return; }
-                            if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed. Please try again in a moment.'); setAnimLoading(false); return; }
-                            setAnimResultUrl(String(out.url));
-                            if (typeof out?.key === 'string') setAnimResultKey(String(out.key));
+                            
+                            // Use shared async video generation hook
+                            await videoGeneration.generate(
+                              {
+                                templateId: active?.id,
+                                templateSlug: active?.slug,
+                                startImage: startBlob,
+                                duration: animDuration,
+                                variables: allVariables
+                              },
+                              {
+                                onComplete: async (result) => {
+                                  setAnimResultUrl(result.url);
+                                  setAnimResultKey(result.key);
+                                  setAnimLoading(false);
+                                },
+                                onInsufficientCredits: async () => {
+                                  const bal = await getCredits();
+                                  creditDepletion.checkAndTrigger(bal, animCredits || 500);
+                                  setAnimLoading(false);
+                                },
+                                onError: () => {
+                                  setAnimLoading(false);
+                                }
+                              }
+                            );
                           } finally {
-                            setAnimLoading(false);
                             setAnimBusy(false);
                             animPendingBlobRef.current = null;
                             setAnimHasPending(false);
@@ -2268,6 +2304,12 @@ export function TemplatesTabContent(){
                     const allowSrcs = (Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']);
                     const allowVehicle = allowSrcs.includes('vehicle');
                     const allowUser = allowSrcs.includes('user');
+                    
+                    // Calculate selected counts per tab
+                    const vehiclesCount = selectedImageKeys.filter(key => vehiclePhotos.includes(key)).length;
+                    const uploadCount = selectedImageKeys.filter(key => uploadedKeys.includes(key)).length;
+                    const libraryCount = selectedImageKeys.filter(key => libraryItems.some(item => item.key === key)).length;
+                    
                     return (
                       <div className="space-y-3">
                         <Tabs
@@ -2282,13 +2324,40 @@ export function TemplatesTabContent(){
                         >
                           <TabsList className="bg-transparent p-0 gap-2">
                           {allowVehicle ? (
-                            <TabsTrigger value="vehicles" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">Vehicles</TabsTrigger>
+                            <TabsTrigger value="vehicles" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">
+                              <span className="flex items-center gap-2">
+                                Vehicles
+                                {vehiclesCount > 0 && (
+                                  <span className="inline-flex items-center justify-center w-5 h-5 text-[0.65rem] font-semibold text-white bg-indigo-500 rounded-full">
+                                    {vehiclesCount}
+                                  </span>
+                                )}
+                              </span>
+                            </TabsTrigger>
                           ) : null}
                           {allowUser ? (
-                            <TabsTrigger value="upload" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">Upload</TabsTrigger>
+                            <TabsTrigger value="upload" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">
+                              <span className="flex items-center gap-2">
+                                Upload
+                                {uploadCount > 0 && (
+                                  <span className="inline-flex items-center justify-center w-5 h-5 text-[0.65rem] font-semibold text-white bg-indigo-500 rounded-full">
+                                    {uploadCount}
+                                  </span>
+                                )}
+                              </span>
+                            </TabsTrigger>
                           ) : null}
                           {allowUser ? (
-                            <TabsTrigger value="workspace" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">Library</TabsTrigger>
+                            <TabsTrigger value="workspace" className="px-3 py-1.5 rounded-md border data-[state=active]:bg-white/5">
+                              <span className="flex items-center gap-2">
+                                Library
+                                {libraryCount > 0 && (
+                                  <span className="inline-flex items-center justify-center w-5 h-5 text-[0.65rem] font-semibold text-white bg-indigo-500 rounded-full">
+                                    {libraryCount}
+                                  </span>
+                                )}
+                              </span>
+                            </TabsTrigger>
                           ) : null}
                         </TabsList>
 
@@ -2344,7 +2413,7 @@ export function TemplatesTabContent(){
                                         ) : (
                                           <div className="w-full aspect-[4/3] bg-black/20" />
                                         )}
-                                        <span className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`} onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSource('vehicle'); setSelectedVehicleKey(k); toggleSelect(k); }}>
+                                        <span className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`} onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error(getDeselectMessage()); } catch {} return; } setSource('vehicle'); setSelectedVehicleKey(k); toggleSelect(k); }}>
                                           <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
                                             {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
                                           </motion.span>
@@ -2384,7 +2453,7 @@ export function TemplatesTabContent(){
                                                 <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-auto object-contain cursor-pointer" />
                                                 <span
                                                   className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`}
-                                                  onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSource('upload'); toggleSelect(k); }}
+                                                  onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error(getDeselectMessage()); } catch {} return; } setSource('upload'); toggleSelect(k); }}
                                                 >
                                                   <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
                                                     {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
@@ -2450,15 +2519,15 @@ export function TemplatesTabContent(){
                                     <ContextMenuTrigger asChild>
                                       <li className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
                                         <button type="button" className="block w-full h-full" onClick={()=> { setSource('upload'); toggleSelect(it.key); }}>
-                                          <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(it.key) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
-                                            <div className="rounded overflow-hidden relative bg-black/20 aspect-square">
+                                          <div className={`w-full rounded ${selectedImageKeys.includes(it.key) ? 'ring-2 ring-primary' : 'border border-[color:var(--border)]'}`}>
+                                            <div className="rounded overflow-hidden relative bg-black/20">
                                               {it.blurhash ? (
                                                 <BlurhashImage
                                                   src={it.url}
                                                   alt={it.name}
                                                   width={400}
                                                   height={400}
-                                                  className="w-full h-full object-contain cursor-pointer"
+                                                  className="w-full h-auto object-contain cursor-pointer"
                                                   blurhash={it.blurhash}
                                                   showSkeleton={false}
                                                 />
@@ -2468,7 +2537,7 @@ export function TemplatesTabContent(){
                                               )}
                                               <span
                                                 className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(it.key)?'text-green-400':'text-white'} p-1`}
-                                                onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSource('upload'); toggleSelect(it.key); }}
+                                                onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) { try { toast.error(getDeselectMessage()); } catch {} return; } setSource('upload'); toggleSelect(it.key); }}
                                               >
                                                 <motion.span animate={selectedImageKeys.includes(it.key) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
                                                   {selectedImageKeys.includes(it.key) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
@@ -2583,48 +2652,53 @@ export function TemplatesTabContent(){
                   );
                 })()}
                 <div className="w-full space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
+                      {/* Show source info inline for selected images */}
+                      {selectedImageKeys.length > 0 && (() => {
+                        const sources = selectedImageKeys.map(key => {
+                          if (vehiclePhotos.includes(key)) return 'vehicles';
+                          if (uploadedKeys.includes(key)) return 'upload';
+                          if (libraryItems.some(item => item.key === key)) return 'workspace';
+                          return null;
+                        }).filter(Boolean);
+                        
+                        const uniqueSources = Array.from(new Set(sources));
+                        const sourceLabels = uniqueSources.map(s => {
+                          if (s === 'vehicles') return 'Vehicles';
+                          if (s === 'upload') return 'Upload';
+                          if (s === 'workspace') return 'Library';
+                          return null;
+                        }).filter(Boolean);
+                        
+                        // Only show if there are selected images
+                        if (sourceLabels.length === 0) return null;
+                        
+                        return (
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className="text-white/40">·</span>
+                            <span className="text-white/50">from</span>
+                            {sourceLabels.map(label => (
+                              <span 
+                                key={label}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded bg-primary/20 text-primary text-[0.65rem] font-medium"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
                     {selectedImageKeys.length >= requiredImages ? (
                       <span className="text-xs text-white/70 whitespace-nowrap">Costs 100 credits</span>
                     ) : null}
                   </div>
-                  {/* Show source info for selected images when they're from different tabs */}
-                  {selectedImageKeys.length > 0 && (() => {
-                    const sources = selectedImageKeys.map(key => {
-                      if (vehiclePhotos.includes(key)) return 'vehicles';
-                      if (uploadedKeys.includes(key)) return 'upload';
-                      if (libraryItems.some(item => item.key === key)) return 'workspace';
-                      return null;
-                    }).filter(Boolean);
-                    
-                    const uniqueSources = Array.from(new Set(sources));
-                    const sourceLabels = uniqueSources.map(s => {
-                      if (s === 'vehicles') return 'Vehicles';
-                      if (s === 'upload') return 'Upload';
-                      if (s === 'workspace') return 'Library';
-                      return null;
-                    }).filter(Boolean);
-                    
-                    // Only show if there are selected images
-                    if (sourceLabels.length === 0) return null;
-                    
-                    return (
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-white/50">From:</span>
-                        <div className="flex items-center gap-1.5">
-                          {sourceLabels.map(label => (
-                            <span 
-                              key={label}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30"
-                            >
-                              {label}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  {/* Helpful tip */}
+                  <div className="text-center text-[0.7rem] text-white/40 leading-relaxed px-2">
+                    For best results, use a high-quality image matching the template&apos;s angle without other vehicles
+                  </div>
                 </div>
                 <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="w-full text-base">
                   {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}

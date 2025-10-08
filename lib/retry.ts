@@ -3,9 +3,13 @@
  */
 export async function retryOnConflict<T>(
   fn: () => Promise<T>,
-  maxRetries = 3,
-  baseDelay = 100
+  options: {
+    maxRetries?: number;
+    baseDelay?: number;
+    context?: string;
+  } = {}
 ): Promise<T> {
+  const { maxRetries = 3, baseDelay = 100, context = 'Operation' } = options;
   let lastError: Error | null = null;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -25,7 +29,7 @@ export async function retryOnConflict<T>(
           const delay = baseDelay * Math.pow(2, attempt);
           await new Promise((resolve) => setTimeout(resolve, delay));
           if (process.env.NODE_ENV === "development") {
-            console.log(`Retrying transaction (attempt ${attempt + 2}/${maxRetries + 1})`);
+            console.log(`[${context}] Retrying transaction (attempt ${attempt + 2}/${maxRetries + 1})`);
           }
           continue;
         }

@@ -7,10 +7,13 @@ DEFINE TABLE video_job SCHEMAFULL;
 -- Define required fields
 DEFINE FIELD email ON video_job TYPE string ASSERT $value != NONE;
 DEFINE FIELD fal_request_id ON video_job TYPE string ASSERT $value != NONE;
+DEFINE FIELD fal_model ON video_job TYPE string ASSERT $value != NONE;
 DEFINE FIELD template_id ON video_job TYPE string ASSERT $value != NONE;
-DEFINE FIELD start_key ON video_job TYPE string ASSERT $value != NONE;
 DEFINE FIELD status ON video_job TYPE string ASSERT $value IN ['pending', 'processing', 'completed', 'failed'];
 DEFINE FIELD provider ON video_job TYPE string ASSERT $value IN ['seedance', 'kling2_5', 'sora2', 'sora2_pro'];
+
+-- Optional start_key (no longer used with FormData blob approach)
+DEFINE FIELD start_key ON video_job TYPE option<string>;
 
 -- Define optional fields
 DEFINE FIELD video_url ON video_job TYPE option<string>;

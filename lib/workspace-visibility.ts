@@ -1,6 +1,6 @@
 // Centralized visibility and helpers for managed folders in the workspace
 
-export const MANAGED_ROOTS = ["vehicles", "designer_masks", "designer_states"] as const;
+export const MANAGED_ROOTS = ["vehicles", "designer_masks", "designer_states", "chat-uploads"] as const;
 export type ManagedRootName = typeof MANAGED_ROOTS[number];
 
 // Toggle visibility per scope. Set admin: true to show for admins.

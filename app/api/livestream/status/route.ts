@@ -61,7 +61,7 @@ export async function POST(req: Request) {
       }
     }
     return sessionSlug;
-  });
+  }, { context: 'Livestream status update' });
   
   return NextResponse.json({ ok: true, sessionSlug: result || null });
 }

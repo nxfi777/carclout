@@ -9,7 +9,7 @@ Implemented an asynchronous job-based system:
 1. **Immediate Job Submission**: Changed from `fal.subscribe()` to `fal.queue()` to submit jobs without waiting
 2. **Job Tracking**: Added `video_job` table in SurrealDB to track job status
 3. **Status Polling**: Created `/api/templates/video/status` endpoint for checking job progress
-4. **Frontend Polling**: Updated UI to poll for completion instead of blocking
+4. **Shared Hook Pattern**: Created reusable `useAsyncVideoGeneration()` hook for consistent polling across all UI components
 
 ## Changes Made
 
@@ -19,8 +19,14 @@ Implemented an asynchronous job-based system:
 - **`/scripts/video-job-table.surql`**: Database schema for video jobs
 - **`/scripts/init-video-job-table.ts`**: Migration script to create the table
 
-### Frontend
-- **`/components/dashboard-workspace-panel.tsx`**: Updated to poll for video completion instead of waiting for immediate response
+### Frontend (Shared Hook Pattern)
+- **`/lib/use-async-video-generation.ts`**: **Shared custom hook** encapsulating all async video logic
+  - `generate(options, callbacks)` - Starts generation and handles polling
+  - `isGenerating` - Boolean state for UI feedback
+  - Callbacks: `onComplete`, `onError`, `onInsufficientCredits`
+  - Used by both workspace panel and templates tab
+- **`/components/dashboard-workspace-panel.tsx`**: Updated to use shared hook
+- **`/components/ui/content-tabs-core.tsx`**: Updated to use shared hook
 
 ### Database
 - Created `video_job` table with fields:
@@ -33,17 +39,68 @@ Implemented an asynchronous job-based system:
 
 1. User initiates video generation
 2. Backend immediately queues job on fal.ai and returns `jobId`
-3. Frontend receives `jobId` and starts polling `/api/templates/video/status?jobId=xxx` every 3 seconds
-4. Status endpoint checks fal.ai and updates database accordingly
-5. When complete, status endpoint downloads video, uploads to R2, charges credits, and returns final URL
-6. Frontend displays completed video
+3. Frontend shows persistent "Generating video..." toast with loading spinner
+4. Frontend starts polling `/api/templates/video/status?jobId=xxx` immediately, then every 3 seconds
+5. Status endpoint checks fal.ai and updates database accordingly
+6. When complete, status endpoint downloads video, uploads to R2, charges credits, and returns final URL
+7. Frontend dismisses loading toast, shows success message, and displays completed video
+8. **Background Processing**: Even if user closes the page, the video continues processing on the server and will be saved to their library automatically
 
 ## Benefits
 - ✅ No more 524 timeouts - initial response is instant
 - ✅ Videos can take as long as needed to generate
-- ✅ Users get real-time feedback ("Generating video...")
+- ✅ Users get real-time feedback with persistent loading toast
 - ✅ Job state is persisted in database
 - ✅ Credits are only charged after successful completion
+- ✅ **Background processing** - videos complete even if user closes browser
+- ✅ Graceful degradation - polls for up to 10 minutes, then tells user to check library later
+- ✅ Console logging for debugging video generation issues
+
+## Using the Shared Hook
+
+The `useAsyncVideoGeneration()` hook makes it easy to add video generation anywhere in your app:
+
+```typescript
+import { useAsyncVideoGeneration } from '@/lib/use-async-video-generation';
+
+function MyComponent() {
+  const videoGeneration = useAsyncVideoGeneration();
+  
+  const handleGenerate = async () => {
+    await videoGeneration.generate(
+      {
+        templateSlug: 'my-template',
+        startKey: 'users/123/library/image.png',
+        variables: { BRAND: 'Tesla', MODEL: 'Model S' }
+      },
+      {
+        onComplete: async (result) => {
+          console.log('Video ready!', result.url, result.key);
+          // Update UI, refresh library, etc.
+        },
+        onError: (error) => {
+          console.error('Failed:', error);
+        },
+        onInsufficientCredits: () => {
+          // Show credit top-up UI
+        }
+      }
+    );
+  };
+  
+  return (
+    <button onClick={handleGenerate} disabled={videoGeneration.isGenerating}>
+      {videoGeneration.isGenerating ? 'Generating...' : 'Generate Video'}
+    </button>
+  );
+}
+```
+
+### Hook Benefits
+✅ **DRY**: Single source of truth for polling logic  
+✅ **Consistent UX**: Same toasts, timing, error handling everywhere  
+✅ **Type-safe**: Full TypeScript support  
+✅ **Easy to maintain**: Fix bugs once, works everywhere  
 
 ## Migration
 The database table was already created by running:

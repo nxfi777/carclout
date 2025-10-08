@@ -27,7 +27,7 @@ export async function POST() {
   const now = new Date(nowMs).toISOString();
   await retryOnConflict(async () => {
     await db.query("UPDATE user SET presence_updated_at = $now, last_seen = $now WHERE email = $email;", { now, email: session.user.email });
-  });
+  }, { context: 'Presence heartbeat' });
   return NextResponse.json({ ok: true, at: now });
 }
 

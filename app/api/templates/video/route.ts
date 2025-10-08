@@ -1,9 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { getSessionUser, sanitizeUserId } from "@/lib/user";
+import { getSessionUser } from "@/lib/user";
 import { getSurreal } from "@/lib/surrealdb";
-import { r2, bucket } from "@/lib/r2";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { fal } from "@fal-ai/client";
 import { RecordId } from "surrealdb";
 import { estimateVideoCredits, DEFAULT_VIDEO_FPS, type VideoResolution, type VideoAspectRatio, type VideoProvider } from "@/lib/credits";
@@ -15,8 +13,6 @@ fal.config({ credentials: process.env.FAL_KEY || "" });
 type AnimateVideoRequest = {
   templateId?: string;
   templateSlug?: string;
-  // Workspace key under users/<id>/..., e.g. users/abc/library/design-123.png
-  startKey?: string;
   // Optional overrides (admin testing); normally taken from template.video
   prompt?: string;
   duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
@@ -59,17 +55,6 @@ function coerceRecordId(raw: string): RecordId<string> | string {
   return raw;
 }
 
-async function streamToUint8Array(stream: unknown): Promise<Uint8Array> {
-  const chunks: Uint8Array[] = [];
-  const s = stream as { [Symbol.asyncIterator]?: () => AsyncIterator<unknown> } | undefined;
-  if (s && typeof s[Symbol.asyncIterator] === 'function') {
-    for await (const chunk of s as unknown as AsyncIterable<unknown>) {
-      chunks.push(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : new Uint8Array(chunk as ArrayBufferLike));
-    }
-  }
-  return Buffer.concat(chunks);
-}
-
 async function uploadToFal(bytes: Uint8Array, mimeType: string): Promise<string | null> {
   try {
     const uploaded = await (fal as any)?.storage?.upload?.(bytes, { mimeType });
@@ -89,7 +74,13 @@ export async function POST(req: Request) {
     const user = await getSessionUser();
     if (!user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const body = (await req.json().catch(()=>({}))) as AnimateVideoRequest;
+    // Parse multipart form data
+    const form = await req.formData();
+    const startImageFile = form.get('startImage') as File | null;
+    if (!startImageFile) return NextResponse.json({ error: 'Missing start image' }, { status: 400 });
+    
+    const bodyJson = form.get('data') as string | null;
+    const body = bodyJson ? (JSON.parse(bodyJson) as AnimateVideoRequest) : {} as AnimateVideoRequest;
     if (!body?.templateId && !body?.templateSlug) return NextResponse.json({ error: 'Missing template id or slug' }, { status: 400 });
 
     const db = await getSurreal();
@@ -168,15 +159,10 @@ export async function POST(req: Request) {
     // Pricing: estimate credits for display/check purposes only; we'll charge post-success
     const credits = estimateVideoCredits(resolution, durationSeconds, fps, aspect_ratio, provider);
 
-    // Resolve the start image, upload to FAL storage
-    const userRoot = `users/${sanitizeUserId(user.email)}`;
-    const startKeyRel = String(body?.startKey || '').replace(/^\/+/, '');
-    if (!startKeyRel) return NextResponse.json({ error: 'Missing start frame' }, { status: 400 });
-    const startKey = startKeyRel.startsWith(userRoot) ? startKeyRel : `${userRoot}/${startKeyRel}`;
-
-    const obj = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: startKey }));
-    const bytes = await streamToUint8Array(obj.Body as unknown);
-    const startMime = (obj.ContentType as string) || 'image/png';
+    // Upload start image directly to FAL storage
+    const arrayBuffer = await startImageFile.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    const startMime = startImageFile.type || 'image/png';
     const image_url = await uploadToFal(bytes, startMime);
     if (!image_url) return NextResponse.json({ error: 'Failed to upload start frame to video service' }, { status: 502 });
 
@@ -249,24 +235,38 @@ export async function POST(req: Request) {
     console.log(`[VIDEO JOB] Queued job ${requestId} for user ${user.email}`);
 
     // Store job metadata in database
-    const now = new Date().toISOString();
     const templateIdStr = template?.id instanceof RecordId ? template.id.toString() : String(template?.id || body.templateId || body.templateSlug);
     
     try {
-      await db.create('video_job', {
+      // Use time::now() in SurrealDB for datetime fields
+      await db.query(`
+        CREATE video_job CONTENT {
+          email: $email,
+          fal_request_id: $fal_request_id,
+          fal_model: $fal_model,
+          template_id: $template_id,
+          status: $status,
+          provider: $provider,
+          prompt: $prompt,
+          duration: $duration,
+          resolution: $resolution,
+          aspect_ratio: $aspect_ratio,
+          credits: $credits,
+          created_at: time::now(),
+          updated_at: time::now()
+        };
+      `, {
         email: user.email,
         fal_request_id: requestId,
+        fal_model: modelName,
         template_id: templateIdStr,
-        start_key: startKey,
         status: 'pending',
         provider,
         prompt: videoPrompt,
         duration: durationSeconds,
         resolution,
         aspect_ratio,
-        credits,
-        created_at: now,
-        updated_at: now,
+        credits
       });
     } catch (dbErr) {
       console.error('Failed to store video job in database:', dbErr);

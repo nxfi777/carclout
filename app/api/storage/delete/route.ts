@@ -32,6 +32,10 @@ export async function POST(req: Request) {
     if (normalized === `${root}/designer_states/`) {
       return NextResponse.json({ error: "Cannot delete reserved folder 'designer_states'" }, { status: 400 });
     }
+    // Protect chat-uploads root
+    if (normalized === `${root}/chat-uploads/`) {
+      return NextResponse.json({ error: "Cannot delete reserved folder 'chat-uploads'" }, { status: 400 });
+    }
     // Protect admin templates root
     if (normalized === `${root}/templates/`) {
       return NextResponse.json({ error: "Cannot delete reserved folder 'templates'" }, { status: 400 });

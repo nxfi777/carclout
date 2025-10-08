@@ -7,11 +7,20 @@
 2. Select a design image from your library
 3. Click the "Animate" or video generation button
 4. You should see:
-   - ✅ Immediate toast: "Video generation started! This may take a few minutes..."
+   - ✅ Immediate persistent loading toast: "Generating video... This may take a few minutes."
    - ✅ No 524 timeout errors
    - ✅ Page remains responsive
-   - ✅ After 30s-3min: "Video generated successfully!"
+   - ✅ Console logs showing poll status every 3 seconds
+   - ✅ After 30s-3min: Loading toast dismisses, success toast appears: "Video generated successfully!"
+   - ✅ Video preview opens automatically
    - ✅ Video appears in your library
+
+**Test Background Processing:**
+1. Start video generation
+2. Close the browser tab/window immediately
+3. Wait 2-3 minutes
+4. Return to the workspace
+5. Refresh your library - the video should be there!
 
 ### 2. Testing via API
 

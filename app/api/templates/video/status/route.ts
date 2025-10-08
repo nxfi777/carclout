@@ -14,6 +14,8 @@ export const maxDuration = 30;
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
+// SurrealDB datetime updates use time::now() in the query itself
+
 // GET /api/templates/video/status?jobId=xxx
 export async function GET(req: Request) {
   try {
@@ -53,10 +55,14 @@ export async function GET(req: Request) {
       });
     }
 
-    // Poll fal.ai for status
+    // Poll fal.ai for status using the model name + request ID
+    const falModel = job.fal_model || 'fal-ai/bytedance/seedance/v1/pro/image-to-video';
     let falStatus: any;
     try {
-      falStatus = await fal.queue.status(jobId, { logs: false } as any);
+      falStatus = await fal.queue.status(falModel, { 
+        requestId: jobId,
+        logs: false 
+      } as any);
     } catch (err) {
       console.error(`Failed to check status for job ${jobId}:`, err);
       return NextResponse.json({ 
@@ -75,8 +81,8 @@ export async function GET(req: Request) {
       if (job.status !== updatedStatus) {
         try {
           await db.query(
-            "UPDATE $id SET status = $status, updated_at = $updated;",
-            { id: job.id, status: updatedStatus, updated: new Date().toISOString() }
+            "UPDATE $id SET status = $status, updated_at = time::now();",
+            { id: job.id, status: updatedStatus }
           );
         } catch {}
       }
@@ -89,18 +95,44 @@ export async function GET(req: Request) {
 
     // Handle completion
     if (falStatus?.status === 'COMPLETED') {
-      const resultData = falStatus.data || {};
-      const videoUrl: string | null = resultData?.video?.url || resultData?.url || null;
+      console.log(`[VIDEO JOB ${jobId}] Status shows COMPLETED, fetching result...`);
       
-      if (!videoUrl) {
+      // When status is COMPLETED, we need to fetch the actual result data
+      let resultData: any;
+      try {
+        resultData = await fal.queue.result(falModel, { 
+          requestId: jobId 
+        } as any);
+        console.log(`[VIDEO JOB ${jobId}] Result data:`, JSON.stringify(resultData, null, 2));
+      } catch (resultErr) {
+        console.error(`[VIDEO JOB ${jobId}] Failed to fetch result:`, resultErr);
         // Mark as failed in DB
         try {
           await db.query(
-            "UPDATE $id SET status = 'failed', error_message = $error, updated_at = $updated;",
+            "UPDATE $id SET status = 'failed', error_message = $error, updated_at = time::now();",
             { 
               id: job.id, 
-              error: 'No video URL in response',
-              updated: new Date().toISOString()
+              error: 'Failed to fetch video result from fal.ai'
+            }
+          );
+        } catch {}
+        return NextResponse.json({ status: 'failed', error: 'Failed to fetch video result' });
+      }
+      
+      // Extract video URL - it's nested under data.video.url
+      const videoUrl: string | null = resultData?.data?.video?.url || resultData?.video?.url || resultData?.url || null;
+      
+      console.log(`[VIDEO JOB ${jobId}] Extracted video URL:`, videoUrl);
+      
+      if (!videoUrl) {
+        console.error(`[VIDEO JOB ${jobId}] No video URL found in result. Full result:`, JSON.stringify(resultData, null, 2));
+        // Mark as failed in DB
+        try {
+          await db.query(
+            "UPDATE $id SET status = 'failed', error_message = $error, updated_at = time::now();",
+            { 
+              id: job.id, 
+              error: 'No video URL in response'
             }
           );
         } catch {}
@@ -115,8 +147,8 @@ export async function GET(req: Request) {
         const error = `Failed to download video: ${fileRes.status}`;
         try {
           await db.query(
-            "UPDATE $id SET status = 'failed', error_message = $error, updated_at = $updated;",
-            { id: job.id, error, updated: new Date().toISOString() }
+            "UPDATE $id SET status = 'failed', error_message = $error, updated_at = time::now();",
+            { id: job.id, error }
           );
         } catch {}
         return NextResponse.json({ status: 'failed', error });
@@ -160,8 +192,8 @@ export async function GET(req: Request) {
         try { await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: singleOutKey })); } catch {}
         try {
           await db.query(
-            "UPDATE $id SET status = 'failed', error_message = 'INSUFFICIENT_CREDITS', updated_at = $updated;",
-            { id: job.id, updated: new Date().toISOString() }
+            "UPDATE $id SET status = 'failed', error_message = 'INSUFFICIENT_CREDITS', updated_at = time::now();",
+            { id: job.id }
           );
         } catch {}
         return NextResponse.json({ error: 'INSUFFICIENT_CREDITS' }, { status: 402 });
@@ -221,13 +253,11 @@ export async function GET(req: Request) {
       // Update job as completed
       try {
         await db.query(
-          "UPDATE $id SET status = 'completed', output_key = $key, video_url = $url, updated_at = $updated, completed_at = $completed;",
+          "UPDATE $id SET status = 'completed', output_key = $key, video_url = $url, updated_at = time::now(), completed_at = time::now();",
           { 
             id: job.id, 
             key: singleOutKey,
-            url: viewUrl,
-            updated: new Date().toISOString(),
-            completed: new Date().toISOString()
+            url: viewUrl
           }
         );
       } catch {}
@@ -245,8 +275,8 @@ export async function GET(req: Request) {
       const error = falStatus?.error || 'Video generation failed';
       try {
         await db.query(
-          "UPDATE $id SET status = 'failed', error_message = $error, updated_at = $updated;",
-          { id: job.id, error: String(error), updated: new Date().toISOString() }
+          "UPDATE $id SET status = 'failed', error_message = $error, updated_at = time::now();",
+          { id: job.id, error: String(error) }
         );
       } catch {}
       return NextResponse.json({ status: 'failed', error });

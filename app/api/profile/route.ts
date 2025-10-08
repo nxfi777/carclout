@@ -156,7 +156,7 @@ export async function POST(req: Request) {
           { make, model, type, kitted: !!kitted, email: user.email }
         );
       }
-    });
+    }, { context: 'Profile update' });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

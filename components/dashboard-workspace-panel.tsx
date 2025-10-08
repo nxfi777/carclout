@@ -34,6 +34,7 @@ import { getViewUrl, getViewUrls } from "@/lib/view-url-client";
 import ElectricBorder from "@/components/electric-border";
 import CreditDepletionDrawer from "@/components/credit-depletion-drawer";
 import { useCreditDepletion } from "@/lib/use-credit-depletion";
+import { useAsyncVideoGeneration } from "@/lib/use-async-video-generation";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
@@ -112,7 +113,6 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [designProjectState, setDesignProjectState] = useState<import("@/lib/layer-export").DesignerProjectState | null>(null);
   const [upscaleBusy, setUpscaleBusy] = useState(false);
   const [videoUpscaleBusy, setVideoUpscaleBusy] = useState(false);
-  const [_videoInterpolateBusy, _setVideoInterpolateBusy] = useState(false);
   const [previewVariants, setPreviewVariants] = useState<{ key?: string; name: string; url: string }[]>([]);
   const [activePreviewVariantIndex, setActivePreviewVariantIndex] = useState(0);
   const isManagedRootName = useMemo(() => (name: string) => isManagedRoot(name), []);
@@ -120,6 +120,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [_maskHint, setMaskHint] = useState<Record<string, 'exists' | 'missing' | 'checking' | 'unknown'>>({});
   const [blurhashBackfillProcessed, setBlurhashBackfillProcessed] = useState(new Set<string>());
   const creditDepletion = useCreditDepletion();
+  const videoGeneration = useAsyncVideoGeneration();
   const [videoTemplates, setVideoTemplates] = useState<Set<string>>(new Set());
   const [profileVehicles, setProfileVehicles] = useState<Array<{ make?: string; model?: string; colorFinish?: string; accents?: string; type?: string }>>([]);
   const [activeUpscaleOps, setActiveUpscaleOps] = useState<Set<string>>(new Set()); // Track which videos are being upscaled
@@ -254,7 +255,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
 
   // TEMPORARILY DISABLED - Make Smoother Feature
   // async function doVideoInterpolate(key: string) {
-  //   setVideoInterpolateBusy(true);
+  //   _setVideoInterpolateBusy(true);
   //   try {
   //     const res = await fetch('/api/tools/video-interpolate', { 
   //       method: 'POST', 
@@ -271,13 +272,14 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   //     }
   //     if (!res.ok || !data?.key) { toast.error(data?.error || 'Video smoothing failed'); return; }
   //     
+  //     toast.success('Video is being smoothed! It will appear in your library soon.');
   //     await refresh(undefined, { force: true });
   //     setTreeVersion(v => v + 1);
   //   } catch (e) {
   //     console.error('Video interpolate error:', e);
   //     toast.error('Video smoothing failed');
   //   } finally { 
-  //     setVideoInterpolateBusy(false); 
+  //     _setVideoInterpolateBusy(false); 
   //   }
   // }
 
@@ -908,7 +910,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
 
   async function onDelete(it: Item) {
     // Prevent deletes inside managed folders
-    const managedPath = path === 'vehicles' || (path || '').startsWith('vehicles/') || path === 'designer_masks' || (path || '').startsWith('designer_masks/') || path === 'designer_states' || (path || '').startsWith('designer_states/');
+    const managedPath = path === 'vehicles' || (path || '').startsWith('vehicles/') || path === 'designer_masks' || (path || '').startsWith('designer_masks/') || path === 'designer_states' || (path || '').startsWith('designer_states/') || path === 'chat-uploads' || (path || '').startsWith('chat-uploads/');
     if (managedPath) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
     if (it.type === 'folder') {
       const ok = await confirmToast({ title: `Delete folder "${it.name}"?`, message: 'All contents will be deleted.' });
@@ -916,7 +918,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     }
     const key = it.key || `${path ? `${path}/` : ""}${it.name}${it.type==='folder'?'/':''}`;
     const normalizedKey = String(key).replace(/^\/+/, '');
-    if (normalizedKey.startsWith('vehicles/') || normalizedKey.startsWith('designer_masks/') || normalizedKey.startsWith('designer_states/')) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
+    if (normalizedKey.startsWith('vehicles/') || normalizedKey.startsWith('designer_masks/') || normalizedKey.startsWith('designer_states/') || normalizedKey.startsWith('chat-uploads/')) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
     const cacheKey = `${scope === 'admin' ? 'admin' : 'user'}:${path}`;
     const prevItems = items;
     // Optimistic UI: remove immediately and update cache
@@ -943,7 +945,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
 
   const onBulkDelete = useCallback(async () => {
     // Prevent bulk deletes inside managed folders
-    const managedPath = path === 'vehicles' || (path || '').startsWith('vehicles/') || path === 'designer_masks' || (path || '').startsWith('designer_masks/');
+    const managedPath = path === 'vehicles' || (path || '').startsWith('vehicles/') || path === 'designer_masks' || (path || '').startsWith('designer_masks/') || path === 'designer_states' || (path || '').startsWith('designer_states/') || path === 'chat-uploads' || (path || '').startsWith('chat-uploads/');
     if (managedPath) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
     if (selectedKeys.size === 0) return;
     const keys = Array.from(selectedKeys);
@@ -951,7 +953,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     // If any selected key lies under managed folders, block
     const hasManaged = keys.some((k) => {
       const n = String(k || '').replace(/^\/+/, '');
-      return n.startsWith('vehicles/') || n.startsWith('designer_masks/');
+      return n.startsWith('vehicles/') || n.startsWith('designer_masks/') || n.startsWith('designer_states/') || n.startsWith('chat-uploads/');
     });
     if (hasManaged) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
     const hasFolder = keys.some(k => (lookup.get(k)?.type === 'folder'));
@@ -1625,7 +1627,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-48">
                 <DropdownMenuItem disabled={uploading || isManagedPath} onSelect={()=>{ uploadRef.current?.click(); }}>Upload</DropdownMenuItem>
-                <DropdownMenuItem onSelect={async()=>{ if (path === 'vehicles' || (path || '').startsWith('vehicles/')) { toast.info('The vehicles folder is managed automatically. Select a specific vehicle to manage its photos.'); return; } if (path === 'designer_masks' || (path || '').startsWith('designer_masks/')) { toast.info('Designer masks are managed automatically.'); return; } const name = await promptToast({ title: 'New folder name' }); if (!name) return; await fetch('/api/storage/folder', { method:'POST', body: JSON.stringify({ path: path ? `${path}/${name}` : name, scope }) }); await refresh(undefined, { force: true }); setTreeVersion(v=>v+1); }}>New folder</DropdownMenuItem>
+                <DropdownMenuItem onSelect={async()=>{ if (path === 'vehicles' || (path || '').startsWith('vehicles/')) { toast.info('The vehicles folder is managed automatically. Select a specific vehicle to manage its photos.'); return; } if (path === 'designer_masks' || (path || '').startsWith('designer_masks/')) { toast.info('Designer masks are managed automatically.'); return; } if (path === 'designer_states' || (path || '').startsWith('designer_states/')) { toast.info('Designer states are managed automatically.'); return; } if (path === 'chat-uploads' || (path || '').startsWith('chat-uploads/')) { toast.info('Chat uploads are managed automatically.'); return; } const name = await promptToast({ title: 'New folder name' }); if (!name) return; await fetch('/api/storage/folder', { method:'POST', body: JSON.stringify({ path: path ? `${path}/${name}` : name, scope }) }); await refresh(undefined, { force: true }); setTreeVersion(v=>v+1); }}>New folder</DropdownMenuItem>
                 <DropdownMenuItem disabled={sortedItems.length === 0} onSelect={()=>{ setSelectedKeys(new Set(sortedItems.map(it => itemStorageKey(it)))); }}>Select all</DropdownMenuItem>
                 <DropdownMenuItem onSelect={()=>setView(v=>v==='list'?'icons':'list')}>{view==='list' ? 'Icon view' : 'List view'}</DropdownMenuItem>
                 {selectedCount > 0 ? (
@@ -1645,6 +1647,14 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           ) : path === 'designer_masks' || path.startsWith('designer_masks/') ? (
             <div className="ml-2 text-xs px-2 py-1 rounded-md bg-white/5 border border-red-500 text-red-400">
               Managed folder. Masks are auto-saved for reuse. You can delete them.
+            </div>
+          ) : path === 'designer_states' || path.startsWith('designer_states/') ? (
+            <div className="ml-2 text-xs px-2 py-1 rounded-md bg-white/5 border border-red-500 text-red-400">
+              Managed folder. Project states are auto-saved. You can delete them.
+            </div>
+          ) : path === 'chat-uploads' || path.startsWith('chat-uploads/') ? (
+            <div className="ml-2 text-xs px-2 py-1 rounded-md bg-white/5 border border-red-500 text-red-400">
+              Managed folder. Chat uploads are managed automatically.
             </div>
           ) : null}
         </div>
@@ -1674,7 +1684,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           </Button>
           <Button size="sm" onClick={()=>uploadRef.current?.click()} disabled={uploading || isManagedPath}>Upload</Button>
           <input ref={uploadRef} type="file" multiple hidden onChange={(e)=>{ const files = Array.from(e.target.files || []); if (files.length) onUpload(files as File[]); e.currentTarget.value=''; }} />
-          <Button size="sm" variant="outline" onClick={async()=>{ if (path === 'vehicles' || (path || '').startsWith('vehicles/')) { toast.info('The vehicles folder is managed automatically. Select a specific vehicle to manage its photos.'); return; } if (path === 'designer_masks' || (path || '').startsWith('designer_masks/')) { toast.info('Designer masks are managed automatically.'); return; } const name = await promptToast({ title: 'New folder name' }); if (!name) return; await fetch('/api/storage/folder', { method:'POST', body: JSON.stringify({ path: path ? `${path}/${name}` : name, scope }) }); await refresh(undefined, { force: true }); setTreeVersion(v=>v+1); }}>New Folder</Button>
+          <Button size="sm" variant="outline" onClick={async()=>{ if (path === 'vehicles' || (path || '').startsWith('vehicles/')) { toast.info('The vehicles folder is managed automatically. Select a specific vehicle to manage its photos.'); return; } if (path === 'designer_masks' || (path || '').startsWith('designer_masks/')) { toast.info('Designer masks are managed automatically.'); return; } if (path === 'designer_states' || (path || '').startsWith('designer_states/')) { toast.info('Designer states are managed automatically.'); return; } if (path === 'chat-uploads' || (path || '').startsWith('chat-uploads/')) { toast.info('Chat uploads are managed automatically.'); return; } const name = await promptToast({ title: 'New folder name' }); if (!name) return; await fetch('/api/storage/folder', { method:'POST', body: JSON.stringify({ path: path ? `${path}/${name}` : name, scope }) }); await refresh(undefined, { force: true }); setTreeVersion(v=>v+1); }}>New Folder</Button>
           <Button size="sm" variant="outline" onClick={()=>{ setSelectedKeys(new Set(sortedItems.map(it => itemStorageKey(it)))); }} disabled={sortedItems.length === 0}>Select all</Button>
           <Button size="sm" variant="outline" onClick={()=>setView(v=>v==='list'?'icons':'list')} aria-label={view==='list' ? 'Switch to icon view' : 'Switch to list view'} title={view==='list' ? 'Icon view' : 'List view'}>
             {view==='list' ? (<LayoutGrid className="w-4 h-4" />) : (<ListIcon className="w-4 h-4" />)}
@@ -1696,6 +1706,14 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           ) : path === 'designer_masks' || path.startsWith('designer_masks/') ? (
             <div className="ml-2 text-xs px-2 py-1 rounded-md bg-white/5 border border-red-500 text-red-400">
               Managed folder. Masks are auto-saved for reuse. You can delete them.
+            </div>
+          ) : path === 'designer_states' || path.startsWith('designer_states/') ? (
+            <div className="ml-2 text-xs px-2 py-1 rounded-md bg-white/5 border border-red-500 text-red-400">
+              Managed folder. Project states are auto-saved. You can delete them.
+            </div>
+          ) : path === 'chat-uploads' || path.startsWith('chat-uploads/') ? (
+            <div className="ml-2 text-xs px-2 py-1 rounded-md bg-white/5 border border-red-500 text-red-400">
+              Managed folder. Chat uploads are managed automatically.
             </div>
           ) : null}
         </div>
@@ -1970,20 +1988,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                     </ContextMenuItem>
                                   );
                                 })()}
-                                {/* TEMPORARILY DISABLED - Make Smoother Feature */}
-                                {/* {(it.name.includes('upscaled') || it.name.includes('2x')) && !it.name.includes('60fps') && !it.name.includes('interpolated') ? (
-                                  <ContextMenuItem 
-                                    disabled={videoInterpolateBusy}
-                                    onSelect={async()=>{
-                                      // Comment out plan check - all users now have video generation access
-                                      // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
-                                      const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
-                                      await doVideoInterpolate(key);
-                                    }}
-                                  >
-                                    {videoInterpolateBusy ? 'Processing...' : 'Make Smoother (60fps)'}
-                                  </ContextMenuItem>
-                                ) : null} */}
+                                { /* Frame interpolation hidden */ }
                               </>
                             ) : null}
                             {!isReservedHooksRoot ? (
@@ -2147,20 +2152,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                       </ContextMenuItem>
                                     );
                                   })()}
-                                  {/* TEMPORARILY DISABLED - Make Smoother Feature */}
-                                  {/* {(it.name.includes('upscaled') || it.name.includes('2x')) && !it.name.includes('60fps') && !it.name.includes('interpolated') ? (
-                                    <ContextMenuItem 
-                                      disabled={videoInterpolateBusy}
-                                      onSelect={async()=>{
-                                        // Comment out plan check - all users now have video generation access
-                                        // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
-                                        const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
-                                        await doVideoInterpolate(key);
-                                      }}
-                                    >
-                                      {videoInterpolateBusy ? 'Processing...' : 'Make Smoother (60fps)'}
-                                    </ContextMenuItem>
-                                  ) : null} */}
+                                  { /* Frame interpolation hidden */ }
                                 </>
                               ) : null}
                               {!isReservedHooksRoot ? (
@@ -2300,16 +2292,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                   try {
                     // Comment out plan check - all users now have video generation access
                     // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
-                    // Upload current canvas to workspace as start frame
+                    // Get canvas blob to send directly to video API
                     const blob = await getBlob();
                     if (!blob) return;
-                    const filename = `design-${Date.now()}.png`;
-                    const file = new File([blob], filename, { type: 'image/png' });
-                    const form = new FormData(); form.append('file', file, filename); form.append('path', 'library');
-                    const up = await fetch('/api/storage/upload', { method: 'POST', body: form });
-                    const dj = await up.json().catch(()=>({}));
-                    const key = typeof dj?.key === 'string' ? String(dj.key) : '';
-                    if (!key) { toast.error('Failed to prepare animation'); return; }
                     // Check credits before video generation (default estimate ~500 credits for typical video)
                     const bal = await getCredits();
                     const estimatedCredits = 500; // Conservative estimate
@@ -2344,64 +2329,28 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                       if (acc) variables.ACCENTS = acc;
                       if (combo) variables.COLOR_FINISH_ACCENTS = combo;
                     }
+                    if (!slug) { toast.error('Could not determine template'); return; }
                     
-                    // Start async video generation
-                    const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateSlug: slug, startKey: key, variables }) });
-                    const out = await resp.json().catch(()=>({}));
-                    if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, estimatedCredits); return; }
-                    if (!resp.ok || !out?.jobId) { toast.error(out?.error || 'Video generation failed to start.'); return; }
-                    
-                    const jobId = out.jobId;
-                    toast.success('Video generation started! This may take a few minutes...');
-                    
-                    // Poll for completion
-                    const pollInterval = 3000; // Poll every 3 seconds
-                    const maxPolls = 200; // Max 10 minutes (200 * 3s = 600s)
-                    let pollCount = 0;
-                    
-                    const poll = async (): Promise<void> => {
-                      if (pollCount >= maxPolls) {
-                        toast.error('Video generation timed out. Please check your library later.');
-                        return;
-                      }
-                      pollCount++;
-                      
-                      try {
-                        const statusResp = await fetch(`/api/templates/video/status?jobId=${encodeURIComponent(jobId)}`);
-                        const statusData = await statusResp.json().catch(()=>({}));
-                        
-                        if (statusResp.status === 402) {
-                          const bal = await getCredits();
-                          creditDepletion.checkAndTrigger(bal, estimatedCredits);
-                          return;
-                        }
-                        
-                        if (statusData.status === 'completed') {
-                          const outKey = String(statusData.key || '');
-                          const name = outKey ? (outKey.split('/').pop() || 'video.mp4') : 'video.mp4';
-                          setPreview({ url: String(statusData.url), name, key: outKey });
+                    // Use shared async video generation hook
+                    await videoGeneration.generate(
+                      { templateSlug: slug, startImage: blob, variables },
+                      {
+                        onComplete: async (result) => {
+                          const name = result.key ? (result.key.split('/').pop() || 'video.mp4') : 'video.mp4';
+                          setPreview({ url: result.url, name, key: result.key });
                           await refresh(undefined, { force: true });
                           setTreeVersion(v=>v+1);
-                          toast.success('Video generated successfully!');
-                          return;
+                        },
+                        onInsufficientCredits: async () => {
+                          const bal = await getCredits();
+                          creditDepletion.checkAndTrigger(bal, estimatedCredits);
                         }
-                        
-                        if (statusData.status === 'failed') {
-                          toast.error(statusData.error || 'Video generation failed.');
-                          return;
-                        }
-                        
-                        // Still pending or processing - continue polling
-                        setTimeout(poll, pollInterval);
-                      } catch (pollErr) {
-                        console.error('Error polling video status:', pollErr);
-                        setTimeout(poll, pollInterval);
                       }
-                    };
-                    
-                    // Start polling
-                    setTimeout(poll, pollInterval);
-                  } catch {}
+                    );
+                  } catch (err) {
+                    console.error('[VIDEO] Unexpected error:', err);
+                    toast.error('An unexpected error occurred. Please try again.');
+                  }
                 }}
               />
             ) : null}
