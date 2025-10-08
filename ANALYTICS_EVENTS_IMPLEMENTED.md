@@ -82,7 +82,7 @@ Hormozi: *"Present offer at moment of highest intent."*
 
 **Implementation locations:**
 - `/api/templates/generate/route.ts` - Server-side template tracking
-- `/components/templates/use-template-content.tsx` - Client-side events
+- `/components/ui/content-tabs-core.tsx` - Client-side template events
 - `/app/dashboard/showroom/page.tsx` - Chat messages
 - `/components/vehicles-editor.tsx` - Vehicle management
 - `/components/daily-bonus-drawer.tsx` - Daily bonus claims
@@ -242,7 +242,7 @@ See `UMAMI_REPORTS_GUIDE.md` for step-by-step instructions:
 ## Files Modified
 
 1. **components/umami-tracker.tsx** - Added 50+ event mappings
-2. **components/templates/use-template-content.tsx** - Template generation tracking
+2. **components/ui/content-tabs-core.tsx** - Template generation tracking
 3. **app/api/templates/generate/route.ts** - Server-side activation detection
 4. **components/plan-selector.tsx** - Checkout flow tracking
 5. **lib/use-credit-depletion.ts** - Usage limit tracking

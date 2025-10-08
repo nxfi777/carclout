@@ -7,18 +7,23 @@ import { getSurreal } from "@/lib/surrealdb";
 import type { LibraryVideo } from "@/lib/library-image";
 
 // Credit cost calculation for video upscale
-// Based on fal.ai pricing: $0.015 per megapixel of output
-// Reference: 4s 720p→1440p (60fps) = 240 frames × 3.6864 MP = 884.736 MP = $13.27 ≈ 10,850 credits
-// Formula: total_frames × output_width × output_height / 1,000,000 × 12.26 credits/MP
-// Simplified: duration × fps × (input_width × 2) × (input_height × 2) / 1,000,000 × 12.26
-function calculateUpscaleCredits(durationSeconds: number, fps: number, width: number, height: number): number {
-  const CREDITS_PER_MEGAPIXEL = 10; // ~$0.0122 per MP at 817.65 credits/$
-  const outputWidth = width * 2; // 2x upscale
-  const outputHeight = height * 2;
+// Using same profit margin as sora video gen (not pro): 1000 credits per 4s 720p video (costs $0.40)
+// Profit margin: 1000 credits / $0.40 = 2500 credits per dollar of cost
+// fal.ai pricing: $0.015 per megapixel
+// Calculate based on INPUT megapixels (not output)
+function calculateUpscaleCredits(durationSeconds: number, fps: number, width: number, height: number, _upscaleFactor: number): number {
+  const CREDITS_PER_DOLLAR = 2500; // Same margin as sora (not pro)
+  const COST_PER_MEGAPIXEL = 0.015; // fal.ai pricing
+  
+  // Calculate total INPUT megapixels
   const totalFrames = durationSeconds * fps;
-  const megapixelsPerFrame = (outputWidth * outputHeight) / 1_000_000;
+  const megapixelsPerFrame = (width * height) / 1_000_000;
   const totalMegapixels = totalFrames * megapixelsPerFrame;
-  const credits = Math.ceil(totalMegapixels * CREDITS_PER_MEGAPIXEL);
+  
+  // Calculate cost and convert to credits
+  const cost = totalMegapixels * COST_PER_MEGAPIXEL;
+  const credits = Math.ceil(cost * CREDITS_PER_DOLLAR);
+  
   return Math.max(100, credits); // Minimum 100 credits
 }
 
@@ -69,17 +74,52 @@ export async function POST(req: Request) {
 
     console.log("[video-upscale] Starting upscale for:", r2_key);
 
-    // Estimate video properties from file size for credit calculation
+    // Get video dimensions from database or estimate from file size
+    const db = await getSurreal();
+    const videoMetadata = await db.query(
+      "SELECT width, height, duration FROM library_video WHERE key = $key AND email = $email LIMIT 1;",
+      { key: r2_key, email }
+    );
+    
+    const videoData = Array.isArray(videoMetadata) && Array.isArray(videoMetadata[0]) && videoMetadata[0][0]
+      ? (videoMetadata[0][0] as { width?: number; height?: number; duration?: number })
+      : null;
+
+    const width = videoData?.width || 1280; // Default 720p
+    const height = videoData?.height || 720;
+    const videoDuration = videoData?.duration;
+    
+    // Calculate maximum upscale factor based on fal.ai limits
+    // Max larger dimension: 1920, max smaller dimension: 1080
+    const MAX_LARGER_DIM = 1920;
+    const MAX_SMALLER_DIM = 1080;
+    
+    const largerDim = Math.max(width, height);
+    const smallerDim = Math.min(width, height);
+    
+    const maxFactorByLargerDim = MAX_LARGER_DIM / largerDim;
+    const maxFactorBySmallerDim = MAX_SMALLER_DIM / smallerDim;
+    const maxUpscaleFactor = Math.min(maxFactorByLargerDim, maxFactorBySmallerDim);
+    
+    // Use the highest factor that doesn't exceed limits, rounded to 2 decimals
+    // Minimum 1.0, maximum 2.0 (or lower if needed)
+    const upscaleFactor = Math.max(1.0, Math.min(2.0, Math.floor(maxUpscaleFactor * 100) / 100));
+    
+    console.log(`[video-upscale] Input: ${width}x${height}, Max factor: ${maxUpscaleFactor.toFixed(2)}, Using: ${upscaleFactor.toFixed(2)}`);
+    
+    if (upscaleFactor <= 1.0) {
+      return NextResponse.json({ 
+        error: "Video is already at or near maximum resolution for upscaling" 
+      }, { status: 400 });
+    }
+
+    // Estimate video properties from file size for credit calculation if duration unknown
     const metadataRes = await fetch(inputUrl, { method: "HEAD" });
     const contentLength = parseInt(metadataRes.headers.get("content-length") || "0");
-    
-    // Rough estimates (default to 720p 30fps if unknown)
-    const estimatedDuration = Math.max(1, Math.min(60, contentLength / (1024 * 1024 * 5)));
+    const estimatedDuration = videoDuration || Math.max(1, Math.min(60, contentLength / (1024 * 1024 * 5)));
     const fps = 30; // Conservative estimate
-    const width = 1280; // Default 720p
-    const height = 720;
     
-    const creditsNeeded = calculateUpscaleCredits(estimatedDuration, fps, width, height);
+    const creditsNeeded = calculateUpscaleCredits(estimatedDuration, fps, width, height, upscaleFactor);
     
     console.log(`[video-upscale] Estimated credits: ${creditsNeeded} for ~${estimatedDuration.toFixed(1)}s ${width}x${height}`);
 
@@ -102,7 +142,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         video_url: inputUrl,
-        upscale_factor: 2, // 2x upscale
+        upscale_factor: upscaleFactor,
       }),
     });
 

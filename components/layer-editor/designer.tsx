@@ -23,12 +23,18 @@ type RembgConfig = {
   output_mask?: boolean;
 } | null | undefined;
 
+type IsolateCutoutConfig = {
+  mode: 'user_choice' | 'force_on' | 'force_off';
+  defaultEnabled?: boolean; // Always false for user_choice, controls initial state for force_on
+} | null | undefined;
+
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate, projectState, sourceImageKey, closeOnDownload }: {
+function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate, projectState, sourceImageKey, closeOnDownload }: {
   bgKey: string;
   bgBlurhash?: string | null; // Optional blurhash for smooth loading
   rembg?: RembgConfig;
+  isolateCutout?: IsolateCutoutConfig; // Controls whether to auto-cutout or let user choose
   onClose?: () => void;
   onSave?: (blob: Blob, projectState?: string) => Promise<void> | void;
   saveLabel?: string;
@@ -45,13 +51,27 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
     bgKey,
     sourceImageKey,
     hasProjectState: !!projectState,
-    projectStateBackgroundKey: projectState?.backgroundKey
+    projectStateBackgroundKey: projectState?.backgroundKey,
+    isolateCutout
   });
   
-  const [busy, setBusy] = useState(!projectState); // Skip loading if we have project state
-  const [isGeneratingMask, setIsGeneratingMask] = useState(true); // Track if we're generating vs loading cached
+  // Determine if we should auto-cutout based on config
+  const shouldAutoCutout = React.useMemo(() => {
+    if (projectState) return false; // Never auto-cutout if we have project state
+    if (!isolateCutout) return true; // Default to auto-cutout for backwards compatibility
+    if (isolateCutout.mode === 'force_on') return true;
+    if (isolateCutout.mode === 'force_off') return false;
+    // user_choice: use default
+    return isolateCutout.defaultEnabled ?? false;
+  }, [isolateCutout, projectState]);
+  
+  const [busy, setBusy] = useState(!projectState && shouldAutoCutout); // Skip loading if we have project state or not auto-cutting
+  const [isGeneratingMask, setIsGeneratingMask] = useState(shouldAutoCutout);
+  const [isCuttingOut, setIsCuttingOut] = useState(false); // Track manual cutout operation
   const [bgUrl, setBgUrl] = useState<string | null>(projectState?.backgroundUrl || null);
   const [fgUrl, setFgUrl] = useState<string | null>(projectState?.carMaskUrl || null);
+  const [_maskUrl, setMaskUrl] = useState<string | null>(null); // Store mask separately for client-side cutout
+  const [hasCutout, setHasCutout] = useState(!!projectState?.carMaskUrl || shouldAutoCutout);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
@@ -104,6 +124,17 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
       return;
     }
     
+    // If we're not auto-cutting out, just load the background
+    if (!shouldAutoCutout) {
+      const url = `/api/storage/file?key=${encodeURIComponent(bgKey)}`;
+      setBgUrl(url);
+      initializedRef.current = true;
+      initialBgKeyRef.current = bgKey;
+      setBusy(false);
+      setHasCutout(false);
+      return;
+    }
+    
     let cancelled = false;
     (async()=>{
       try {
@@ -121,25 +152,107 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
             const allowed = new Set(['1024x1024','2048x2048'] as const);
             return rembg && rembg.operating_resolution && allowed.has(rembg.operating_resolution) ? rembg.operating_resolution : '2048x2048';
           })(),
-          output_format: ((): 'png' | 'webp' => (rembg?.output_format === 'webp' ? 'webp' : 'png'))(),
+          output_format: ((): 'png' | 'webp' => (rembg?.output_format === 'png' ? 'png' : 'webp'))(),
           refine_foreground: typeof rembg?.refine_foreground === 'boolean' ? !!rembg?.refine_foreground : true,
-          output_mask: !!rembg?.output_mask,
+          output_mask: true, // Always request mask for potential client-side cutout
         };
         const res = await fetch('/api/tools/rembg', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(input) }).then(r=>r.json()).catch(()=>({}));
-        const fg = res?.image?.url || null;
-        if (!fg) throw new Error('fg');
+        const maskImageUrl = res?.mask_image?.url || null;
+        if (!maskImageUrl) throw new Error('mask');
         // Check if this was a cache hit
         if (res?.requestId === 'cache') {
           setIsGeneratingMask(false); // Was from cache, not generating
         }
-        setFgUrl(fg);
+        
+        // Apply mask to base image client-side to save bandwidth
+        // (mask is much smaller than full cutout image)
+        try {
+          const [maskImg, baseImg] = await Promise.all([
+            new Promise<HTMLImageElement>((resolve, reject) => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => resolve(img);
+              img.onerror = reject;
+              img.src = maskImageUrl;
+            }),
+            new Promise<HTMLImageElement>((resolve, reject) => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => resolve(img);
+              img.onerror = reject;
+              img.src = url;
+            })
+          ]);
+          
+          // Create canvas and apply mask
+          const canvas = document.createElement('canvas');
+          canvas.width = baseImg.width;
+          canvas.height = baseImg.height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('canvas');
+          
+          // Draw base image
+          ctx.drawImage(baseImg, 0, 0);
+          
+          // Get image data and apply mask
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+          
+          // Create temp canvas for mask
+          const maskCanvas = document.createElement('canvas');
+          maskCanvas.width = maskImg.width;
+          maskCanvas.height = maskImg.height;
+          const maskCtx = maskCanvas.getContext('2d');
+          if (!maskCtx) throw new Error('mask canvas');
+          maskCtx.drawImage(maskImg, 0, 0);
+          const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+          
+          // Apply mask (mask is grayscale, use red channel for alpha)
+          for (let i = 0; i < data.length; i += 4) {
+            const pixelIndex = i / 4;
+            const x = pixelIndex % canvas.width;
+            const y = Math.floor(pixelIndex / canvas.width);
+            
+            // Scale mask coordinates if dimensions differ
+            const maskX = Math.floor((x / canvas.width) * maskCanvas.width);
+            const maskY = Math.floor((y / canvas.height) * maskCanvas.height);
+            const maskPixelIndex = (maskY * maskCanvas.width + maskX) * 4;
+            
+            // Use mask's red channel as alpha (mask is grayscale)
+            data[i + 3] = maskData.data[maskPixelIndex];
+          }
+          
+          ctx.putImageData(imageData, 0, 0);
+          
+          // Convert to blob and create object URL
+          const blob = await new Promise<Blob>((resolve, reject) => {
+            canvas.toBlob((b) => b ? resolve(b) : reject(new Error('blob')), 'image/png');
+          });
+          const cutoutUrl = URL.createObjectURL(blob);
+          
+          setFgUrl(cutoutUrl);
+          setMaskUrl(maskImageUrl);
+          setHasCutout(true);
+        } catch (err) {
+          console.error('[Designer] Failed to apply mask client-side:', err);
+          // Fallback: use the cutout image from API if available
+          const fallbackCutout = res?.image?.url;
+          if (fallbackCutout) {
+            setFgUrl(fallbackCutout);
+            setMaskUrl(maskImageUrl);
+            setHasCutout(true);
+          } else {
+            throw new Error('Failed to create cutout');
+          }
+        }
+        
         initializedRef.current = true;
         initialBgKeyRef.current = bgKey;
       } catch {
       } finally { if (!cancelled) { setBusy(false); } }
     })();
     return ()=>{ cancelled = true; };
-  }, [bgKey, rembg, projectState]);
+  }, [bgKey, rembg, projectState, shouldAutoCutout]);
 
   const exportCompositeBlob = useCallback(async (): Promise<Blob | null> => {
     if (!bgUrl) return null;
@@ -299,6 +412,122 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
     }
   }, [bgKey, bgUrl, fgUrl]);
 
+  const cutoutCar = useCallback(async () => {
+    if (isCuttingOut || hasCutout) return;
+    // Check credits before attempting cutout
+    const bal = await getCredits();
+    const insufficientCredits = creditDepletion.checkAndTrigger(bal, 10);
+    if (insufficientCredits) return;
+    setIsCuttingOut(true);
+    try {
+      const input = {
+        r2_key: bgKey,
+        model: ((): 'General Use (Light)' | 'General Use (Light 2K)' | 'General Use (Heavy)' | 'Matting' | 'Portrait' => {
+          const allowed = new Set(['General Use (Light)','General Use (Light 2K)','General Use (Heavy)','Matting','Portrait'] as const);
+          return rembg && rembg.model && allowed.has(rembg.model) ? rembg.model : 'General Use (Heavy)';
+        })(),
+        operating_resolution: ((): '1024x1024' | '2048x2048' => {
+          const allowed = new Set(['1024x1024','2048x2048'] as const);
+          return rembg && rembg.operating_resolution && allowed.has(rembg.operating_resolution) ? rembg.operating_resolution : '2048x2048';
+        })(),
+        output_format: ((): 'png' | 'webp' => (rembg?.output_format === 'webp' ? 'webp' : 'png'))(),
+        refine_foreground: typeof rembg?.refine_foreground === 'boolean' ? !!rembg?.refine_foreground : true,
+        output_mask: true,
+      };
+      const res = await fetch('/api/tools/rembg', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(input) }).then(r=>r.json()).catch(()=>({}));
+      const maskImageUrl = res?.mask_image?.url || null;
+      if (!maskImageUrl) {
+        try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Cutout failed'); } catch {}
+        return;
+      }
+      
+      // Apply mask to base image client-side to save bandwidth
+      try {
+        const baseUrl = `/api/storage/file?key=${encodeURIComponent(bgKey)}`;
+        const [maskImg, baseImg] = await Promise.all([
+          new Promise<HTMLImageElement>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = maskImageUrl;
+          }),
+          new Promise<HTMLImageElement>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = baseUrl;
+          })
+        ]);
+        
+        // Create canvas and apply mask
+        const canvas = document.createElement('canvas');
+        canvas.width = baseImg.width;
+        canvas.height = baseImg.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('canvas');
+        
+        // Draw base image
+        ctx.drawImage(baseImg, 0, 0);
+        
+        // Get image data and apply mask
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        // Create temp canvas for mask
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = maskImg.width;
+        maskCanvas.height = maskImg.height;
+        const maskCtx = maskCanvas.getContext('2d');
+        if (!maskCtx) throw new Error('mask canvas');
+        maskCtx.drawImage(maskImg, 0, 0);
+        const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+        
+        // Apply mask (mask is grayscale, use red channel for alpha)
+        for (let i = 0; i < data.length; i += 4) {
+          const pixelIndex = i / 4;
+          const x = pixelIndex % canvas.width;
+          const y = Math.floor(pixelIndex / canvas.width);
+          
+          // Scale mask coordinates if dimensions differ
+          const maskX = Math.floor((x / canvas.width) * maskCanvas.width);
+          const maskY = Math.floor((y / canvas.height) * maskCanvas.height);
+          const maskPixelIndex = (maskY * maskCanvas.width + maskX) * 4;
+          
+          // Use mask's red channel as alpha (mask is grayscale)
+          data[i + 3] = maskData.data[maskPixelIndex];
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+        
+        // Convert to blob and create object URL
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((b) => b ? resolve(b) : reject(new Error('blob')), 'image/png');
+        });
+        const cutoutUrl = URL.createObjectURL(blob);
+        
+        setFgUrl(cutoutUrl);
+        setMaskUrl(maskImageUrl);
+        setHasCutout(true);
+      } catch (err) {
+        console.error('[Designer] Failed to apply mask client-side:', err);
+        // Fallback: use the cutout image from API if available
+        const fallbackCutout = res?.image?.url;
+        if (fallbackCutout) {
+          setFgUrl(fallbackCutout);
+          setMaskUrl(maskImageUrl);
+          setHasCutout(true);
+        } else {
+          try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Cutout failed'); } catch {}
+          return;
+        }
+      }
+    } catch {
+      try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Cutout failed'); } catch {}
+    } finally { setIsCuttingOut(false); }
+  }, [bgKey, rembg, isCuttingOut, hasCutout, creditDepletion]);
+
   const upscaleBackground = useCallback(async () => {
     if (upscaling) return;
     // Check credits before attempting upscale
@@ -336,6 +565,19 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
         onSelect: onTryAgain,
         section: "desktop-only",
         variant: "outline",
+      });
+    }
+    // Show cutout button only if not forced off and not already cut out
+    const canCutout = isolateCutout?.mode !== 'force_off' && !hasCutout;
+    if (canCutout) {
+      list.push({
+        key: "cutout",
+        label: isCuttingOut ? "Cutting out…" : "Cut out car",
+        onSelect: cutoutCar,
+        disabled: isCuttingOut,
+        variant: "outline",
+        loading: isCuttingOut,
+        section: "primary",
       });
     }
     list.push({
@@ -380,7 +622,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
       section: "desktop-only",
     });
     return list;
-  }, [onTryAgain, showAnimate, onAnimate, downloading, saving, upscaling, downloadComposite, downloadProject, upscaleBackground, exportCompositeBlob]);
+  }, [onTryAgain, showAnimate, onAnimate, downloading, saving, upscaling, isCuttingOut, hasCutout, isolateCutout, downloadComposite, downloadProject, upscaleBackground, cutoutCar, exportCompositeBlob]);
 
   if (busy) {
     return (
@@ -396,8 +638,51 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, onClose, onSave, saveLabe
       </div>
     );
   }
-  if (!bgUrl || !fgUrl) {
+  if (!bgUrl) {
     return <div className="p-6 text-sm text-white/70">Failed to prepare editor. Please try again.</div>;
+  }
+  
+  // Show skeleton overlay during manual cutout
+  if (isCuttingOut) {
+    return (
+      <div className="relative">
+        <div className="opacity-30 pointer-events-none">
+          <DesignerActionsProvider value={{ actions }}>
+            <LayerEditorProvider
+              initial={{
+                backgroundUrl: bgUrl,
+                backgroundBlurhash: projectState?.backgroundBlurhash || bgBlurhash || undefined,
+                carMaskUrl: fgUrl,
+                layers: projectState?.layers || [],
+                maskTranslateXPct: projectState?.maskTranslateXPct,
+                maskTranslateYPct: projectState?.maskTranslateYPct,
+                editingLayerId: undefined,
+              }}
+              onDirtyChange={(next, commit) => {
+                dirtyCommitRef.current = commit;
+                setDirty(next);
+              }}
+            >
+              <ExposeLayerState stateRef={stateRef} />
+              <LayerEditorShell
+                mobileHeaderAccessory={null}
+                toolbarDownloadButton={null}
+              />
+            </LayerEditorProvider>
+          </DesignerActionsProvider>
+        </div>
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--background)]/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-[14rem] h-[8rem] sm:w-[17.5rem] sm:h-[10.5rem]">
+              <Lottie animationData={carLoadAnimation as unknown as object} loop style={{ width: '100%', height: '100%' }} />
+            </div>
+            <div className="text-sm text-white/80 text-center px-2">
+              Cutting out your car...
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -490,6 +775,7 @@ export const Designer = React.memo(DesignerComponent, (prevProps, nextProps) => 
   return (
     prevProps.bgKey === nextProps.bgKey &&
     JSON.stringify(prevProps.rembg) === JSON.stringify(nextProps.rembg) &&
+    JSON.stringify(prevProps.isolateCutout) === JSON.stringify(nextProps.isolateCutout) &&
     prevProps.onClose === nextProps.onClose &&
     prevProps.onSave === nextProps.onSave &&
     prevProps.saveLabel === nextProps.saveLabel &&

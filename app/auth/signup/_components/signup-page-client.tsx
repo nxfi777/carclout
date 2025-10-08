@@ -88,6 +88,11 @@ function SignUpPageInner() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Sending..." : "Send magic link"}
             </Button>
+            <div className="text-[0.8rem] leading-relaxed text-[color:var(--muted-foreground)]">
+              By signing up, you agree to our <Link href="/terms" className="underline underline-offset-4">Terms</Link> and
+              {" "}
+              <Link href="/privacy" className="underline underline-offset-4">Privacy Policy</Link>.
+            </div>
             <div className="mt-3 text-center text-sm text-muted-foreground">
               Already have an account? <Link href="/auth/signin" className="text-[color:var(--primary)] hover:underline">Sign in</Link>
             </div>

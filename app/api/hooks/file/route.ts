@@ -43,6 +43,13 @@ export async function GET(req: Request) {
     if (result.ContentLength !== undefined) headers.set("Content-Length", String(result.ContentLength));
     if (range && result.ContentRange) headers.set("Content-Range", result.ContentRange);
 
+    // If download=1 query param present, set Content-Disposition to attachment to force download
+    const dl = url.searchParams.get('download');
+    if (dl) {
+      const filename = keyRaw.split('/').pop() || 'file';
+      headers.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    }
+
     const status = range ? 206 : 200;
     return new Response(stream, { status, headers });
   } catch {

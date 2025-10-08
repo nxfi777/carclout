@@ -32,6 +32,11 @@ type TemplateDoc = {
     refine_foreground?: boolean;
     output_mask?: boolean;
   } | null;
+  // Isolate car: remove background and use black backdrop before generation
+  isolateCar?: {
+    mode: 'user_choice' | 'force_on' | 'force_off'; // How to handle background removal
+    defaultEnabled?: boolean; // Default state when mode is 'user_choice'
+  } | null;
   designerDefaults?: {
     headline?: string | null;
   } | null;

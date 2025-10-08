@@ -87,6 +87,13 @@ type TemplateDisplay = {
   designerDefaults?: {
     headline?: string | null;
   } | null;
+  isolateCar?: {
+    mode?: 'user_choice' | 'force_on' | 'force_off';
+    defaultEnabled?: boolean;
+  } | null;
+  designerCutout?: {
+    mode?: 'user_choice' | 'force_on' | 'force_off';
+  } | null;
 };
 
 type ChatProfile = {
@@ -137,6 +144,13 @@ type CreateTemplatePayload = {
   } | null;
   designerDefaults?: {
     headline?: string | null;
+  } | null;
+  isolateCar?: {
+    mode: 'user_choice' | 'force_on' | 'force_off';
+    defaultEnabled?: boolean;
+  } | null;
+  designerCutout?: {
+    mode: 'user_choice' | 'force_on' | 'force_off';
   } | null;
 };
 
@@ -1070,6 +1084,10 @@ function NewTemplateButton(){
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>('');
   const [busy, setBusy] = useState(false);
   const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>({ enabled: false, prompt: '', duration: '5', resolution: '1080p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, previewKey: null });
+  const [isolateCarMode, setIsolateCarMode] = useState<'user_choice' | 'force_on' | 'force_off'>('force_on');
+  const [isolateCarDefault, setIsolateCarDefault] = useState<boolean>(true);
+  const [designerCutoutMode, setDesignerCutoutMode] = useState<'user_choice' | 'force_on' | 'force_off'>('force_off');
+  const [_designerCutoutDefault, _setDesignerCutoutDefault] = useState<boolean>(false);
   const [showWarningDialog, setShowWarningDialog] = useState(false);
   const [missingItems, setMissingItems] = useState<string[]>([]);
   async function uploadAdmin(file: File, subfolder: string): Promise<string | null> {
@@ -1248,6 +1266,8 @@ function NewTemplateButton(){
           return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined;
         })(),
         video: (videoCfg || undefined),
+        isolateCar: { mode: isolateCarMode, defaultEnabled: isolateCarMode === 'user_choice' ? isolateCarDefault : undefined },
+        designerCutout: { mode: designerCutoutMode },
       } as unknown as CreateTemplatePayload;
       if (proOnly) payload.proOnly = true;
       payload.status = status;
@@ -1255,7 +1275,7 @@ function NewTemplateButton(){
       const res = await fetch('/api/templates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       if (!res.ok) { const data = await res.json().catch(()=>({})); toast.error(data?.error || 'Failed to create template'); return; }
       setOpen(false); setName(""); setDescription(""); setPrompt(""); setFalModelSlug("fal-ai/gemini-25-flash-image/edit"); setThumbnailFile(null); setAdminImageFiles([]); setAllowVehicle(true); setAllowUser(true); setImageWidth(1280); setImageHeight(1280); setImageSizeEdited(false); setMaxUploadImages('');
-      setProOnly(false); setStatus('draft');
+      setProOnly(false); setStatus('draft'); setIsolateCarMode('force_on'); setIsolateCarDefault(true);
       try { const ev = new CustomEvent('admin:templates:created'); window.dispatchEvent(ev); } catch {}
     } finally { setBusy(false); }
   }
@@ -1263,7 +1283,7 @@ function NewTemplateButton(){
     <>
       <Button size="sm" onClick={()=>setOpen(true)}>New Template</Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="sm:max-w-6xl">
           <DialogHeader>
             <DialogTitle>Create template</DialogTitle>
           </DialogHeader>
@@ -1434,6 +1454,48 @@ function NewTemplateButton(){
           </div>
           {/* Video generation config (shared component) */}
           <AdminTemplateVideo value={videoCfg as AdminVideoConfig} onChange={(next)=> setVideoCfg(next as AdminVideoConfig)} />
+          
+          {/* Isolate mask config */}
+          <div className="space-y-2 p-3 border border-[color:var(--border)] rounded">
+            <div className="text-sm font-medium">Isolate Mask (Pre-Generation)</div>
+            <div className="space-y-2">
+              <Select value={isolateCarMode} onValueChange={(v: 'user_choice' | 'force_on' | 'force_off')=> setIsolateCarMode(v)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Choose mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="force_on">Always ON (forced)</SelectItem>
+                  <SelectItem value="force_off">Always OFF (disabled)</SelectItem>
+                  <SelectItem value="user_choice">Let users choose</SelectItem>
+                </SelectContent>
+              </Select>
+              {isolateCarMode === 'user_choice' && (
+                <div className="flex items-center gap-2 ml-4">
+                  <input type="checkbox" id="isolate-car-default" checked={isolateCarDefault} onChange={(e)=> setIsolateCarDefault(e.target.checked)} className="h-4 w-4" />
+                  <label htmlFor="isolate-car-default" className="text-sm">Default to ON</label>
+                </div>
+              )}
+            </div>
+            <div className="text-xs text-white/60">Removes background and places car on black before generation (costs 10 credits). &apos;Force ON&apos; always applies it, &apos;Force OFF&apos; disables it, &apos;Let users choose&apos; shows a toggle.</div>
+          </div>
+          
+          {/* Designer cutout config */}
+          <div className="space-y-2 p-3 border border-[color:var(--border)] rounded">
+            <div className="text-sm font-medium">Designer Background Removal</div>
+            <div className="space-y-2">
+              <Select value={designerCutoutMode} onValueChange={(v: 'user_choice' | 'force_on' | 'force_off')=> setDesignerCutoutMode(v)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Choose mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="force_on">Always ON (auto-cutout)</SelectItem>
+                  <SelectItem value="force_off">Always OFF (no cutout)</SelectItem>
+                  <SelectItem value="user_choice">Let users choose</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-xs text-white/60">Controls car cutout when entering the designer for adding text/graphics (costs 10 credits per cutout). If &apos;Let users choose&apos;, starts OFF and user can toggle on/off. Masks are cached so users don&apos;t pay twice for the same image.</div>
+          </div>
           
           <DialogFooter>
             <Button size="sm" onClick={validateAndSave} disabled={busy}>{busy? 'Saving…' : 'Save'}</Button>
@@ -1633,7 +1695,7 @@ function TemplatesTab() {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="sm:max-w-6xl">
           <DialogHeader>
             <DialogTitle>{active?.name || 'Template'}</DialogTitle>
           </DialogHeader>
@@ -2097,6 +2159,9 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   const [maxUploadImages, setMaxUploadImages] = useState<number | ''>(()=>{ try { const n = Number(template?.maxUploadImages || 0); return Number.isFinite(n) && n>0 ? n : ''; } catch { return ''; } });
   
   const [videoCfg, setVideoCfg] = useState<AdminVideoConfig | null>(template?.video as unknown as AdminVideoConfig || null);
+  const [isolateCarMode, setIsolateCarMode] = useState<'user_choice' | 'force_on' | 'force_off'>('force_on');
+  const [isolateCarDefault, setIsolateCarDefault] = useState<boolean>(true);
+  const [designerCutoutMode, setDesignerCutoutMode] = useState<'user_choice' | 'force_on' | 'force_off'>('force_off');
   const [showWarningDialog, setShowWarningDialog] = useState(false);
   const [missingItems, setMissingItems] = useState<string[]>([]);
   // Images editing state
@@ -2243,6 +2308,24 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     setStatus((template?.status === 'draft' || template?.status === 'public') ? template.status : 'draft');
     try { const n = Number(template?.maxUploadImages || 0); setMaxUploadImages(Number.isFinite(n) && n>0 ? n : ''); } catch {}
     try { setVideoCfg(template?.video as unknown as AdminVideoConfig || null); } catch {}
+    try {
+      const isolate = template?.isolateCar as { mode?: 'user_choice' | 'force_on' | 'force_off'; defaultEnabled?: boolean } | null | undefined;
+      if (isolate) {
+        setIsolateCarMode(isolate.mode || 'force_on');
+        setIsolateCarDefault(isolate.defaultEnabled ?? true);
+      } else {
+        setIsolateCarMode('force_on');
+        setIsolateCarDefault(true);
+      }
+    } catch {}
+    try {
+      const designerCfg = template?.designerCutout as { mode?: 'user_choice' | 'force_on' | 'force_off' } | null | undefined;
+      if (designerCfg) {
+        setDesignerCutoutMode(designerCfg.mode || 'force_off');
+      } else {
+        setDesignerCutoutMode('force_off');
+      }
+    } catch {}
   }, [template]);
 
   // Detect unknown tokens from prompt and seed/edit token configs
@@ -2393,6 +2476,8 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
           return Number.isFinite(n) && n > 0 ? Math.min(25, Math.round(n)) : undefined;
         })(),
         video: (videoCfg as unknown),
+        isolateCar: { mode: isolateCarMode, defaultEnabled: isolateCarMode === 'user_choice' ? isolateCarDefault : undefined },
+        designerCutout: { mode: designerCutoutMode },
       };
       // Include admin images update
       body.adminImageKeys = nextAdminKeys;
@@ -2530,6 +2615,49 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       <AdminTemplateVideo value={videoCfg as AdminVideoConfig} onChange={(next)=>{
         try { setVideoCfg(next as AdminVideoConfig); } catch {}
       }} />
+      
+       {/* Isolate mask config */}
+       <div className="space-y-2 p-3 border border-[color:var(--border)] rounded">
+         <div className="text-sm font-medium">Isolate Mask (Pre-Generation)</div>
+         <div className="space-y-2">
+           <Select value={isolateCarMode} onValueChange={(v: 'user_choice' | 'force_on' | 'force_off')=> setIsolateCarMode(v)}>
+             <SelectTrigger className="h-9">
+               <SelectValue placeholder="Choose mode" />
+             </SelectTrigger>
+             <SelectContent>
+               <SelectItem value="force_on">Always ON (forced)</SelectItem>
+               <SelectItem value="force_off">Always OFF (disabled)</SelectItem>
+               <SelectItem value="user_choice">Let users choose</SelectItem>
+             </SelectContent>
+           </Select>
+           {isolateCarMode === 'user_choice' && (
+             <div className="flex items-center gap-2 ml-4">
+               <input type="checkbox" id="isolate-car-default-edit" checked={isolateCarDefault} onChange={(e)=> setIsolateCarDefault(e.target.checked)} className="h-4 w-4" />
+               <label htmlFor="isolate-car-default-edit" className="text-sm">Default to ON</label>
+             </div>
+           )}
+         </div>
+         <div className="text-xs text-white/60">Removes background before generation (costs 10 credits, separate from designer cutout). &apos;Force ON&apos; always applies it, &apos;Force OFF&apos; disables it, &apos;Let users choose&apos; shows a toggle.</div>
+       </div>
+       
+       {/* Designer cutout config */}
+       <div className="space-y-2 p-3 border border-[color:var(--border)] rounded">
+         <div className="text-sm font-medium">Designer Background Removal</div>
+         <div className="space-y-2">
+           <Select value={designerCutoutMode} onValueChange={(v: 'user_choice' | 'force_on' | 'force_off')=> setDesignerCutoutMode(v)}>
+             <SelectTrigger className="h-9">
+               <SelectValue placeholder="Choose mode" />
+             </SelectTrigger>
+             <SelectContent>
+               <SelectItem value="force_on">Always ON (auto-cutout)</SelectItem>
+               <SelectItem value="force_off">Always OFF (no cutout)</SelectItem>
+               <SelectItem value="user_choice">Let users choose</SelectItem>
+             </SelectContent>
+           </Select>
+         </div>
+         <div className="text-xs text-white/60">Controls car cutout when entering the designer for adding text/graphics (costs 10 credits per cutout). If &apos;Let users choose&apos;, starts OFF and user can toggle on/off. Masks are cached so users don&apos;t pay twice for the same image.</div>
+       </div>
+      
       <div className="flex items-center justify-between gap-2">
         <div className="space-y-1">
           <div className="text-sm font-medium">Required images</div>

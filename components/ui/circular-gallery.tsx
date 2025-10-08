@@ -291,10 +291,11 @@ export default function CircularGallery({ items, bend=3, showTitles=false }: { i
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent>
-            <ContextMenuItem onClick={async()=>{
+            <ContextMenuItem onClick={()=>{
               try{
                 const baseIndex = ((hoverIndex % items.length) + items.length) % items.length; const src = items[baseIndex]?.videoUrl; if(!src) return;
-                const res = await fetch(src, { cache: 'no-store' }); const blob = await res.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${items[baseIndex]?.text || 'hook'}.mp4`.replace(/[^a-z0-9_.-]+/gi,'_'); document.body.appendChild(a); a.click(); setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
+                const downloadUrl = src.includes('?') ? `${src}&download=1` : `${src}?download=1`;
+                const a=document.createElement('a'); a.href=downloadUrl; a.download=`${items[baseIndex]?.text || 'hook'}.mp4`.replace(/[^a-z0-9_.-]+/gi,'_'); document.body.appendChild(a); a.click(); setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 100);
               }catch{}
             }}>Download video</ContextMenuItem>
           </ContextMenuContent>

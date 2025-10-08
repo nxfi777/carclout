@@ -79,18 +79,17 @@ const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, canPl
     });
   }, [onHoverStart, canPlayWithSound, videoUrl, muted]);
 
-  async function handleDownload() {
+  function handleDownload() {
     try {
       if (!videoUrl) return;
       const safeName = `${label || 'hook'}.mp4`.replace(/[^a-z0-9_.-]+/gi, '_');
-      const res = await fetch(videoUrl, { cache: 'no-store' });
-      const blob = await res.blob();
+      const downloadUrl = videoUrl.includes('?') ? `${videoUrl}&download=1` : `${videoUrl}?download=1`;
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = downloadUrl;
       a.download = safeName;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => { try { URL.revokeObjectURL(a.href); document.body.removeChild(a); } catch {} }, 1000);
+      setTimeout(() => { try { document.body.removeChild(a); } catch {} }, 100);
     } catch {}
   }
 

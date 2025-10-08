@@ -20,6 +20,12 @@ export default function SiteFooter() {
         </div>
 
         <div className="my-[1rem] flex flex-wrap justify-center gap-4 text-sm">
+          <Link href="/terms" className="text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors duration-300 underline-offset-4 hover:underline">Terms</Link>
+          <Link href="/privacy" className="text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors duration-300 underline-offset-4 hover:underline">Privacy</Link>
+          <Link href="/faq" className="text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors duration-300 underline-offset-4 hover:underline">FAQ</Link>
+        </div>
+
+        <div className="mb-[1rem] flex flex-wrap justify-center gap-4 text-sm">
           {socialLinks.map((s) => (
             <a
               key={s.name}

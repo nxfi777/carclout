@@ -45,7 +45,7 @@ export default function HeaderDock() {
         { icon: <LayoutTemplate size={16} />, label: 'Templates', href: qp('templates'), onClick: () => router.push(qp('templates')) },
         { icon: <Music2 size={16} />, label: 'Music', href: qp('music'), onClick: () => router.push(qp('music')) },
         { icon: <Wrench size={16} />, label: 'Moderation', href: qp('moderation'), onClick: () => router.push(qp('moderation')) },
-        { icon: <Folder size={16} />, label: 'Workspace', href: qp('workspace'), onClick: () => router.push(qp('workspace')) },
+        { icon: <Folder size={16} />, label: 'Admin Workspace', href: qp('workspace'), onClick: () => router.push(qp('workspace')) },
       ];
     }
     return [];

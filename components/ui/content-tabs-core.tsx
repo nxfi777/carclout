@@ -16,6 +16,7 @@ import type { Vehicle } from '@/components/vehicles-editor';
 // import CircularGallery from '@/components/ui/circular-gallery';
 import ThreeDCarousel from '@/components/ui/three-d-carousel';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import dynamic from 'next/dynamic';
 import carLoadAnimation from '@/public/carload.json';
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
@@ -44,18 +45,18 @@ export function HooksTabContent() {
   const [downloadIdx, setDownloadIdx] = useState<number | null>(null);
   const [playerIdx, setPlayerIdx] = useState<number | null>(null);
 
-  async function downloadVideo(url?: string, name?: string) {
+  function downloadVideo(url?: string, name?: string) {
     try {
       if (!url) return;
       const safeName = (name || 'hook').replace(/[^a-z0-9_.-]+/gi, '_');
-      const res = await fetch(url, { cache: 'no-store' });
-      const blob = await res.blob();
+      // Add download parameter to the URL
+      const downloadUrl = url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = downloadUrl;
       a.download = `${safeName}.mp4`;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => { try { URL.revokeObjectURL(a.href); document.body.removeChild(a); } catch {} }, 1000);
+      setTimeout(() => { try { document.body.removeChild(a); } catch {} }, 100);
     } catch {}
   }
 
@@ -164,12 +165,13 @@ export function HooksTabContent() {
     return (
       <div className="w-full h-full min-h-[65vh]">
         <div className="px-6 pt-1 pb-2">
-          <Button size="sm" variant="outline" className="h-9 w-full text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={async()=>{
+          <Button size="sm" variant="outline" className="h-9 w-full text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={()=>{
             try{
               const list = (items || []).filter(it=>it.videoUrl);
               for(let i=0;i<list.length;i++){
                 const it=list[i]!; const url = it.videoUrl as string; const name = `${it.text || `hook-${i+1}`}.mp4`;
-                const res = await fetch(url, { cache: 'no-store' }); const blob = await res.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name.replace(/[^a-z0-9_.-]+/gi,'_'); document.body.appendChild(a); a.click(); setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
+                const downloadUrl = url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
+                const a=document.createElement('a'); a.href=downloadUrl; a.download=name.replace(/[^a-z0-9_.-]+/gi,'_'); document.body.appendChild(a); a.click(); setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 100);
               }
             } catch {}
           }}>Download All</Button>
@@ -291,12 +293,13 @@ export function HooksTabContent() {
   return (
     <div className="w-full h-full min-h-[65vh]">
       <div className="flex items-center justify-end mb-2">
-        <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={async()=>{
+        <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={()=>{
           try{
             const list = (items || []).filter(it=>it.videoUrl);
             for(let i=0;i<list.length;i++){
               const it=list[i]!; const url = it.videoUrl as string; const name = `${it.text || `hook-${i+1}`}.mp4`;
-              const res = await fetch(url, { cache: 'no-store' }); const blob = await res.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name.replace(/[^a-z0-9_.-]+/gi,'_'); document.body.appendChild(a); a.click(); setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
+              const downloadUrl = url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
+              const a=document.createElement('a'); a.href=downloadUrl; a.download=name.replace(/[^a-z0-9_.-]+/gi,'_'); document.body.appendChild(a); a.click(); setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 100);
             }
           } catch {}
         }}>Download All</Button>
@@ -575,6 +578,13 @@ type Template = {
     fps?: number;
     provider?: 'seedance'|'kling2_5';
   } | null;
+  isolateCar?: {
+    mode?: 'user_choice' | 'force_on' | 'force_off';
+    defaultEnabled?: boolean;
+  } | null;
+  designerCutout?: {
+    mode?: 'user_choice' | 'force_on' | 'force_off';
+  } | null;
 };
 
 export function TemplatesTabContent(){
@@ -593,6 +603,7 @@ export function TemplatesTabContent(){
   const [vehiclePhotos, setVehiclePhotos] = useState<string[]>([]);
   const [profileVehicles, setProfileVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicleKey, setSelectedVehicleKey] = useState<string | null>(null);
+  const [vehicleBlurhashes, setVehicleBlurhashes] = useState<Record<string, { blurhash?: string; width?: number; height?: number }>>({});
   const [_browsePath] = useState<string>("");
   const [browseSelected, setBrowseSelected] = useState<string | null>(null);
   const [selectedImageKeys, setSelectedImageKeys] = useState<string[]>([]);
@@ -628,6 +639,7 @@ export function TemplatesTabContent(){
   const deeplinkedRef = useRef<boolean>(false);
   const animPendingBlobRef = useRef<Blob | null>(null);
   const [animHasPending, setAnimHasPending] = useState(false);
+  const [isolateCar, setIsolateCar] = useState(true); // Default to force_on
 
   // Credit depletion drawer hook
   const creditDepletion = useCreditDepletion();
@@ -795,6 +807,64 @@ export function TemplatesTabContent(){
           if (typeof window !== 'undefined') { for (const [k,u] of Object.entries(urls)) { try { sessionStorage.setItem(`carclout:veh:${k}`, JSON.stringify({ url: u, ts: now })); } catch {} } }
         }
         } catch {}
+        // Fetch blurhashes for vehicle photos
+        try {
+          if (keys.length) {
+            const res = await fetch('/api/storage/vehicle-blurhashes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ keys }),
+              cache: 'no-store',
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.blurhashes) {
+                setVehicleBlurhashes(data.blurhashes);
+                
+                // Backfill missing blurhashes asynchronously
+                const missingKeys = keys.filter(k => !data.blurhashes[k]?.blurhash);
+                if (missingKeys.length > 0) {
+                  console.log(`[vehicle-blurhash-backfill] Starting backfill for ${missingKeys.length} vehicle photos`);
+                  
+                  // Backfill one at a time with delay to avoid overload
+                  (async () => {
+                    for (const key of missingKeys) {
+                      try {
+                        const backfillRes = await fetch('/api/storage/generate-vehicle-blurhash-backfill', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ key }),
+                        });
+                        
+                        if (backfillRes.ok) {
+                          const backfillData = await backfillRes.json();
+                          if (backfillData?.success && backfillData?.blurhash) {
+                            console.log(`[vehicle-blurhash-backfill] Generated blurhash for ${key}`);
+                            setVehicleBlurhashes(prev => ({
+                              ...prev,
+                              [key]: {
+                                blurhash: backfillData.blurhash,
+                                width: backfillData.width,
+                                height: backfillData.height,
+                              }
+                            }));
+                          }
+                        }
+                      } catch (error) {
+                        console.error(`[vehicle-blurhash-backfill] Failed for ${key}:`, error);
+                      }
+                      
+                      // Delay between requests to avoid overwhelming the server
+                      await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                  })();
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[vehicle-blurhash] Failed to fetch blurhashes:', error);
+        }
       } catch {}
     })();
     return ()=>{cancelled=true};
@@ -1131,6 +1201,16 @@ export function TemplatesTabContent(){
   // Build dynamic variable fields from template
   const activeTemplate = useMemo(()=> items.find((t)=> t.id === active?.id || t.slug === active?.slug), [items, active]);
   
+  // Helper to compute actual isolateCar value based on template config
+  const getActualIsolateCar = useCallback(() => {
+    const cfg = (activeTemplate as unknown as { isolateCar?: { mode?: 'user_choice' | 'force_on' | 'force_off'; defaultEnabled?: boolean } })?.isolateCar;
+    // Default to ON if config is undefined, otherwise respect the mode setting
+    return cfg?.mode === 'force_off' ? false : // explicitly force off
+           cfg?.mode === 'force_on' ? true : // explicitly force on
+           cfg?.mode === 'user_choice' ? isolateCar : // user choice (respects toggle state)
+           true; // default (no config or undefined mode) = ON
+  }, [activeTemplate, isolateCar]);
+  
   // Stable callbacks for Designer component
   const handleDesignerClose = useCallback(() => {
     setDesignOpen(false);
@@ -1168,13 +1248,19 @@ export function TemplatesTabContent(){
       setAnimCredits(undefined as unknown as number);
       setAnimResultUrl(null);
       setAnimResultKey(null);
-      const blob = await getBlob();
-      if (!blob) {
+      setAnimHasPending(false); // Start as false while preparing
+      
+      // Prepare blob asynchronously without blocking
+      getBlob().then((blob) => {
+        if (!blob) {
+          setAnimConfirmOpen(false);
+          return;
+        }
+        animPendingBlobRef.current = blob;
+        setAnimHasPending(true);
+      }).catch(() => {
         setAnimConfirmOpen(false);
-        return;
-      }
-      animPendingBlobRef.current = blob;
-      setAnimHasPending(true);
+      });
     } catch {}
   }, []);
 
@@ -1195,7 +1281,21 @@ export function TemplatesTabContent(){
   useEffect(()=>{
     sessionRef.current += 1;
     resetTemplateSession();
-  }, [active?.id, active?.slug]);
+    // Set isolateCar based on template configuration
+    const isolateCarCfg = (activeTemplate as unknown as { isolateCar?: { mode?: 'user_choice' | 'force_on' | 'force_off'; defaultEnabled?: boolean } })?.isolateCar;
+    if (isolateCarCfg) {
+      if (isolateCarCfg.mode === 'force_on') {
+        setIsolateCar(true);
+      } else if (isolateCarCfg.mode === 'force_off') {
+        setIsolateCar(false);
+      } else if (isolateCarCfg.mode === 'user_choice') {
+        setIsolateCar(isolateCarCfg.defaultEnabled !== false);
+      }
+    } else {
+      // No config - default to force_on for backwards compatibility
+      setIsolateCar(true);
+    }
+  }, [active?.id, active?.slug, activeTemplate]);
 
   // Prefill defaults for color variables from template definitions (without overriding user input)
   useEffect(()=>{
@@ -1307,7 +1407,7 @@ export function TemplatesTabContent(){
       const val = varState[key] || '';
       if (val) variables[key] = val;
     }
-    const payload = { templateId: active?.id, templateSlug: active?.slug, userImageDataUrls: [dataUrl], variables } as Record<string, unknown>;
+    const payload = { templateId: active?.id, templateSlug: active?.slug, userImageDataUrls: [dataUrl], variables, isolateCar: getActualIsolateCar() } as Record<string, unknown>;
     const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     let data: Record<string, unknown> = {}; try { data = await res.json(); } catch { data = {}; }
     if (!res.ok) { toast.error(String((data as { error?: string }).error || 'Generation failed')); return; }
@@ -1361,8 +1461,11 @@ export function TemplatesTabContent(){
       });
 
       // Aspect ratio enforcement based on active template
+      // Skip if isolate mask is on - the backend will handle cropping based on BiRefNet bounding box
+      const willIsolateCar = getActualIsolateCar();
+      
       const t = activeTemplate;
-      if (t?.fixedAspectRatio && typeof t?.aspectRatio === 'number' && selectedFullKey) {
+      if (t?.fixedAspectRatio && typeof t?.aspectRatio === 'number' && selectedFullKey && !willIsolateCar) {
         try {
           const url: string | null = await getViewUrl(selectedFullKey);
           if (url) {
@@ -1421,11 +1524,19 @@ export function TemplatesTabContent(){
         const key = String(vDef?.key || '').trim();
         if (!key) continue;
         const val = varState[key] || '';
-        if (val) variables[key] = val;
+        // If no value provided but there's a defaultValue, use it (especially for color fields)
+        if (val) {
+          variables[key] = val;
+        } else if (vDef?.defaultValue !== undefined && vDef?.defaultValue !== null && vDef?.defaultValue !== '') {
+          variables[key] = String(vDef.defaultValue);
+        } else if (vDef?.type === 'color') {
+          // For color fields without explicit default, use white
+          variables[key] = '#ffffff';
+        }
       }
       // Now we actually start generating: show busy UI
       setBusy(true);
-      const payload = { templateId: active.id, templateSlug: active.slug, userImageKeys, variables };
+      const payload = { templateId: active.id, templateSlug: active.slug, userImageKeys, variables, isolateCar: getActualIsolateCar() };
       const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       let d: unknown = {};
       try { d = await res.json(); } catch { d = {}; }
@@ -1491,7 +1602,7 @@ export function TemplatesTabContent(){
             onMouseEnter={()=> setChevHover(true)}
             onMouseLeave={()=> setChevHover(false)}
           >
-            Recent images
+            My library
             <motion.span
               className="inline-flex"
               animate={chevHover ? { x: [0, 6, 0] } : { x: 0 }}
@@ -1570,12 +1681,69 @@ export function TemplatesTabContent(){
                           size="sm" 
                           variant="outline" 
                           className="h-9 px-4 text-sm border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 flex-1 sm:flex-none min-w-[7rem]"
-                          onClick={()=>{
-                            // All users can upscale videos
-                            toast.message('Video upscale coming soon');
+                          disabled={upscaleBusy}
+                          onClick={async()=>{
+                            // Check if upscaled version already exists
+                            try {
+                              const fileName = String(animResultKey).split('/').pop() || '';
+                              const baseName = fileName.replace(/\.[^.]+$/, '');
+                              const checkRes = await fetch('/api/storage/list?path=library');
+                              const checkData = await checkRes.json().catch(() => ({ items: [] }));
+                              const items = Array.isArray(checkData?.items) ? checkData.items : [];
+                              const hasUpscaled = items.some((item: { name?: string }) => 
+                                item.name && 
+                                (item.name.includes(`upscaled-${baseName}`) || 
+                                 item.name.includes(`${baseName}-upscaled`) ||
+                                 (item.name.startsWith('upscaled') && item.name.includes(baseName)))
+                              );
+                              
+                              if (hasUpscaled) {
+                                const confirmed = await confirmToast({
+                                  title: 'Upscaled version exists',
+                                  message: 'An upscaled version of this video already exists in your library. Upscale again?'
+                                });
+                                if (!confirmed) return;
+                              }
+                            } catch (e) {
+                              console.error('Error checking for existing upscale:', e);
+                            }
+                            
+                            setUpscaleBusy(true);
+                            try {
+                              const res = await fetch('/api/tools/video-upscale', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ r2_key: animResultKey })
+                              });
+                              const data = await res.json().catch(() => ({}));
+                              
+                              if (res.status === 402) {
+                                toast.error('Not enough credits. Top up in Billing.');
+                                setUpscaleBusy(false);
+                                return;
+                              }
+                              if (res.status === 400) {
+                                toast.error(data?.error || 'Video upscale failed');
+                                setUpscaleBusy(false);
+                                return;
+                              }
+                              if (!res.ok || !data?.key) {
+                                toast.error(data?.error || 'Video upscale failed');
+                                setUpscaleBusy(false);
+                                return;
+                              }
+                              
+                              // Keep modal open, show success message
+                              toast.success('Video is being upscaled! It will appear in your library soon.');
+                              // Keep upscaleBusy true to show loading state
+                            } catch (e) {
+                              console.error('Video upscale error:', e);
+                              toast.error('Video upscale failed');
+                              setUpscaleBusy(false);
+                            }
                           }}
                         >
-                          Upscale
+                          {upscaleBusy ? 'Upscaling...' : 'Upscale'}
                         </Button>
                       ) : null}
                       {/* Smooth (60fps) button - available for all users with indigo styling */}
@@ -1604,16 +1772,17 @@ export function TemplatesTabContent(){
                           toast.success('Deleted');
                         } catch { toast.error('Delete failed'); }
                       }}>Delete</Button>
-                      <Button className="flex-1 sm:flex-none min-w-[9rem]" onClick={async()=>{
+                      <Button className="flex-1 sm:flex-none min-w-[9rem]" onClick={()=>{
                         try {
-                          const r = await fetch(String(animResultUrl), { cache:'no-store' });
-                          const blob = await r.blob();
+                          if (!animResultKey) return;
+                          const filename = animResultKey.split('/').pop() || `video-${Date.now()}.mp4`;
+                          const downloadUrl = `/api/storage/file?key=${encodeURIComponent(animResultKey)}&download=1`;
                           const a = document.createElement('a');
-                          a.href = URL.createObjectURL(blob);
-                          a.download = `video-${Date.now()}.mp4`;
+                          a.href = downloadUrl;
+                          a.download = filename;
                           document.body.appendChild(a);
                           a.click();
-                          setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); document.body.removeChild(a);}catch{} }, 1000);
+                          setTimeout(()=>{ try{ document.body.removeChild(a);}catch{} }, 100);
                         } catch {}
                       }}>Download</Button>
                     </div>
@@ -1624,6 +1793,11 @@ export function TemplatesTabContent(){
                   <Designer
                     bgKey={String((activeKey || resultKey) || '')}
                     rembg={{ enabled: true }}
+                    isolateCutout={(() => {
+                      const cfg = activeTemplate?.designerCutout as { mode?: 'user_choice' | 'force_on' | 'force_off' } | null | undefined;
+                      if (!cfg) return { mode: 'force_off' }; // Default OFF for backwards compatibility  
+                      return { mode: cfg.mode || 'force_off', defaultEnabled: false }; // user_choice always starts OFF
+                    })()}
                     closeOnDownload={false}
                     onClose={handleDesignerClose}
                     onTryAgain={handleDesignerTryAgain}
@@ -1655,8 +1829,11 @@ export function TemplatesTabContent(){
                       </DialogHeader>
                       <div className="space-y-3">
                         <div className="text-sm text-white/80">Generate a short video from your current canvas.</div>
-                        {animBusy ? (
-                          <div className="text-xs text-white/60">Preparing start frame…</div>
+                        {!animHasPending && !animBusy ? (
+                          <div className="flex items-center gap-2 text-xs text-white/60">
+                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                            <span>Preparing canvas...</span>
+                          </div>
                         ) : null}
                         {(() => {
                           const PROVIDER_DURATION_OPTIONS: Record<'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro', ReadonlyArray<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>> = {
@@ -1824,6 +2001,32 @@ export function TemplatesTabContent(){
                     const bal = await getCredits();
                     const insufficientCredits = creditDepletion.checkAndTrigger(bal, 20);
                     if (insufficientCredits) return;
+                    
+                    // Check if upscaled version already exists
+                    try {
+                      const fileName = String(resultKey).split('/').pop() || '';
+                      const baseName = fileName.replace(/\.[^.]+$/, '');
+                      const checkRes = await fetch('/api/storage/list?path=library');
+                      const checkData = await checkRes.json().catch(() => ({ items: [] }));
+                      const items = Array.isArray(checkData?.items) ? checkData.items : [];
+                      const hasUpscaled = items.some((item: { name?: string }) => 
+                        item.name && 
+                        (item.name.includes(`${baseName}-upscaled-`) || 
+                         item.name.includes(`upscaled-${baseName}`) ||
+                         (item.name.includes(baseName) && item.name.includes('upscaled')))
+                      );
+                      
+                      if (hasUpscaled) {
+                        const confirmed = await confirmToast({
+                          title: 'Upscaled version exists',
+                          message: 'An upscaled version of this image already exists in your library. Upscale again?'
+                        });
+                        if (!confirmed) return;
+                      }
+                    } catch (e) {
+                      console.error('Error checking for existing upscale:', e);
+                    }
+                    
                     setUpscaleBusy(true);
                     try {
                       // Try to offer better estimate by fetching current image dimensions
@@ -1847,7 +2050,7 @@ export function TemplatesTabContent(){
                       setActiveKey(entry.key);
                       setActiveUrl(entry.url);
                     } finally { setUpscaleBusy(false); }
-                  }}>{upscales.length ? 'Upscale again' : `Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                  }}>{upscales.length ? 'Upscale again' : 'Upscale'}
                   </Button>
                   <Button className="flex-1 sm:flex-none min-w-[9rem]" onClick={async()=>{
                   try {
@@ -2016,12 +2219,28 @@ export function TemplatesTabContent(){
                             )}
                             <div className="overflow-visible sm:overflow-x-auto">
                               <div className="flex flex-wrap gap-3 pb-2">
-                                {vehiclePhotos.length ? vehiclePhotos.map((k)=> (
+                                {vehiclePhotos.length ? vehiclePhotos.map((k)=> {
+                                  const imgUrl = (() => { try { const c = typeof window!== 'undefined' ? sessionStorage.getItem(`carclout:veh:${k}`) : null; if (c) { const obj = JSON.parse(c) as { url?: string }; if (obj?.url) return obj.url; } } catch {} return undefined; })();
+                                  const blurhashData = vehicleBlurhashes[k];
+                                  return (
                                   <button key={k} onClick={()=>{ setSource('vehicle'); setSelectedVehicleKey(k); toggleSelect(k); }} className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
                                     <div className={`w-full rounded p-0.5 ${selectedImageKeys.includes(k) ? 'bg-primary' : 'bg-[color:var(--border)]'}`}>
                                       <div className="rounded overflow-hidden relative bg-black/20">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img src={(() => { try { const c = typeof window!== 'undefined' ? sessionStorage.getItem(`carclout:veh:${k}`) : null; if (c) { const obj = JSON.parse(c) as { url?: string }; if (obj?.url) return obj.url; } } catch {} return ''; })()} alt="vehicle" className="w-full h-auto object-contain cursor-pointer" />
+                                        {imgUrl ? (
+                                          <BlurhashImage 
+                                            src={imgUrl}
+                                            alt="vehicle"
+                                            width={blurhashData?.width || 400}
+                                            height={blurhashData?.height || 300}
+                                            className="w-full h-auto object-contain cursor-pointer"
+                                            blurhash={blurhashData?.blurhash}
+                                            fallbackBlur="cardGradient"
+                                            showSkeleton={true}
+                                            fuseSkeleton={true}
+                                          />
+                                        ) : (
+                                          <div className="w-full aspect-[4/3] bg-black/20" />
+                                        )}
                                         <span className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`} onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error('Deselect an image first'); } catch {} return; } setSource('vehicle'); setSelectedVehicleKey(k); toggleSelect(k); }}>
                                           <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
                                             {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
@@ -2030,7 +2249,7 @@ export function TemplatesTabContent(){
                                       </div>
                                     </div>
                                   </button>
-                                )) : (
+                                );}) : (
                                   <div className="text-sm text-white/60">No vehicle photos found. Upload in profile.</div>
                                 )}
                               </div>
@@ -2218,7 +2437,7 @@ export function TemplatesTabContent(){
                       const val = varState[key] || '';
                       if (val) variables[key] = val;
                     }
-                    const payload = { templateId: active?.id, templateSlug: active?.slug, userImageKeys: pendingKeys || [], userImageDataUrls: [dataUrl], variables } as Record<string, unknown>;
+                    const payload = { templateId: active?.id, templateSlug: active?.slug, userImageKeys: pendingKeys || [], userImageDataUrls: [dataUrl], variables, isolateCar: getActualIsolateCar() } as Record<string, unknown>;
                     const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
                     let data: Record<string, unknown> = {}; try { data = await res.json(); } catch { data = {}; }
                     if (!res.ok) { toast.error(String((data as { error?: string }).error || 'Generation failed')); return; }
@@ -2234,6 +2453,20 @@ export function TemplatesTabContent(){
               />
               {/* Sticky bottom generate button */}
               <div className="flex-shrink-0 border-t border-[color:var(--border)]/60 pt-3 mt-auto bg-[var(--popover)] space-y-2">
+                {(() => {
+                  const isolateCarCfg = (activeTemplate as unknown as { isolateCar?: { mode?: 'user_choice' | 'force_on' | 'force_off'; defaultEnabled?: boolean } })?.isolateCar;
+                  // Only show toggle if mode is 'user_choice'
+                  if (isolateCarCfg?.mode !== 'user_choice') return null;
+                  return (
+                    <div className="flex items-center justify-between rounded-lg border border-[color:var(--border)] bg-[color:var(--popover)]/50 px-3 py-2">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="text-sm font-medium">Isolate mask</div>
+                        <div className="text-xs text-white/60">Remove background before generation (may improve accuracy)</div>
+                      </div>
+                      <Switch checked={isolateCar} onCheckedChange={setIsolateCar} />
+                    </div>
+                  );
+                })()}
                 <div className="w-full flex items-center justify-between">
                   <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
                   {selectedImageKeys.length >= requiredImages ? (

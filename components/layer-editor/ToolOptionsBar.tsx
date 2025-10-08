@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { useLayerEditor, useActiveLayer } from "@/components/layer-editor/LayerEditorProvider";
+import { useDesignerActions } from "@/components/layer-editor/DesignerActionsContext";
 import { cn } from "@/lib/utils";
 import NextImage from "next/image";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,6 +24,7 @@ import { PiArrowBendRightUp, PiTextHFill } from "react-icons/pi";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { SHOW_IMAGE_TOOL } from "@/components/layer-editor/config";
+import ElectricBorder from "@/components/electric-border";
 
 const FONT_FAMILIES = [
   "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
@@ -80,6 +82,7 @@ const FONT_OPTIONS: FontFamilyOption[] = FONT_FAMILIES.map((value)=> ({
 
 export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactNode }) {
   const { state, dispatch, undo, redo, canUndo, canRedo } = useLayerEditor();
+  const { actions } = useDesignerActions();
   const selectedIds = state.selectedLayerIds && state.selectedLayerIds.length > 0 ? state.selectedLayerIds : (state.activeLayerId ? [state.activeLayerId] : []);
   const selectedLayers = state.layers.filter((l) => selectedIds.includes(l.id));
   const hasTextSelected = selectedLayers.some((l) => l.type === 'text');
@@ -92,6 +95,10 @@ export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactN
       dispatch({ type: 'remove_layer', id: layer.id });
     }
   }, [selectedLayers, dispatch]);
+
+  // Get upscale and animate actions for select tool
+  const upscaleAction = actions.find((a) => a.key === 'upscale');
+  const animateAction = actions.find((a) => a.key === 'animate');
 
   return (
     <div className="space-y-1">
@@ -117,6 +124,12 @@ export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactN
                   </div>
                 ) : null}
               </>
+            ) : null}
+            {state.tool === 'select' && (upscaleAction || animateAction) ? (
+              <div className="flex items-center gap-2 pl-2 border-l border-[var(--border)]">
+                {upscaleAction ? <DesignerActionButton action={upscaleAction} /> : null}
+                {animateAction ? <DesignerActionButton action={animateAction} /> : null}
+              </div>
             ) : null}
             {(hasSelection || accessory) ? (
               <div className="flex items-center gap-3 pl-2 ml-auto">
@@ -1618,6 +1631,41 @@ function ShadowOffsetPad({ valueX, valueY, max, onChange }: { valueX: number; va
       </div>
     </div>
   );
+}
+
+function DesignerActionButton({ action }: { action: import("@/components/layer-editor/DesignerActionsContext").DesignerActionDescriptor }) {
+  const content = (
+    <Button
+      type="button"
+      size="sm"
+      variant={action.variant ?? "outline"}
+      onClick={async () => {
+        try {
+          await action.onSelect();
+        } catch {}
+      }}
+      disabled={action.disabled || action.loading}
+      className="h-8"
+    >
+      {action.loading ? (action.loadingLabel || "Working…") : (
+        <>
+          {action.icon ? <span className="mr-2 inline-flex">{action.icon}</span> : null}
+          <span>{action.label}</span>
+          {action.srLabel ? <span className="sr-only">{action.srLabel}</span> : null}
+        </>
+      )}
+    </Button>
+  );
+
+  if (action.electric) {
+    return (
+      <ElectricBorder color="#8b5cf6" speed={1} chaos={0.6} thickness={2} className="rounded-md">
+        {content}
+      </ElectricBorder>
+    );
+  }
+
+  return content;
 }
 
 

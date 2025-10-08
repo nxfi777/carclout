@@ -74,6 +74,7 @@ export default async function SiteHeader() {
           <div className="justify-self-center hidden sm:flex items-center gap-3 lg:gap-4">
             <HeaderNavLink href="/pricing">PRICING</HeaderNavLink>
             <HeaderNavLink href="/contact">CONTACT</HeaderNavLink>
+            <HeaderNavLink href="/faq">FAQ</HeaderNavLink>
           </div>
           <div className="flex items-center gap-2 justify-self-end relative">
             {user ? (

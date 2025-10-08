@@ -58,6 +58,7 @@ export function BlurhashImage({
   className,
   onLoad,
   priority,
+  src,
   ...props
 }: BlurhashImageProps) {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -75,6 +76,9 @@ export function BlurhashImage({
     onLoad?.(e);
   };
 
+  // If src is empty or invalid, just show the blurhash placeholder
+  const hasValidSrc = src && src !== '';
+
   return (
     <div className="relative w-full h-full" suppressHydrationWarning>
       {showSkeleton && !isLoaded && (
@@ -86,19 +90,32 @@ export function BlurhashImage({
           <Skeleton className={cn('absolute inset-0', skeletonClassName)} />
         )
       )}
-      <NextImage
-        {...props}
-        className={cn(
-          className,
-          showSkeleton && !fuseSkeleton && 'transition-opacity duration-700',
-          showSkeleton && !fuseSkeleton && !isLoaded && 'opacity-0'
-        )}
-        placeholder="blur"
-        blurDataURL={blurDataURL}
-        onLoad={handleLoad}
-        loading={priority ? undefined : 'lazy'}
-        priority={priority}
-      />
+      {hasValidSrc ? (
+        <NextImage
+          {...props}
+          src={src}
+          className={cn(
+            className,
+            showSkeleton && !fuseSkeleton && 'transition-opacity duration-700',
+            showSkeleton && !fuseSkeleton && !isLoaded && 'opacity-0'
+          )}
+          placeholder="blur"
+          blurDataURL={blurDataURL}
+          onLoad={handleLoad}
+          loading={priority ? undefined : 'lazy'}
+          priority={priority}
+        />
+      ) : (
+        // Just show the blurhash placeholder without NextImage
+        <div 
+          className={cn('absolute inset-0', className)}
+          style={{
+            backgroundImage: `url("${blurDataURL}")`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center'
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -115,6 +132,7 @@ export function BlurhashBackgroundImage({
   fuseSkeleton = false,
   className,
   onLoad,
+  src,
   ...props
 }: BlurhashImageProps) {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -125,6 +143,9 @@ export function BlurhashBackgroundImage({
     }
     return BLUR_DATA_URLS[fallbackBlur];
   }, [blurhash, fallbackBlur]);
+
+  // If src is empty or invalid, just show the blurhash placeholder
+  const hasValidSrc = src && src !== '';
 
   return (
     <>
@@ -137,20 +158,33 @@ export function BlurhashBackgroundImage({
           <Skeleton className={cn('absolute inset-0 rounded-none', skeletonClassName)} />
         )
       )}
-      <NextImage
-        {...props}
-        className={cn(
-          className,
-          showSkeleton && !fuseSkeleton && 'transition-opacity duration-700',
-          showSkeleton && !fuseSkeleton && !isLoaded && 'opacity-0'
-        )}
-        placeholder="blur"
-        blurDataURL={blurDataURL}
-        onLoad={(e) => {
-          setIsLoaded(true);
-          onLoad?.(e);
-        }}
-      />
+      {hasValidSrc ? (
+        <NextImage
+          {...props}
+          src={src}
+          className={cn(
+            className,
+            showSkeleton && !fuseSkeleton && 'transition-opacity duration-700',
+            showSkeleton && !fuseSkeleton && !isLoaded && 'opacity-0'
+          )}
+          placeholder="blur"
+          blurDataURL={blurDataURL}
+          onLoad={(e) => {
+            setIsLoaded(true);
+            onLoad?.(e);
+          }}
+        />
+      ) : (
+        // Just show the blurhash placeholder without NextImage
+        <div 
+          className={cn('absolute inset-0', className)}
+          style={{
+            backgroundImage: `url("${blurDataURL}")`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center'
+          }}
+        />
+      )}
     </>
   );
 }

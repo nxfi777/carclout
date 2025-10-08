@@ -5,6 +5,7 @@ import { getSurreal } from "@/lib/surrealdb";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { generateBlurHash } from "@/lib/blurhash-server";
 import type { LibraryImage } from "@/lib/library-image";
+import type { VehiclePhoto } from "@/lib/vehicle-photo";
 import sharp from "sharp";
 
 export async function POST(req: Request) {
@@ -147,6 +148,55 @@ export async function POST(req: Request) {
         console.log(`Stored library image metadata for ${key}`);
       } catch (error) {
         console.error('Failed to store library image metadata (non-fatal):', error);
+        // Don't fail upload if database fails
+      }
+    }
+
+    // Store metadata in database for vehicle photos
+    const isVehiclePhoto = folder.startsWith('vehicles/');
+    if (isVehiclePhoto && isImage && blurhash) {
+      try {
+        const db = await getSurreal();
+        const vehiclePhotoData: Omit<VehiclePhoto, 'id'> = {
+          key,
+          email: user.email,
+          blurhash,
+          width,
+          height,
+          size: file.size,
+          created: new Date().toISOString(),
+          lastModified: new Date().toISOString(),
+        };
+        
+        // Check if record exists, update or create
+        const existing = await db.query(
+          "SELECT id FROM vehicle_photo WHERE key = $key AND email = $email LIMIT 1;",
+          { key, email: user.email }
+        );
+        
+        const existingId = Array.isArray(existing) && Array.isArray(existing[0]) && existing[0][0]
+          ? (existing[0][0] as { id?: string }).id
+          : null;
+
+        if (existingId) {
+          await db.query(
+            "UPDATE $id SET blurhash = $blurhash, width = $width, height = $height, size = $size, lastModified = $lastModified;",
+            { 
+              id: existingId,
+              blurhash: vehiclePhotoData.blurhash,
+              width: vehiclePhotoData.width,
+              height: vehiclePhotoData.height,
+              size: vehiclePhotoData.size,
+              lastModified: vehiclePhotoData.lastModified
+            }
+          );
+        } else {
+          await db.create('vehicle_photo', vehiclePhotoData);
+        }
+        
+        console.log(`Stored vehicle photo metadata for ${key}`);
+      } catch (error) {
+        console.error('Failed to store vehicle photo metadata (non-fatal):', error);
         // Don't fail upload if database fails
       }
     }

@@ -134,7 +134,7 @@ export async function POST(req: Request) {
     image_url: falUrl,
     model: body?.model || "General Use (Heavy)",
     operating_resolution: body?.operating_resolution || "2048x2048",
-    output_format: body?.output_format || "png",
+    output_format: body?.output_format || "webp",
     refine_foreground: body?.refine_foreground !== false,
     output_mask: body?.output_mask === true,
   };

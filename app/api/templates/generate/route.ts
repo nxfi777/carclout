@@ -2,15 +2,20 @@
 function formatFalDetail(detail: unknown): string {
   try {
     if (Array.isArray(detail)) {
-      return (detail as unknown[])
-        .map((d) => {
-          const obj = (d && typeof d === 'object') ? (d as Record<string, unknown>) : undefined;
-          const locVal = (obj?.loc as unknown);
-          const loc = Array.isArray(locVal) ? (locVal as unknown[]).join('.') : '';
-          const msg = (obj?.msg as string | undefined) || (obj?.message as string | undefined) || String(d);
-          return loc ? `${msg} (${loc})` : String(msg);
-        })
-        .join('; ');
+      // Check if any error relates to images
+      const hasImageError = (detail as unknown[]).some((d) => {
+        const obj = (d && typeof d === 'object') ? (d as Record<string, unknown>) : undefined;
+        const locVal = (obj?.loc as unknown);
+        const loc = Array.isArray(locVal) ? (locVal as unknown[]).join('.') : '';
+        return loc.includes('image');
+      });
+      
+      if (hasImageError) {
+        return 'Something went wrong. Try a different image.';
+      }
+      
+      // For any other validation error, return a generic message
+      return 'Something went wrong. Please try again.';
     }
     if (typeof detail === 'string') return detail;
     if (detail && typeof detail === 'object') return JSON.stringify(detail);
@@ -52,6 +57,8 @@ type GenerateRequest = {
   variables?: Record<string, string | number | boolean>;
   // Optional vehicle data for token substitution
   vehicle?: { make?: string; model?: string; colorFinish?: string; accents?: string } | null;
+  // Isolate car: remove background and use black backdrop
+  isolateCar?: boolean;
 };
 
 // removed unused toIdString
@@ -153,6 +160,23 @@ export async function POST(req: Request) {
       BRAND_CAPS: (v as any)?.make ? String((v as any).make).toUpperCase() : "",
       DOMINANT_COLOR_TONE: typeof variablesFromUi["DOMINANT_COLOR_TONE"] === "string" ? String(variablesFromUi["DOMINANT_COLOR_TONE"]) : "",
     };
+    
+    // Apply defaults for missing color variables from template definition
+    const templateVars = Array.isArray(template?.variables) ? (template.variables as Array<{ key?: string; type?: string; defaultValue?: string | number | boolean }>) : [];
+    for (const vDef of templateVars) {
+      const key = String(vDef?.key || '').trim();
+      if (!key) continue;
+      // Skip if already provided
+      if (key in variablesFromUi && variablesFromUi[key] !== undefined && variablesFromUi[key] !== null && variablesFromUi[key] !== '') continue;
+      // Apply defaultValue if present
+      if (vDef?.defaultValue !== undefined && vDef?.defaultValue !== null && vDef?.defaultValue !== '') {
+        variablesFromUi[key] = vDef.defaultValue;
+      } else if (vDef?.type === 'color') {
+        // For color fields without explicit default, use white
+        variablesFromUi[key] = '#ffffff';
+      }
+    }
+    
     // Also inject any arbitrary variables: [KEY]
     for (const [key, val] of Object.entries(variablesFromUi)) {
       if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
@@ -175,7 +199,8 @@ export async function POST(req: Request) {
     const finalPrompt = substituteTokens(prompt, tokens);
 
   // Build image URLs: upload to FAL media so they are publicly retrievable by FAL (works in dev + prod)
-    const imageUrls: string[] = [];
+    const adminImageUrls: string[] = [];
+    const userImageUrls: string[] = [];
     async function streamToUint8Array(stream: unknown): Promise<Uint8Array> {
       const chunks: Uint8Array[] = [];
       const s = stream as { [Symbol.asyncIterator]?: () => AsyncIterator<unknown> } | undefined;
@@ -186,6 +211,77 @@ export async function POST(req: Request) {
       }
       return Buffer.concat(chunks);
     }
+    
+    /**
+     * Preprocess USER images to improve generation accuracy (SUBTLE enhancements only):
+     * - Brightness adjustments for dark images
+     * - Intelligent saturation boost based on current saturation
+     * - Subtle contrast and vibrancy enhancement
+     */
+    async function preprocessImage(buffer: Buffer, context = 'unknown'): Promise<Buffer> {
+      console.log(`[Image Preprocessing] Starting preprocessing for ${context}...`);
+      try {
+        const sharp = (await import('sharp')).default;
+        
+        // Get image statistics to determine if preprocessing is needed
+        const imageStats = await sharp(buffer).stats();
+        
+        // Calculate average brightness across all channels (0-255 scale)
+        const avgBrightness = imageStats.channels.reduce((sum: number, ch: { mean: number }) => sum + ch.mean, 0) / imageStats.channels.length;
+        
+        // Detect current saturation level by comparing color channels
+        // Low saturation = channels are similar (grayscale-ish), high saturation = channels differ
+        const channelMeans = imageStats.channels.map((ch: { mean: number }) => ch.mean);
+        const meanOfMeans = channelMeans.reduce((sum: number, val: number) => sum + val, 0) / channelMeans.length;
+        const variance = channelMeans.reduce((sum: number, val: number) => sum + Math.pow(val - meanOfMeans, 2), 0) / channelMeans.length;
+        const currentSaturation = Math.sqrt(variance); // Higher = more saturated
+        
+        console.log(`[Image Preprocessing] ${context} - Brightness: ${avgBrightness.toFixed(2)}/255, Saturation variance: ${currentSaturation.toFixed(2)}`);
+        
+        // If image is dark (brightness < 100), apply enhancement
+        if (avgBrightness < 100) {
+          const brightnessFactor = Math.min(1.3, 105 / avgBrightness); // Cap at 1.3x
+          
+          // Only boost saturation if image is desaturated (variance < 15)
+          const saturationFactor = currentSaturation < 15 ? 1.1 : 1.0;
+          
+          console.log(`[Image Preprocessing] ${context} - Dark image detected, applying ${brightnessFactor.toFixed(2)}x brightness, ${saturationFactor.toFixed(2)}x saturation`);
+          
+          const result = await sharp(buffer)
+            .modulate({
+              brightness: brightnessFactor,        // Adaptive brightness increase
+              saturation: saturationFactor,        // Intelligent saturation boost
+            })
+            .linear(1.08, -(128 * 0.08))          // Subtle contrast increase
+            .sharpen({ sigma: 0.3 })               // Minimal sharpening
+            .toBuffer();
+          
+          console.log(`[Image Preprocessing] ${context} - Enhancement complete ✓`);
+          return result;
+        }
+        
+        // For well-lit images, apply very light normalization with vibrancy
+        console.log(`[Image Preprocessing] ${context} - Well-lit image, applying light normalization + vibrancy`);
+        
+        // Check if needs saturation boost
+        const saturationFactor = currentSaturation < 15 ? 1.05 : 1.0;
+        
+        const result = await sharp(buffer)
+          .modulate({
+            saturation: saturationFactor,        // Subtle vibrancy only if desaturated
+          })
+          .normalize({ lower: 2, upper: 98 })    // Very gentle histogram normalization
+          .toBuffer();
+        
+        console.log(`[Image Preprocessing] ${context} - Normalization complete ✓`);
+        return result;
+      } catch (error) {
+        // If preprocessing fails, return original buffer
+        console.error(`[Image Preprocessing] ${context} - FAILED, using original:`, error);
+        return buffer;
+      }
+    }
+    
     async function uploadToFal(bytes: Uint8Array, mimeType: string): Promise<string | null> {
       try {
         const uploaded = await (fal as any)?.storage?.upload?.(bytes, { mimeType });
@@ -205,9 +301,10 @@ export async function POST(req: Request) {
         const key = k.startsWith("admin/") ? k : `admin/${k.replace(/^\/+/, "")}`;
         const obj = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
         const bytes = await streamToUint8Array(obj.Body as unknown);
+        // Admin images are NOT preprocessed - they are curated template images
         const mime = (obj.ContentType as string) || 'image/jpeg';
         const url = await uploadToFal(bytes, mime);
-        if (url) imageUrls.push(url);
+        if (url) adminImageUrls.push(url);
       } catch {}
     }
     const userKeys = Array.isArray(body?.userImageKeys) ? body!.userImageKeys.filter((x) => typeof x === "string") : [];
@@ -218,24 +315,251 @@ export async function POST(req: Request) {
         const key = `${userRoot}/${normalized}`;
         const obj = await r2.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
         const bytes = await streamToUint8Array(obj.Body as unknown);
+        // Preprocess image before uploading to FAL
+        const preprocessedBytes = await preprocessImage(Buffer.from(bytes), `User: ${normalized}`);
         const mime = (obj.ContentType as string) || 'image/jpeg';
-        const url = await uploadToFal(bytes, mime);
-        if (url) imageUrls.push(url);
+        const url = await uploadToFal(preprocessedBytes, mime);
+        if (url) userImageUrls.push(url);
       } catch {}
     }
     // If provided, also accept data URLs (last) when files haven't been uploaded — upload them to FAL
     const dataUrls = Array.isArray(body?.userImageDataUrls) ? body!.userImageDataUrls.filter((x) => typeof x === "string" && x.startsWith("data:")) : [];
-    for (const du of dataUrls) {
+    for (let i = 0; i < dataUrls.length; i++) {
       try {
+        const du = dataUrls[i];
         const m = du.match(/^data:([^;]+);base64,(.*)$/);
         if (!m) continue;
         const mime = m[1] || 'image/jpeg';
         const b64 = m[2] || '';
-        const bytes = Uint8Array.from(Buffer.from(b64, 'base64'));
-        const url = await uploadToFal(bytes, mime);
-        if (url) imageUrls.push(url);
+        const bytes = Buffer.from(b64, 'base64');
+        // Preprocess image before uploading to FAL
+        const preprocessedBytes = await preprocessImage(bytes, `DataURL #${i + 1}`);
+        const url = await uploadToFal(preprocessedBytes, mime);
+        if (url) userImageUrls.push(url);
       } catch {}
     }
+
+    // Apply isolateCar: remove background and composite on black backdrop (ONLY for user images)
+    let processedUserImageUrls = userImageUrls;
+    console.log('[isolateCar] Check:', { 
+      isolateCar: body?.isolateCar, 
+      type: typeof body?.isolateCar,
+      userImageUrlsLength: userImageUrls.length,
+      willProcess: body?.isolateCar === true && userImageUrls.length > 0
+    });
+    
+    if (body?.isolateCar === true && userImageUrls.length > 0) {
+      console.log('[isolateCar] Starting isolation process...');
+      const processedUrls: string[] = [];
+      const shouldCropToAspect = template?.fixedAspectRatio && typeof template?.aspectRatio === 'number';
+      console.log('[isolateCar] shouldCropToAspect:', shouldCropToAspect, { fixedAspectRatio: template?.fixedAspectRatio, aspectRatio: template?.aspectRatio });
+      
+      for (const imageUrl of userImageUrls) {
+        try {
+          // Call rembg to isolate the car - request mask if we need to crop to aspect ratio
+          const rembgRes = await fal.subscribe("fal-ai/birefnet/v2", {
+            input: {
+              image_url: imageUrl,
+              model: "General Use (Heavy)",
+              operating_resolution: "2048x2048",
+              output_format: "webp",
+              refine_foreground: true,
+              output_mask: shouldCropToAspect, // Request mask only if we need bounding box for cropping
+            },
+            logs: true,
+          });
+          
+          const isolatedImageUrl = (rembgRes as { data?: { image?: { url?: string }; mask_image?: { url?: string } } })?.data?.image?.url;
+          const maskImageUrl = shouldCropToAspect ? (rembgRes as { data?: { mask_image?: { url?: string } } })?.data?.mask_image?.url : null;
+          
+          if (!isolatedImageUrl) {
+            console.warn('[isolateCar] Rembg failed, using original image');
+            processedUrls.push(imageUrl);
+            continue;
+          }
+
+          // Fetch the isolated image and original image (and mask if needed)
+          const fetchPromises = [
+            fetch(isolatedImageUrl),
+            fetch(imageUrl)
+          ];
+          if (maskImageUrl) {
+            fetchPromises.push(fetch(maskImageUrl));
+          }
+          
+          const responses = await Promise.all(fetchPromises);
+          const [isolatedRes, originalRes, maskRes] = responses;
+          
+          if (!isolatedRes.ok || !originalRes.ok || (maskRes && !maskRes.ok)) {
+            console.warn('[isolateCar] Failed to fetch images, using original');
+            processedUrls.push(imageUrl);
+            continue;
+          }
+
+          const bufferPromises = [
+            isolatedRes.arrayBuffer(),
+            originalRes.arrayBuffer()
+          ];
+          if (maskRes) {
+            bufferPromises.push(maskRes.arrayBuffer());
+          }
+          
+          const buffers = await Promise.all(bufferPromises);
+          const [isolatedBuffer, originalBuffer, maskBuffer] = buffers;
+
+          // Use sharp to get dimensions and composite on black background
+          const sharp = (await import('sharp')).default;
+          const originalMeta = await sharp(Buffer.from(originalBuffer)).metadata();
+          const isolatedMeta = await sharp(Buffer.from(isolatedBuffer)).metadata();
+          
+          // Use the isolated image dimensions (BiRefNet may resize)
+          const width = isolatedMeta.width || originalMeta.width || 1024;
+          const height = isolatedMeta.height || originalMeta.height || 1024;
+          
+          console.log('[isolateCar] Image dimensions:', {
+            original: { width: originalMeta.width, height: originalMeta.height },
+            isolated: { width: isolatedMeta.width, height: isolatedMeta.height },
+            using: { width, height }
+          });
+
+          let finalWidth = width;
+          let finalHeight = height;
+          let cropX = 0;
+          let cropY = 0;
+
+          // If we have a mask and need to crop to aspect ratio, calculate bounding box
+          if (maskBuffer && shouldCropToAspect && template?.aspectRatio) {
+            try {
+              const maskSharp = sharp(Buffer.from(maskBuffer));
+              const { data, info } = await maskSharp.raw().toBuffer({ resolveWithObject: true });
+              
+              console.log('[isolateCar] Mask dimensions:', { width: info.width, height: info.height, channels: info.channels });
+              
+              // Find bounding box of non-zero pixels in mask
+              let minX = info.width;
+              let minY = info.height;
+              let maxX = 0;
+              let maxY = 0;
+              
+              for (let y = 0; y < info.height; y++) {
+                for (let x = 0; x < info.width; x++) {
+                  const idx = (y * info.width + x) * info.channels;
+                  const pixelValue = data[idx];
+                  if (pixelValue > 10) { // threshold to ignore near-black pixels
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                  }
+                }
+              }
+              
+              if (maxX > minX && maxY > minY) {
+                const bboxWidth = maxX - minX;
+                const bboxHeight = maxY - minY;
+                const bboxCenterX = minX + bboxWidth / 2;
+                const bboxCenterY = minY + bboxHeight / 2;
+                
+                const targetAspect = template.aspectRatio;
+                
+                // Calculate crop dimensions that fit the aspect ratio
+                // We want to crop from the center of the bounding box
+                let cropWidth: number;
+                let cropHeight: number;
+                
+                if (width / height > targetAspect) {
+                  // Image is wider than target aspect ratio - constrain by height
+                  cropHeight = height;
+                  cropWidth = Math.round(cropHeight * targetAspect);
+                  // Ensure width doesn't exceed image width
+                  if (cropWidth > width) {
+                    cropWidth = width;
+                    cropHeight = Math.round(cropWidth / targetAspect);
+                  }
+                } else {
+                  // Image is taller than target aspect ratio - constrain by width
+                  cropWidth = width;
+                  cropHeight = Math.round(cropWidth / targetAspect);
+                  // Ensure height doesn't exceed image height
+                  if (cropHeight > height) {
+                    cropHeight = height;
+                    cropWidth = Math.round(cropHeight * targetAspect);
+                  }
+                }
+                
+                // Center the crop on the bounding box center
+                cropX = Math.round(bboxCenterX - cropWidth / 2);
+                cropY = Math.round(bboxCenterY - cropHeight / 2);
+                
+                // Clamp to image bounds
+                cropX = Math.max(0, Math.min(width - cropWidth, cropX));
+                cropY = Math.max(0, Math.min(height - cropHeight, cropY));
+                
+                finalWidth = cropWidth;
+                finalHeight = cropHeight;
+                
+                console.log('[isolateCar] Calculated crop from bounding box:', {
+                  originalImage: { width, height },
+                  bbox: { minX, minY, maxX, maxY, centerX: bboxCenterX, centerY: bboxCenterY },
+                  crop: { x: cropX, y: cropY, width: finalWidth, height: finalHeight },
+                  targetAspect,
+                  isValid: cropX >= 0 && cropY >= 0 && (cropX + finalWidth) <= width && (cropY + finalHeight) <= height
+                });
+              }
+            } catch (err) {
+              console.warn('[isolateCar] Failed to calculate bounding box, using full image:', err);
+            }
+          }
+
+          // First, crop the isolated image if needed
+          let processedIsolatedBuffer: Buffer;
+          if (finalWidth !== width || finalHeight !== height) {
+            processedIsolatedBuffer = Buffer.from(
+              await sharp(Buffer.from(isolatedBuffer))
+                .extract({ left: cropX, top: cropY, width: finalWidth, height: finalHeight })
+                .toBuffer()
+            );
+          } else {
+            processedIsolatedBuffer = Buffer.from(isolatedBuffer);
+          }
+
+          // Create black background matching final dimensions and composite the isolated car
+          const composited = await sharp({
+            create: {
+              width: finalWidth,
+              height: finalHeight,
+              channels: 4,
+              background: { r: 0, g: 0, b: 0, alpha: 1 }
+            }
+          })
+          .composite([{
+            input: processedIsolatedBuffer,
+            top: 0,
+            left: 0
+          }])
+          .webp({ quality: 95 })
+          .toBuffer();
+
+          // Upload composited image to FAL
+          const compositedUrl = await uploadToFal(new Uint8Array(composited), 'image/webp');
+          if (compositedUrl) {
+            processedUrls.push(compositedUrl);
+            console.log('[isolateCar] Successfully processed image');
+          } else {
+            console.warn('[isolateCar] Failed to upload composited image, using original');
+            processedUrls.push(imageUrl);
+          }
+        } catch (err) {
+          console.error('[isolateCar] Error processing image:', err);
+          processedUrls.push(imageUrl);
+        }
+      }
+      processedUserImageUrls = processedUrls;
+    }
+
+    // Combine admin images (untouched) with processed user images
+    const imageUrls = [...adminImageUrls, ...processedUserImageUrls];
+    
     // FAL expects 1-4 URLs for Gemini and up to 6 for Seedream; keep last N so user images are retained.
     let urlsForFal = imageUrls.filter((u) => typeof u === "string" && /^https?:\/\//i.test(u));
     if (urlsForFal.length === 0) return NextResponse.json({ error: "No valid image URLs provided" }, { status: 400 });
@@ -279,7 +603,13 @@ export async function POST(req: Request) {
         } catch {}
         return null;
       })();
-      const falInput = { prompt: finalPrompt, image_urls: urlsForFal, num_images: 1, ...(isSeedream && desiredSize ? { image_size: desiredSize } : {}) } as const;
+      const falInput = { 
+        prompt: finalPrompt, 
+        image_urls: urlsForFal, 
+        num_images: 1,
+        output_format: 'jpeg', // Gemini supports jpeg/png, default to jpeg for bandwidth savings
+        ...(isSeedream && desiredSize ? { image_size: desiredSize } : {}) 
+      } as const;
       try { console.log("[FAL INPUT]", JSON.stringify({ model: modelSlug, input: falInput }, null, 2)); } catch {}
       result = await fal.subscribe(modelSlug, {
         input: falInput as any,
@@ -301,10 +631,29 @@ export async function POST(req: Request) {
       const err = e as { status?: unknown; message?: unknown; body?: unknown };
       const status = typeof err?.status === "number" ? err.status : 502;
       const bodyAny = (typeof err?.body === 'object' && err?.body) ? (err.body as Record<string, unknown>) : undefined;
-      const messageRaw = (bodyAny?.message as string | undefined) || (typeof err?.message === 'string' ? err.message : undefined) || "Generation failed. Please try again.";
+      const messageRaw = (bodyAny?.message as string | undefined) || (typeof err?.message === 'string' ? err.message : undefined) || "";
       const prettyRaw = formatFalDetail((bodyAny as { detail?: unknown } | undefined)?.detail) || undefined;
-      const userMsg = sanitizeModelNames(prettyRaw || messageRaw) || "Generation failed. Please try again.";
-      return NextResponse.json({ error: userMsg, details: bodyAny || null }, { status });
+      
+      // Build a user-friendly error message
+      let userMsg = prettyRaw || messageRaw || "";
+      
+      // Sanitize any model names
+      userMsg = sanitizeModelNames(userMsg) || "";
+      
+      // If we still don't have a good message, provide a helpful default
+      if (!userMsg || userMsg.trim().length === 0) {
+        if (status === 422) {
+          userMsg = "The generation request couldn't be processed. Please check your inputs and try again.";
+        } else if (status === 429) {
+          userMsg = "Too many requests. Please wait a moment and try again.";
+        } else if (status >= 500) {
+          userMsg = "The image generation service is temporarily unavailable. Please try again in a moment.";
+        } else {
+          userMsg = "Generation failed. Please try again.";
+        }
+      }
+      
+      return NextResponse.json({ error: userMsg }, { status });
     }
     const data = (result?.data || {}) as any;
     const candidateUrl: string | null = data?.images?.[0]?.url || data?.image?.url || data?.url || null;

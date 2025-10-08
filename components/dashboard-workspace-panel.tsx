@@ -37,8 +37,8 @@ import { useCreditDepletion } from "@/lib/use-credit-depletion";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-type Item = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string; blurhash?: string };
-type ItemWithTag = Item & { etag?: string };
+type Item = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string; blurhash?: string; width?: number; height?: number };
+type ItemWithTag = Item & { etag?: string; isUpscaling?: boolean };
 
 // Simple in-memory + session cache for workspace items, keyed by scope:path
 const ITEMS_TTL_MS = 60_000; // UI hint only; we still revalidate in background
@@ -61,7 +61,7 @@ function writeSessionCache(key: string, entry: WorkspaceCacheEntry) {
 
 export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } = {}) {
   const searchParams = useSearchParams();
-  const [me, setMe] = useState<{ plan?: string | null } | null>(null);
+  const [_me, setMe] = useState<{ plan?: string | null } | null>(null);
   const [path, setPath] = useState<string>(() => {
     try {
       if (typeof window === 'undefined') return scope === 'admin' ? '' : 'library';
@@ -112,7 +112,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [designProjectState, setDesignProjectState] = useState<import("@/lib/layer-export").DesignerProjectState | null>(null);
   const [upscaleBusy, setUpscaleBusy] = useState(false);
   const [videoUpscaleBusy, setVideoUpscaleBusy] = useState(false);
-  const [videoInterpolateBusy, setVideoInterpolateBusy] = useState(false);
+  const [_videoInterpolateBusy, _setVideoInterpolateBusy] = useState(false);
   const [previewVariants, setPreviewVariants] = useState<{ key?: string; name: string; url: string }[]>([]);
   const [activePreviewVariantIndex, setActivePreviewVariantIndex] = useState(0);
   const isManagedRootName = useMemo(() => (name: string) => isManagedRoot(name), []);
@@ -122,6 +122,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const creditDepletion = useCreditDepletion();
   const [videoTemplates, setVideoTemplates] = useState<Set<string>>(new Set());
   const [profileVehicles, setProfileVehicles] = useState<Array<{ make?: string; model?: string; colorFinish?: string; accents?: string; type?: string }>>([]);
+  const [activeUpscaleOps, setActiveUpscaleOps] = useState<Set<string>>(new Set()); // Track which videos are being upscaled
 
   useEffect(() => {
     let cancelled = false;
@@ -176,13 +177,13 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     };
   }, []);
 
-  function canonicalPlan(p?: string | null): 'base' | 'premium' | 'ultra' | null {
-    const s = (p || '').toLowerCase();
-    if (s === 'ultra' || s === 'pro') return 'ultra';
-    if (s === 'premium') return 'premium';
-    if (s === 'base' || s === 'basic' || s === 'minimum') return 'base';
-    return null;
-  }
+  // function canonicalPlan(p?: string | null): 'base' | 'premium' | 'ultra' | null {
+  //   const s = (p || '').toLowerCase();
+  //   if (s === 'ultra' || s === 'pro') return 'ultra';
+  //   if (s === 'premium') return 'premium';
+  //   if (s === 'base' || s === 'basic' || s === 'minimum') return 'base';
+  //   return null;
+  // }
 
   async function getCredits(): Promise<number> {
     try {
@@ -219,6 +220,10 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
 
   async function doVideoUpscale(key: string) {
     setVideoUpscaleBusy(true);
+    
+    // Add this key to active operations to show the temporary placeholder
+    setActiveUpscaleOps(prev => new Set(prev).add(key));
+    
     try {
       const res = await fetch('/api/tools/video-upscale', { 
         method: 'POST', 
@@ -237,37 +242,44 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       console.error('Video upscale error:', e);
       toast.error('Video upscale failed');
     } finally { 
+      // Remove from active operations
+      setActiveUpscaleOps(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
       setVideoUpscaleBusy(false); 
     }
   }
 
-  async function doVideoInterpolate(key: string) {
-    setVideoInterpolateBusy(true);
-    try {
-      const res = await fetch('/api/tools/video-interpolate', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ r2_key: key }) 
-      });
-      const data = await res.json().catch(() => ({}));
-      
-      if (res.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
-      if (res.status === 403) { toast.error('60fps smoothing is only available on the Ultra plan.'); return; }
-      if (res.status === 400 && data?.code === 'UPSCALE_REQUIRED') {
-        toast.error('Please upscale the video first, then make it smoother.');
-        return;
-      }
-      if (!res.ok || !data?.key) { toast.error(data?.error || 'Video smoothing failed'); return; }
-      
-      await refresh(undefined, { force: true });
-      setTreeVersion(v => v + 1);
-    } catch (e) {
-      console.error('Video interpolate error:', e);
-      toast.error('Video smoothing failed');
-    } finally { 
-      setVideoInterpolateBusy(false); 
-    }
-  }
+  // TEMPORARILY DISABLED - Make Smoother Feature
+  // async function doVideoInterpolate(key: string) {
+  //   setVideoInterpolateBusy(true);
+  //   try {
+  //     const res = await fetch('/api/tools/video-interpolate', { 
+  //       method: 'POST', 
+  //       headers: { 'Content-Type': 'application/json' }, 
+  //       body: JSON.stringify({ r2_key: key }) 
+  //     });
+  //     const data = await res.json().catch(() => ({}));
+  //     
+  //     if (res.status === 402) { toast.error('Not enough credits. Top up in Billing.'); return; }
+  //     if (res.status === 403) { toast.error('60fps smoothing is only available on the Ultra plan.'); return; }
+  //     if (res.status === 400 && data?.code === 'UPSCALE_REQUIRED') {
+  //       toast.error('Please upscale the video first, then make it smoother.');
+  //       return;
+  //     }
+  //     if (!res.ok || !data?.key) { toast.error(data?.error || 'Video smoothing failed'); return; }
+  //     
+  //     await refresh(undefined, { force: true });
+  //     setTreeVersion(v => v + 1);
+  //   } catch (e) {
+  //     console.error('Video interpolate error:', e);
+  //     toast.error('Video smoothing failed');
+  //   } finally { 
+  //     setVideoInterpolateBusy(false); 
+  //   }
+  // }
 
   const refresh = useCallback(async (p = path, options?: { force?: boolean }) => {
     const key = p;
@@ -1196,7 +1208,29 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     const visible = showManaged || (path && path.length > 0)
       ? visibleUnfiltered
       : visibleUnfiltered.filter((it) => !(it.type === 'folder' && isManagedRootName(it.name)));
-    const arr = [...visible];
+    
+    // Add temporary placeholder items for videos being upscaled
+    const placeholders: ItemWithTag[] = [];
+    for (const key of activeUpscaleOps) {
+      const fileName = key.split('/').pop() || 'video.mp4';
+      const baseName = fileName.replace(/\.[^.]+$/, '');
+      const placeholderName = `upscaled-${baseName}.mp4`;
+      
+      // Only show placeholder if we're in the same directory as the source video
+      const keyPath = key.includes('/') ? key.substring(0, key.lastIndexOf('/')) : 'library';
+      if (keyPath === path) {
+        placeholders.push({
+          type: 'file',
+          name: placeholderName,
+          key: `${key}-upscaling-placeholder`,
+          size: 0,
+          lastModified: new Date().toISOString(),
+          isUpscaling: true, // Flag to identify placeholder items
+        } as ItemWithTag);
+      }
+    }
+    
+    const arr = [...visible, ...placeholders];
     arr.sort((a, b) => {
       if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
       let cmp = 0;
@@ -1206,7 +1240,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [items, sortBy, sortDir, path, scope, isManagedRootName]);
+  }, [items, sortBy, sortDir, path, scope, isManagedRootName, activeUpscaleOps]);
 
   // Reset cached view URLs on path change
   useEffect(() => { setViewUrls({}); }, [path]);
@@ -1249,6 +1283,8 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       if (!it.key) return false;
       if (it.blurhash) return false; // Already has blurhash
       if (blurhashBackfillProcessed.has(it.key)) return false; // Already attempted
+      // Only backfill library files (the endpoint rejects non-library files anyway)
+      if (!it.key.startsWith('library/')) return false;
       return isImage(it.name) || isVideo(it.name);
     });
 
@@ -1287,8 +1323,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
             );
             console.log(`[blurhash-backfill] Success: ${item.key}`);
           }
-        } else {
-          console.warn(`[blurhash-backfill] Failed for ${item.key}:`, await response.text());
+        } else if (response.status !== 400) {
+          // Only log non-400 errors (400 is expected for non-library files)
+          console.warn(`[blurhash-backfill] Failed for ${item.key}:`, response.status);
         }
       } catch (error) {
         console.error(`[blurhash-backfill] Error for ${item.key}:`, error);
@@ -1900,25 +1937,41 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                   // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
                                   const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
                                   await doUpscale(key);
-                                  }}>{`Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}</ContextMenuItem>
+                                  }}>Upscale</ContextMenuItem>
                               </>
                             ) : null}
                             {it.type==='file' && /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name) ? (
                               <>
-                                {!it.name.includes('upscaled') && !it.name.includes('2x') ? (
-                                  <ContextMenuItem 
-                                    disabled={videoUpscaleBusy}
-                                    onSelect={async()=>{
-                                      // Comment out plan check - all users now have video generation access
-                                      // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
-                                      const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
-                                      await doVideoUpscale(key);
-                                    }}
-                                  >
-                                    {videoUpscaleBusy ? 'Upscaling...' : `Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
-                                  </ContextMenuItem>
-                                ) : null}
-                                {(it.name.includes('upscaled') || it.name.includes('2x')) && !it.name.includes('60fps') && !it.name.includes('interpolated') ? (
+                                {(() => {
+                                  // Hide upscale button if video is already at max resolution or already upscaled
+                                  if (it.name.includes('upscaled') || it.name.includes('2x')) return null;
+                                  
+                                  // Check if video dimensions are at or above max (1080p smaller dim, 1920p larger dim)
+                                  const w = it.width || 0;
+                                  const h = it.height || 0;
+                                  if (w > 0 && h > 0) {
+                                    const largerDim = Math.max(w, h);
+                                    const smallerDim = Math.min(w, h);
+                                    // Hide if already at or above max resolution
+                                    if (smallerDim >= 1080 || largerDim >= 1920) return null;
+                                  }
+                                  
+                                  return (
+                                    <ContextMenuItem 
+                                      disabled={videoUpscaleBusy}
+                                      onSelect={async()=>{
+                                        // Comment out plan check - all users now have video generation access
+                                        // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                                        const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
+                                        await doVideoUpscale(key);
+                                      }}
+                                    >
+                                      {videoUpscaleBusy ? 'Upscaling...' : 'Upscale'}
+                                    </ContextMenuItem>
+                                  );
+                                })()}
+                                {/* TEMPORARILY DISABLED - Make Smoother Feature */}
+                                {/* {(it.name.includes('upscaled') || it.name.includes('2x')) && !it.name.includes('60fps') && !it.name.includes('interpolated') ? (
                                   <ContextMenuItem 
                                     disabled={videoInterpolateBusy}
                                     onSelect={async()=>{
@@ -1928,9 +1981,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                       await doVideoInterpolate(key);
                                     }}
                                   >
-                                    {videoInterpolateBusy ? 'Processing...' : `Make Smoother (60fps)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                                    {videoInterpolateBusy ? 'Processing...' : 'Make Smoother (60fps)'}
                                   </ContextMenuItem>
-                                ) : null}
+                                ) : null} */}
                               </>
                             ) : null}
                             {!isReservedHooksRoot ? (
@@ -1961,12 +2014,13 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                         const checked = isSelectedKey(k);
                         return (
                           <ContextMenu key={(it.key || it.name)} onOpenChange={setContextMenuOpen}>
-                            <ContextMenuTrigger asChild>
+                            <ContextMenuTrigger asChild disabled={(it as ItemWithTag).isUpscaling}>
                               <div
                                 data-sk={k}
-                                className={cn("group cursor-pointer select-none p-2 flex flex-col items-center relative", checked && "ring-1 ring-primary/60 rounded-md")}
-                                onDoubleClick={()=>{ if (it.type==='folder') navigate(path ? `${path}/${it.name}` : it.name); }}
+                                className={cn("group select-none p-2 flex flex-col items-center relative", (it as ItemWithTag).isUpscaling ? "cursor-default opacity-75" : "cursor-pointer", checked && "ring-1 ring-primary/60 rounded-md")}
+                                onDoubleClick={()=>{ if ((it as ItemWithTag).isUpscaling) return; if (it.type==='folder') navigate(path ? `${path}/${it.name}` : it.name); }}
                                 onClick={async(ev)=>{
+                                  if ((it as ItemWithTag).isUpscaling) { ev.preventDefault(); ev.stopPropagation(); return; }
                                   // Selection with modifiers
                                   const kLocal = k;
                                   if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
@@ -1995,14 +2049,26 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                   if (isImage) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
                                 }}
                               >
-                                <div className="absolute left-2 top-2 z-10" onClick={(e)=>{ e.stopPropagation(); }} onPointerDown={(e)=>{ e.stopPropagation(); }}>
-                                  <Checkbox checked={checked} onCheckedChange={(v)=>toggleKey(k, v)} aria-label={`Select ${it.name}`} />
-                                </div>
+                                {!(it as ItemWithTag).isUpscaling ? (
+                                  <div className="absolute left-2 top-2 z-10" onClick={(e)=>{ e.stopPropagation(); }} onPointerDown={(e)=>{ e.stopPropagation(); }}>
+                                    <Checkbox checked={checked} onCheckedChange={(v)=>toggleKey(k, v)} aria-label={`Select ${it.name}`} />
+                                  </div>
+                                ) : null}
                                 {it.type==='folder' ? (
                                   <FolderIconFancy size={0.85} color="#8EA2FF" />
                                 ) : (
                                   <div className="aspect-square w-full rounded-md bg-black/20 grid place-items-center overflow-hidden relative">
-                                    {isImage ? (
+                                    {(it as ItemWithTag).isUpscaling ? (
+                                      <div className="w-full h-full grid place-items-center">
+                                        <div className="flex flex-col items-center gap-2">
+                                          <svg className="animate-spin h-8 w-8 text-indigo-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0a12 12 0 00-8 20l-2-3.464A8 8 0 014 12z"></path>
+                                          </svg>
+                                          <span className="text-xs text-indigo-400">Upscaling...</span>
+                                        </div>
+                                      </div>
+                                    ) : isImage ? (
                                       <div className="w-full h-full"><ImageThumb storageKey={it.key || `${path ? `${path}/` : ''}${it.name}`} alt={it.name} url={viewUrls[(it.key || `${path ? `${path}/` : ''}${it.name}`)] || null} blurhash={it.blurhash} /></div>
                                     ) : isVideo ? (
                                       <VideoThumb storageKey={it.key || `${path ? `${path}/` : ''}${it.name}`} alt={it.name} url={viewUrls[(it.key || `${path ? `${path}/` : ''}${it.name}`)] || null} blurhash={it.blurhash} />
@@ -2053,20 +2119,36 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                               ) : null}
                               {it.type==='file' && /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name) ? (
                                 <>
-                                  {!it.name.includes('upscaled') && !it.name.includes('2x') ? (
-                                    <ContextMenuItem 
-                                      disabled={videoUpscaleBusy}
-                                      onSelect={async()=>{
-                                        // Comment out plan check - all users now have video generation access
-                                        // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
-                                        const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
-                                        await doVideoUpscale(key);
-                                      }}
-                                    >
-                                      {videoUpscaleBusy ? 'Upscaling...' : `Upscale${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
-                                    </ContextMenuItem>
-                                  ) : null}
-                                  {(it.name.includes('upscaled') || it.name.includes('2x')) && !it.name.includes('60fps') && !it.name.includes('interpolated') ? (
+                                  {(() => {
+                                    // Hide upscale button if video is already at max resolution or already upscaled
+                                    if (it.name.includes('upscaled') || it.name.includes('2x')) return null;
+                                    
+                                    // Check if video dimensions are at or above max (1080p smaller dim, 1920p larger dim)
+                                    const w = it.width || 0;
+                                    const h = it.height || 0;
+                                    if (w > 0 && h > 0) {
+                                      const largerDim = Math.max(w, h);
+                                      const smallerDim = Math.min(w, h);
+                                      // Hide if already at or above max resolution
+                                      if (smallerDim >= 1080 || largerDim >= 1920) return null;
+                                    }
+                                    
+                                    return (
+                                      <ContextMenuItem 
+                                        disabled={videoUpscaleBusy}
+                                        onSelect={async()=>{
+                                          // Comment out plan check - all users now have video generation access
+                                          // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
+                                          const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
+                                          await doVideoUpscale(key);
+                                        }}
+                                      >
+                                        {videoUpscaleBusy ? 'Upscaling...' : 'Upscale'}
+                                      </ContextMenuItem>
+                                    );
+                                  })()}
+                                  {/* TEMPORARILY DISABLED - Make Smoother Feature */}
+                                  {/* {(it.name.includes('upscaled') || it.name.includes('2x')) && !it.name.includes('60fps') && !it.name.includes('interpolated') ? (
                                     <ContextMenuItem 
                                       disabled={videoInterpolateBusy}
                                       onSelect={async()=>{
@@ -2076,9 +2158,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                         await doVideoInterpolate(key);
                                       }}
                                     >
-                                      {videoInterpolateBusy ? 'Processing...' : `Make Smoother (60fps)${canonicalPlan(me?.plan) !== 'ultra' ? ' 🔒' : ''}`}
+                                      {videoInterpolateBusy ? 'Processing...' : 'Make Smoother (60fps)'}
                                     </ContextMenuItem>
-                                  ) : null}
+                                  ) : null} */}
                                 </>
                               ) : null}
                               {!isReservedHooksRoot ? (
@@ -2200,6 +2282,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
               <Designer
                 bgKey={designProjectState?.backgroundKey || designKey}
                 rembg={{ enabled: !designProjectState }} // Skip rembg if we have project state
+                isolateCutout={{ mode: 'user_choice', defaultEnabled: false }} // Let user choose in workspace
                 projectState={designProjectState}
                 onClose={()=> { setDesignOpen(false); setPreview(null); }}
                 onSave={saveDesignToWorkspace}
