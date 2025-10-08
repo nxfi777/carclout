@@ -6,6 +6,8 @@ import { generateVideoBlurHash } from "@/lib/video-blurhash-server";
 import { getSurreal } from "@/lib/surrealdb";
 import type { LibraryVideo } from "@/lib/library-image";
 
+export const maxDuration = 600; // 10 minutes for video interpolation
+
 // Credit cost calculation for video interpolation
 // Based on fal.ai pricing: $0.0013 per compute second
 // Reference: 4s 720p video = 7.43s compute = $0.00966 ≈ 8 credits

@@ -10,6 +10,7 @@ import { estimateVideoCredits, DEFAULT_VIDEO_FPS, chargeCreditsOnce, type VideoR
 import { generateVideoBlurHash } from "@/lib/video-blurhash-server";
 import type { LibraryVideo } from "@/lib/library-image";
 export const runtime = "nodejs";
+export const maxDuration = 600; // 10 minutes for video generation
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
@@ -275,11 +276,11 @@ export async function POST(req: Request) {
       try {
         console.error('Video generation error', e);
       } catch {}
-      return NextResponse.json({ error: 'Video generation failed' }, { status: 502 });
+      return NextResponse.json({ error: 'Video generation failed. Please try again in a moment.' }, { status: 502 });
     }
     const data = (result?.data || {}) as any;
     const videoUrl: string | null = data?.video?.url || data?.url || null;
-    if (!videoUrl) return NextResponse.json({ error: 'Service did not return video url' }, { status: 502 });
+    if (!videoUrl) return NextResponse.json({ error: 'Video generation failed. Please try again in a moment.' }, { status: 502 });
 
     // Persist to R2 as a single MP4 file with embedded cover art (the input image) when possible
     const createdIso = new Date().toISOString();
@@ -287,7 +288,7 @@ export async function POST(req: Request) {
     const fileBase = `${createdIso.replace(/[:.]/g, '-')}-${safeSlug}`;
     const singleOutKey = `${userRoot}/library/${fileBase}.mp4`;
     const fileRes = await fetch(videoUrl);
-    if (!fileRes.ok) return NextResponse.json({ error: 'Failed to fetch generated video' }, { status: 502 });
+    if (!fileRes.ok) return NextResponse.json({ error: 'Video generation failed. Please try again in a moment.' }, { status: 502 });
     const videoBytes = new Uint8Array(await fileRes.arrayBuffer());
 
     // Try to embed cover art using ffmpeg.wasm in browser-like runtimes only; fall back silently on Node

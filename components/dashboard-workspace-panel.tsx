@@ -2348,7 +2348,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                     const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateSlug: slug, startKey: key, variables }) });
                     const out = await resp.json().catch(()=>({}));
                     if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, estimatedCredits); return; }
-                    if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); return; }
+                    if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed. Please try again in a moment.'); return; }
                     {
                       const outKey = String((out as { key?: string }).key || '');
                       const name = outKey ? (outKey.split('/').pop() || 'video.mp4') : 'video.mp4';

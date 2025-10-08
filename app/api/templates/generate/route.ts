@@ -657,7 +657,7 @@ export async function POST(req: Request) {
     }
     const data = (result?.data || {}) as any;
     const candidateUrl: string | null = data?.images?.[0]?.url || data?.image?.url || data?.url || null;
-    if (!candidateUrl) return NextResponse.json({ error: "Fal did not return an image url" }, { status: 502 });
+    if (!candidateUrl) return NextResponse.json({ error: "Generation failed. Please try again in a moment." }, { status: 502 });
 
   // Fetch and persist to R2 under unified library folder
     const createdIso = new Date().toISOString();
@@ -665,7 +665,7 @@ export async function POST(req: Request) {
     await ensureFolder(userKeyPrefix);
 
     const fileRes = await fetch(candidateUrl);
-    if (!fileRes.ok) return NextResponse.json({ error: "Failed to fetch generated image" }, { status: 502 });
+    if (!fileRes.ok) return NextResponse.json({ error: "Generation failed. Please try again in a moment." }, { status: 502 });
     const arrayBuffer = await fileRes.arrayBuffer();
     const ext = (() => {
       const ct = fileRes.headers.get("content-type") || "";

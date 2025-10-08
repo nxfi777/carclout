@@ -6,6 +6,8 @@ import { generateVideoBlurHash } from "@/lib/video-blurhash-server";
 import { getSurreal } from "@/lib/surrealdb";
 import type { LibraryVideo } from "@/lib/library-image";
 
+export const maxDuration = 600; // 10 minutes for video upscaling
+
 // Credit cost calculation for video upscale
 // Using same profit margin as sora video gen (not pro): 1000 credits per 4s 720p video (costs $0.40)
 // Profit margin: 1000 credits / $0.40 = 2500 credits per dollar of cost

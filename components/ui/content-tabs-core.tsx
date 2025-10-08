@@ -611,9 +611,10 @@ export function TemplatesTabContent(){
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [_requiredShake, setRequiredShake] = useState(false);
   const [requiredImages, setRequiredImages] = useState<number>(1);
-  const [uploading, setUploading] = useState(false);
+  const [uploading, _setUploading] = useState(false);
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const [uploadedPreviews, setUploadedPreviews] = useState<Record<string, string>>({});
+  const [uploadedFiles, setUploadedFiles] = useState<Record<string, File>>({});
   const [busy, setBusy] = useState(false);
   // const [dominantTone, setDominantTone] = useState<string>("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -643,6 +644,17 @@ export function TemplatesTabContent(){
 
   // Credit depletion drawer hook
   const creditDepletion = useCreditDepletion();
+
+  // Cleanup object URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      Object.values(uploadedPreviews).forEach((url) => {
+        if (url && url.startsWith('blob:')) {
+          try { URL.revokeObjectURL(url); } catch {}
+        }
+      });
+    };
+  }, [uploadedPreviews]);
 
   // Reset generated output/designer state when switching templates or closing the dialog
   function resetTemplateSession() {
@@ -1164,37 +1176,79 @@ export function TemplatesTabContent(){
     const arr = Array.isArray(files) ? files : (files as unknown as File[]);
     const images = arr.filter((f) => (f?.type || '').startsWith('image/'));
     if (!images.length) return;
-    setUploading(true);
-    try {
-      const newKeys: string[] = [];
-      const newPreviews: Record<string, string> = {};
-      for (const file of images) {
-        try {
-          const form = new FormData();
-          form.append('file', file);
-          form.append('path', 'library');
-          const res = await fetch('/api/storage/upload', { method: 'POST', body: form });
-          const data = await res.json();
-          const key: string | undefined = data?.key;
-          if (key) {
-            newKeys.push(key);
-            try {
-              const url = await getViewUrl(key);
-              if (typeof url === 'string' && url) newPreviews[key] = url;
-            } catch {}
-          }
-        } catch {}
+    
+    // Immediately create previews and temporary keys for instant UI feedback
+    const tempKeys: string[] = [];
+    const tempPreviews: Record<string, string> = {};
+    const tempFiles: Record<string, File> = {};
+    
+    for (const file of images) {
+      // Create temporary key with a prefix to identify it as pending upload
+      const tempKey = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${file.name}`;
+      const objectUrl = URL.createObjectURL(file);
+      
+      tempKeys.push(tempKey);
+      tempPreviews[tempKey] = objectUrl;
+      tempFiles[tempKey] = file;
+    }
+    
+    // Immediately update UI with temporary data
+    setUploadedKeys((prev) => [...prev, ...tempKeys]);
+    setUploadedPreviews((prev) => ({ ...prev, ...tempPreviews }));
+    setUploadedFiles((prev) => ({ ...prev, ...tempFiles }));
+    if (!browseSelected && tempKeys.length) setBrowseSelected(tempKeys[0]);
+    
+    // Upload in the background and replace temp keys with real ones
+    for (let i = 0; i < images.length; i++) {
+      const file = images[i];
+      const tempKey = tempKeys[i];
+      
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('path', 'library');
+        const res = await fetch('/api/storage/upload', { method: 'POST', body: form });
+        const data = await res.json();
+        const realKey: string | undefined = data?.key;
+        
+        if (realKey) {
+          // Get the real URL
+          let realUrl = '';
+          try {
+            const url = await getViewUrl(realKey);
+            if (typeof url === 'string' && url) realUrl = url;
+          } catch {}
+          
+          // Replace temp key with real key in state
+          setUploadedKeys((prev) => prev.map(k => k === tempKey ? realKey : k));
+          
+          setUploadedPreviews((prev) => {
+            const next = { ...prev };
+            // Clean up object URL
+            if (prev[tempKey]) {
+              try { URL.revokeObjectURL(prev[tempKey]); } catch {}
+            }
+            delete next[tempKey];
+            if (realUrl) next[realKey] = realUrl;
+            return next;
+          });
+          
+          setUploadedFiles((prev) => {
+            const next = { ...prev };
+            delete next[tempKey];
+            return next;
+          });
+          
+          // Update selection if this temp key was selected
+          setSelectedImageKeys((prev) => prev.map(k => k === tempKey ? realKey : k));
+          
+          // Update browseSelected if needed
+          setBrowseSelected((prev) => prev === tempKey ? realKey : prev);
+        }
+      } catch (err) {
+        console.error('Upload failed for', file.name, err);
+        // Keep the temp preview on error so user still sees the image
       }
-      if (newKeys.length) {
-        setUploadedKeys((prev) => Array.from(new Set([...
-          prev,
-          ...newKeys
-        ])));
-        setUploadedPreviews((prev) => ({ ...prev, ...newPreviews }));
-        if (!browseSelected) setBrowseSelected(newKeys[0] || null);
-      }
-    } finally {
-      setUploading(false);
     }
   }
 
@@ -1454,7 +1508,32 @@ export function TemplatesTabContent(){
       }
       if (allSelected.length < requiredImages) { setRequiredShake(true); setTimeout(()=> setRequiredShake(false), 700); return; }
       selectedFullKey = allSelected[0] || null;
-      const userImageKeys: string[] = allSelected.slice(0, requiredImages).map((k)=>{
+      
+      // Separate temp keys (pending upload) from real keys
+      const selectedKeys = allSelected.slice(0, requiredImages);
+      const tempKeys = selectedKeys.filter(k => k.startsWith('temp-'));
+      const realKeys = selectedKeys.filter(k => !k.startsWith('temp-'));
+      
+      // Convert temp keys to data URLs
+      const userImageDataUrls: string[] = [];
+      for (const tempKey of tempKeys) {
+        const file = uploadedFiles[tempKey];
+        if (file) {
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(String(reader.result || ''));
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+            userImageDataUrls.push(dataUrl);
+          } catch (err) {
+            console.error('Failed to read temp file:', err);
+          }
+        }
+      }
+      
+      const userImageKeys: string[] = realKeys.map((k)=>{
         const m = k.match(/^users\/[^/]+\/(.+)$/);
         const rel = m ? m[1] : k.replace(/^users\//,'');
         return rel.replace(/^\/+/, '');
@@ -1467,7 +1546,13 @@ export function TemplatesTabContent(){
       const t = activeTemplate;
       if (t?.fixedAspectRatio && typeof t?.aspectRatio === 'number' && selectedFullKey && !willIsolateCar) {
         try {
-          const url: string | null = await getViewUrl(selectedFullKey);
+          // For temp keys, use the object URL directly
+          let url: string | null = null;
+          if (selectedFullKey.startsWith('temp-')) {
+            url = uploadedPreviews[selectedFullKey] || null;
+          } else {
+            url = await getViewUrl(selectedFullKey);
+          }
           if (url) {
             const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img = new Image(); img.onload=()=> resolve({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
             if (dims) {
@@ -1477,12 +1562,21 @@ export function TemplatesTabContent(){
               if (Math.abs(ar / targetAR - 1) <= tolerance) {
                 // Auto-crop minimally and continue without popup
                 setBusy(true);
-                try { await autoCropAndGenerateFromUrl(`/api/storage/file?key=${encodeURIComponent(selectedFullKey)}`, targetAR); } finally { setBusy(false); }
+                try { 
+                  // Use object URL for temp keys, storage URL for real keys
+                  const cropUrl = selectedFullKey.startsWith('temp-') 
+                    ? url 
+                    : `/api/storage/file?key=${encodeURIComponent(selectedFullKey)}`;
+                  await autoCropAndGenerateFromUrl(cropUrl, targetAR); 
+                } finally { setBusy(false); }
                 return;
               } else {
                 setPendingKeys([]);
-                // Use same-origin proxy to ensure drawable image for canvas
-                setCropUrl(`/api/storage/file?key=${encodeURIComponent(selectedFullKey)}`);
+                // Use object URL for temp keys, storage URL for real keys
+                const cropUrl = selectedFullKey.startsWith('temp-') 
+                  ? url 
+                  : `/api/storage/file?key=${encodeURIComponent(selectedFullKey)}`;
+                setCropUrl(cropUrl);
                 setCropOpen(true);
                 return; // wait for crop flow
               }
@@ -1536,7 +1630,14 @@ export function TemplatesTabContent(){
       }
       // Now we actually start generating: show busy UI
       setBusy(true);
-      const payload = { templateId: active.id, templateSlug: active.slug, userImageKeys, variables, isolateCar: getActualIsolateCar() };
+      const payload = { 
+        templateId: active.id, 
+        templateSlug: active.slug, 
+        userImageKeys, 
+        ...(userImageDataUrls.length > 0 && { userImageDataUrls }),
+        variables, 
+        isolateCar: getActualIsolateCar() 
+      };
       const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       let d: unknown = {};
       try { d = await res.json(); } catch { d = {}; }
@@ -1961,7 +2062,7 @@ export function TemplatesTabContent(){
                             const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: active?.id, templateSlug: active?.slug, startKey, duration: animDuration, variables: allVariables }) });
                             const out = await resp.json().catch(()=>({}));
                             if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, animCredits || 500); setAnimLoading(false); return; }
-                            if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); setAnimLoading(false); return; }
+                            if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed. Please try again in a moment.'); setAnimLoading(false); return; }
                             setAnimResultUrl(String(out.url));
                             if (typeof out?.key === 'string') setAnimResultKey(String(out.key));
                           } finally {
@@ -2266,7 +2367,6 @@ export function TemplatesTabContent(){
                                 <div className="text-xs text-white/60">Select up to {requiredImages}</div>
                               </div>
                             </DropZone>
-                            {uploading ? <div className="text-sm text-white/60">Uploading…</div> : null}
                             {uploadedKeys.length ? (
                               <div className="space-y-2">
                                 <div className="text-xs text-white/70">Uploaded this session</div>
@@ -2300,7 +2400,20 @@ export function TemplatesTabContent(){
                                           try {
                                             await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: k, isFolder: false }) });
                                             setUploadedKeys(prev=> prev.filter(x=> x!==k));
-                                            setUploadedPreviews(prev=> { const next = { ...prev }; try { delete (next as Record<string,string>)[k]; } catch {}; return next; });
+                                            setUploadedPreviews(prev=> { 
+                                              const next = { ...prev }; 
+                                              // Clean up object URL if it's a temporary upload
+                                              if (prev[k] && prev[k].startsWith('blob:')) {
+                                                try { URL.revokeObjectURL(prev[k]); } catch {}
+                                              }
+                                              try { delete (next as Record<string,string>)[k]; } catch {}; 
+                                              return next; 
+                                            });
+                                            setUploadedFiles(prev=> {
+                                              const next = { ...prev };
+                                              delete next[k];
+                                              return next;
+                                            });
                                             setSelectedImageKeys(prev=> prev.filter(x=> x!==k));
                                             toast.success('Deleted');
                                           } catch {
