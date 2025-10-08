@@ -23,25 +23,6 @@ export type AdminVideoConfig = {
 export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConfig; onChange: (v: AdminVideoConfig)=> void }){
   const v = value || {};
 
-  // Enforce provider-specific constraints
-  useEffect(()=>{
-    try {
-      if (!v?.enabled) return;
-      const provider = v.provider || 'sora2';
-      if (provider === 'kling2_5') {
-        const cur = String(v.duration || '5');
-        if (cur !== '5' && cur !== '10') {
-          onChange({ ...(v||{}), duration: '5' });
-        }
-      } else if (provider === 'sora2' || provider === 'sora2_pro') {
-        const cur = String(v.duration || '4');
-        if (!['4', '8', '12'].includes(cur)) {
-          onChange({ ...(v||{}), duration: '4' });
-        }
-      }
-    } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [v?.provider, v?.enabled]);
 
   const adminDurations = ((): readonly string[] => {
     const provider = v.provider || 'sora2';
@@ -103,18 +84,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
             <div className="text-xs text-white/70 mb-1">Provider</div>
             <Select value={(v.provider||'sora2')} onValueChange={(val)=>{
               const nextProvider = (val as AdminVideoConfig['provider']) || 'sora2';
-              // Ensure duration is valid for the selected provider
-              if (nextProvider === 'kling2_5') {
-                const cur = String(v.duration || '5');
-                const fixed = (cur === '5' || cur === '10') ? cur : '5';
-                onChange({ ...(v||{}), provider: nextProvider, duration: fixed as AdminVideoConfig['duration'], resolution: providerResolutions[nextProvider][0] });
-              } else if (nextProvider === 'sora2' || nextProvider === 'sora2_pro') {
-                const cur = String(v.duration || '4');
-                const fixed = ['4', '8', '12'].includes(cur) ? cur : '4';
-                onChange({ ...(v||{}), provider: nextProvider, duration: fixed as AdminVideoConfig['duration'], resolution: providerResolutions[nextProvider][0] });
-              } else {
-                onChange({ ...(v||{}), provider: nextProvider, resolution: providerResolutions[nextProvider][0] });
-              }
+              onChange({ ...(v||{}), provider: nextProvider, resolution: providerResolutions[nextProvider][0] });
             }}>
               <SelectTrigger className="h-9"><SelectValue placeholder="Provider" /></SelectTrigger>
               <SelectContent>
@@ -129,20 +99,6 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
             <div className="text-xs text-white/70 mb-1">Video prompt</div>
             <Textarea value={String(v.prompt||'')} onChange={(e)=> onChange({ ...(v||{}), prompt: e.currentTarget.value })} placeholder="Describe the motion/style, e.g. Smooth camera move around the car with neon reflections" rows={3} />
             <div className="mt-1 text-[0.8rem] text-white/60">You can use custom tokens like [CUSTOM_MOTION] to let users customize the prompt. These will appear as input fields in the user interface.</div>
-          </div>
-          <div>
-            <div className="text-xs text-white/70 mb-1">Admin Duration (default)</div>
-            <Select value={String(v.duration||((v.provider||'sora2') === 'sora2' ? '4' : '5'))} onValueChange={(val)=> onChange({ ...(v||{}), duration: (val as AdminVideoConfig['duration']) })}>
-              <SelectTrigger className="h-9"><SelectValue placeholder="Duration" /></SelectTrigger>
-              <SelectContent>
-                {adminDurations.map((d)=> (<SelectItem key={d} value={d}>{d}s</SelectItem>))}
-              </SelectContent>
-            </Select>
-            {v.provider === 'kling2_5' ? (
-              <div className="mt-1 text-[0.8rem] text-white/60">Kling supports only 5s or 10s.</div>
-            ) : v.provider === 'sora2' || v.provider === 'sora2_pro' ? (
-              <div className="mt-1 text-[0.8rem] text-white/60">Sora 2 supports 4s, 8s, or 12s.</div>
-            ) : null}
           </div>
           <div>
             <div className="text-xs text-white/70 mb-1">Resolution</div>
