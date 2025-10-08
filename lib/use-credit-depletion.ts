@@ -79,6 +79,19 @@ export function useCreditDepletion(): UseCreditDepletionReturn {
     // If they've ACTUALLY run out, always show drawer (critical situation)
     if (hasInsufficientCredits) {
       setIsOpen(true);
+      // Track usage limit hit (critical monetization moment)
+      try {
+        window.dispatchEvent(new CustomEvent("usage-limit-hit", { 
+          detail: { 
+            creditsRemaining: currentCredits, 
+            creditsNeeded, 
+            deficit: creditsNeeded - currentCredits 
+          }
+        }));
+        window.dispatchEvent(new CustomEvent("credits-depleted", { 
+          detail: { creditsRemaining: currentCredits, creditsNeeded }
+        }));
+      } catch {}
       return true; // Block action, show drawer
     }
     
@@ -90,6 +103,17 @@ export function useCreditDepletion(): UseCreditDepletionReturn {
     // Show drawer if they're running low and haven't dismissed yet
     if (isLowButSufficient) {
       setIsOpen(true);
+      // Track low credits warning
+      try {
+        window.dispatchEvent(new CustomEvent("usage-limit-hit", { 
+          detail: { 
+            creditsRemaining: currentCredits, 
+            creditsNeeded, 
+            warningThreshold: WARNING_THRESHOLD,
+            type: 'warning'
+          }
+        }));
+      } catch {}
       return true; // Block action, show drawer
     }
     

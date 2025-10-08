@@ -5,11 +5,14 @@ import type { BrushStroke } from "@/types/layer-editor";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { X, Wand2, Undo2, Redo2, Loader2 } from "lucide-react";
+import { X, Sparkles, Undo2, Redo2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
 import CreditDepletionDrawer from "@/components/credit-depletion-drawer";
 import { useCreditDepletion } from "@/lib/use-credit-depletion";
+
+// Debug flag - set to true to show bounding box preview and image preview
+const DEBUG_MODE = false;
 
 export default function DrawToEditOverlay() {
   const { state, dispatch } = useLayerEditor();
@@ -242,7 +245,15 @@ export default function DrawToEditOverlay() {
     const hasStrokes = annotation && annotation.strokes.length > 0;
     const hasCurrentStroke = includeCurrentStroke && currentStroke.length > 0;
     
-    if (!hasStrokes && !hasCurrentStroke) return null;
+    // If no strokes, return the full canvas as bounding box
+    if (!hasStrokes && !hasCurrentStroke) {
+      return {
+        x: 0,
+        y: 0,
+        width: canvas.width,
+        height: canvas.height,
+      };
+    }
 
     let minX = Infinity;
     let minY = Infinity;
@@ -363,8 +374,8 @@ export default function DrawToEditOverlay() {
     // Draw the merged result onto main canvas
     ctx.drawImage(tempCanvas, 0, 0);
 
-    // Draw bounding box preview if we have strokes (include current stroke for accurate preview)
-    if (annotation.strokes.length > 0 || currentStroke.length > 0) {
+    // DEBUG: Draw bounding box preview if we have strokes (include current stroke for accurate preview)
+    if (DEBUG_MODE && (annotation.strokes.length > 0 || currentStroke.length > 0)) {
       const bbox = calculateBoundingBox(true); // Include current stroke in preview
       if (bbox) {
         ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
@@ -462,11 +473,9 @@ export default function DrawToEditOverlay() {
   }, [isDrawing, isBrushTool, currentStroke, brushSize, getCanvasPoint, dispatch, strokeHistory, historyIndex]);
 
   const handleDone = useCallback(async () => {
-    if (!annotation || annotation.strokes.length === 0) {
-      toast.error('Please draw on the area you want to edit');
-      return;
-    }
+    if (!annotation) return;
 
+    // Allow clicking Done even without drawing - use whole canvas if no strokes
     const bbox = calculateBoundingBox(false); // Don't include current stroke (should be empty by now)
     if (!bbox) return;
 
@@ -785,10 +794,9 @@ export default function DrawToEditOverlay() {
           <Button
             size="sm"
             onClick={handleDone}
-            disabled={!annotation.strokes.length}
           >
-            <Wand2 className="size-4 mr-2" />
-            Done
+            <Sparkles className="size-4 mr-2" />
+            Edit
           </Button>
         </div>
       </div>
@@ -797,40 +805,42 @@ export default function DrawToEditOverlay() {
       <Dialog open={showPromptDialog} onOpenChange={setShowPromptDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>What would you like to change?</DialogTitle>
+            <DialogTitle>What should we change on this car?</DialogTitle>
             <DialogDescription>
-              Describe how you want to edit the selected area. For example: &quot;make the elephant a pig&quot; or &quot;change to red color&quot;
+              Describe the exact tweak you want in the selected area. For example: &quot;switch the paint to satin red&quot; or &quot;turn these wheels matte black&quot;
             </DialogDescription>
           </DialogHeader>
           
-          {/* Preview of the cropped region */}
-          <div className="border border-border rounded-lg overflow-hidden bg-black/20">
-            <div className="text-xs text-white/60 px-3 py-2 border-b border-border bg-black/30 flex items-center justify-between">
-              <span>Preview of selected region:</span>
-              {annotation?.boundingBox && (
-                <span className="font-mono text-white/40">
-                  {annotation.boundingBox.width} × {annotation.boundingBox.height}px
-                </span>
+          {/* DEBUG: Preview of the cropped region */}
+          {DEBUG_MODE && (
+            <div className="border border-border rounded-lg overflow-hidden bg-black/20">
+              <div className="text-xs text-white/60 px-3 py-2 border-b border-border bg-black/30 flex items-center justify-between">
+                <span>Preview of selected region:</span>
+                {annotation?.boundingBox && (
+                  <span className="font-mono text-white/40">
+                    {annotation.boundingBox.width} × {annotation.boundingBox.height}px
+                  </span>
+                )}
+              </div>
+              {previewImageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img 
+                  src={previewImageUrl} 
+                  alt="Preview of selected region" 
+                  className="w-full h-auto max-h-[300px] object-contain bg-black/10"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-32 text-white/40 text-sm">
+                  Generating preview...
+                </div>
               )}
             </div>
-            {previewImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img 
-                src={previewImageUrl} 
-                alt="Preview of selected region" 
-                className="w-full h-auto max-h-[300px] object-contain bg-black/10"
-              />
-            ) : (
-              <div className="flex items-center justify-center h-32 text-white/40 text-sm">
-                Generating preview...
-              </div>
-            )}
-          </div>
+          )}
           
           <Textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="e.g., make the car blue..."
+            placeholder="e.g., add a forged carbon hood or brighten the headlights..."
             className="min-h-[100px]"
           />
           <DialogFooter>

@@ -1096,6 +1096,19 @@ function DashboardShowroomPageInner() {
           attachments: Array.isArray(r.message?.attachments) ? r.message.attachments : m.attachments,
         } : m));
         setDmConversations(prev => prev.some(c => c.email === activeDm.email) ? prev : [{ email: activeDm.email, name: activeDm.name || activeDm.email, image: activeDm.image ?? null }, ...prev]);
+        
+        // Track DM sent
+        try {
+          window.dispatchEvent(new CustomEvent("dm-sent", { 
+            detail: { hasAttachments: !!attachments?.length }
+          }));
+          // Check if this is first DM conversation
+          if (!dmConversations.some(c => c.email === activeDm.email)) {
+            window.dispatchEvent(new CustomEvent("first-dm-conversation", { 
+              detail: { recipientEmail: activeDm.email }
+            }));
+          }
+        } catch {}
       } else {
         const payload: Record<string, unknown> = { channel: active };
         if (attachments?.length) payload.attachments = attachments.map((a) => a.key);
@@ -1110,6 +1123,18 @@ function DashboardShowroomPageInner() {
           status: 'sent',
           attachments: Array.isArray(r.message?.attachments) ? r.message.attachments : m.attachments,
         } : m));
+        
+        // Track message sent
+        try {
+          window.dispatchEvent(new CustomEvent("message-sent", { 
+            detail: { channel: active, hasAttachments }
+          }));
+          if (hasAttachments) {
+            window.dispatchEvent(new CustomEvent("attachment-shared", { 
+              detail: { channel: active, count: attachments?.length || 0 }
+            }));
+          }
+        } catch {}
         
         // Award XP for showroom post with image
         if (hasAttachments) {
@@ -1146,7 +1171,7 @@ function DashboardShowroomPageInner() {
     } catch {
       setMessages(prev => prev.map(m => m.tempId === tid ? { ...m, status: 'failed' } : m));
     }
-  }, [active, activeChatType, activeDm, me?.email, me?.name, muted?.active]);
+  }, [active, activeChatType, activeDm, dmConversations, me?.email, me?.name, muted?.active]);
 
   function insertEmoji(emoji: string) {
     const input = inputRef.current;

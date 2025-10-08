@@ -1,6 +1,5 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
@@ -30,9 +29,23 @@ export default function VehiclesEditor({ value, onChange, onWillRemoveVehicle, c
   function addVehicleQuick() {
     if (!make || !selectedModel) return;
     const type = inferTypeFromMake(make);
+    const wasEmpty = !value || value.length === 0;
     onChange([...(value || []), { make, model: selectedModel, type, kitted: false, colorFinish: "", accents: "" }]);
     setMake("");
     setSelectedModel("");
+    
+    // Track vehicle added
+    try {
+      window.dispatchEvent(new CustomEvent("vehicle-updated", { 
+        detail: { make, model: selectedModel, action: 'added' }
+      }));
+      // If this is the first vehicle, track activation
+      if (wasEmpty) {
+        window.dispatchEvent(new CustomEvent("first-vehicle-added", { 
+          detail: { make, model: selectedModel }
+        }));
+      }
+    } catch {}
   }
 
   function toggleKitted(index: number, nextVal: boolean) {
@@ -57,14 +70,16 @@ export default function VehiclesEditor({ value, onChange, onWillRemoveVehicle, c
       <div className="grid sm:grid-cols-2 gap-3">
         <div>
           <div className="text-xs mb-1 text-white/70">Vehicle Make (optional)</div>
-          <Select value={make} onValueChange={setMake}>
-            <SelectTrigger className="bg-white/5"><SelectValue placeholder="Select make" /></SelectTrigger>
-            <SelectContent side="bottom" align="start" position="popper" sideOffset={6} collisionPadding={0} avoidCollisions={false} className="bg-white/5">
-              {uniqueMakes.map((m) => (
-                <SelectItem key={m} value={m} className="cursor-pointer">{m}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            options={uniqueMakes.map((m) => ({ value: m, label: m }))}
+            value={make}
+            onValueChange={setMake}
+            placeholder="Search brand..."
+            searchPlaceholder="Search brand..."
+            emptyText="No brand found."
+            allowCustom={false}
+            className="bg-white/5"
+          />
         </div>
         <div>
           <div className="text-xs mb-1 text-white/70">Vehicle Model (optional)</div>

@@ -17,7 +17,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { TrendingUp, CarFront } from "lucide-react";
 import { TemplateCard } from "@/components/templates/template-card";
-import { UseTemplateContent } from "@/components/templates/use-template-content";
 import { Bar, BarChart, CartesianGrid, Line, XAxis, YAxis, ResponsiveContainer } from "recharts";
  
 import { Skeleton } from "@/components/ui/skeleton";
@@ -74,7 +73,7 @@ type TemplateDisplay = {
   } | null;
   video?: {
     enabled?: boolean;
-    provider?: 'seedance' | 'kling2_5' | 'sora2';
+    provider?: 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro';
     prompt?: string;
     duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
     resolution?: 'auto'|'480p'|'720p'|'1080p';
@@ -125,7 +124,7 @@ type CreateTemplatePayload = {
   }>;
   video?: {
     enabled?: boolean;
-    provider?: 'seedance' | 'kling2_5' | 'sora2';
+    provider?: 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro';
     prompt?: string;
     duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
     resolution?: 'auto'|'480p'|'720p'|'1080p';
@@ -1264,7 +1263,7 @@ function NewTemplateButton(){
     <>
       <Button size="sm" onClick={()=>setOpen(true)}>New Template</Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-6xl">
           <DialogHeader>
             <DialogTitle>Create template</DialogTitle>
           </DialogHeader>
@@ -1413,6 +1412,24 @@ function NewTemplateButton(){
                   }
                 } catch {}
               }}
+              onReorderAdminImages={(oldIndex, newIndex)=> {
+                setAdminImageFiles((prev)=> {
+                  const updated = [...prev];
+                  const [removed] = updated.splice(oldIndex, 1);
+                  updated.splice(newIndex, 0, removed);
+                  return updated;
+                });
+                // Update selected thumb index if it was one of the moved items
+                if (selectedThumbAdminIndex === oldIndex) {
+                  setSelectedThumbAdminIndex(newIndex);
+                } else if (selectedThumbAdminIndex !== null) {
+                  if (oldIndex < newIndex && selectedThumbAdminIndex > oldIndex && selectedThumbAdminIndex <= newIndex) {
+                    setSelectedThumbAdminIndex(selectedThumbAdminIndex - 1);
+                  } else if (oldIndex > newIndex && selectedThumbAdminIndex >= newIndex && selectedThumbAdminIndex < oldIndex) {
+                    setSelectedThumbAdminIndex(selectedThumbAdminIndex + 1);
+                  }
+                }
+              }}
             />
           </div>
           {/* Video generation config (shared component) */}
@@ -1525,8 +1542,6 @@ function TemplatesTab() {
   },[]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<TemplateDisplay | null>(null);
-  const [testOpen, setTestOpen] = useState(false);
-  const [testTemplate, setTestTemplate] = useState<TemplateDisplay | null>(null);
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -1592,14 +1607,10 @@ function TemplatesTab() {
             <ContextMenu key={t.id || t.slug}>
               <ContextMenuTrigger asChild>
                 <div className="relative">
-                  {t.status === 'draft' && (
-                    <div className="absolute top-2 right-2 z-10 bg-yellow-500/90 text-black text-xs font-semibold px-2 py-0.5 rounded">
-                      Draft
-                    </div>
-                  )}
                   <TemplateCard
-                    data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, blurhash: t.blurhash, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount, proOnly: !!t.proOnly, isVideoTemplate: Boolean(t.video?.enabled) }}
+                    data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, blurhash: t.blurhash, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount, proOnly: !!t.proOnly, isVideoTemplate: Boolean(t.video?.enabled), status: t.status }}
                     showNewBadge={true}
+                    showDraftBadge={true}
                     showLike={false}
                     showFavoriteCount={true}
                     onClick={()=>{ setActive(t); setOpen(true); }}
@@ -1607,7 +1618,6 @@ function TemplatesTab() {
                 </div>
               </ContextMenuTrigger>
               <ContextMenuContent className="w-48">
-                <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); setTestTemplate(t); setTestOpen(true); }}>Test Template</ContextMenuItem>
                 <ContextMenuItem onSelect={(e)=>{ e.preventDefault(); setActive(t); setOpen(true); }}>Edit</ContextMenuItem>
                 <ContextMenuItem onSelect={async()=>{
                   const ok = await confirmToast({ title: `Delete template "${t.name}"?`, message: 'This action cannot be undone.' });
@@ -1623,41 +1633,12 @@ function TemplatesTab() {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-6xl">
           <DialogHeader>
             <DialogTitle>{active?.name || 'Template'}</DialogTitle>
           </DialogHeader>
           {active ? (
             <AdminEditTemplate template={active} onSaved={()=>{ setOpen(false); setRefreshKey((v)=> v+1); }} />
-          ) : (
-            <div className="text-sm text-white/70">No template selected</div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={testOpen} onOpenChange={setTestOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Test Template: {testTemplate?.name || 'Template'}</DialogTitle>
-          </DialogHeader>
-          {testTemplate ? (
-            <UseTemplateContent template={{
-              id: testTemplate.id,
-              name: testTemplate.name,
-              desc: testTemplate.description,
-              thumbUrl: testTemplate.thumbUrl,
-              slug: testTemplate.slug,
-              variables: testTemplate.variables,
-              prompt: testTemplate.prompt,
-              favoriteCount: testTemplate.favoriteCount,
-              isFavorited: false,
-              fixedAspectRatio: testTemplate.fixedAspectRatio,
-              aspectRatio: testTemplate.aspectRatio,
-              allowedImageSources: testTemplate.allowedImageSources,
-              autoOpenDesigner: testTemplate.autoOpenDesigner,
-              maxUploadImages: testTemplate.maxUploadImages,
-              video: testTemplate.video,
-            }} />
           ) : (
             <div className="text-sm text-white/70">No template selected</div>
           )}
@@ -2464,6 +2445,38 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
         onDropThumbFile={(file)=>{ setSelectedThumbExistingKey(null); setSelectedThumbAdminIndex(null); setClearThumb(false); setThumbFile(file); }}
         onClearThumb={()=>{ setThumbFile(null); setSelectedThumbExistingKey(null); setSelectedThumbAdminIndex(null); setThumbViewUrl(null); setClearThumb(true); }}
         onDownloadThumbExistingOrView={()=>{ if (selectedThumbExistingKey) downloadAdminKey(selectedThumbExistingKey); else if (template?.thumbnailKey) downloadAdminKey(String(template.thumbnailKey)); else if (thumbViewUrl) { const name = ensureImageFilename((template?.thumbnailKey || '').split('/').pop() || 'thumbnail'); downloadUrl(thumbViewUrl, name); } }}
+        onReorderExistingKeys={(oldIndex, newIndex)=> {
+          setAdminExistingKeys((prev)=> {
+            const updated = [...prev];
+            const [removed] = updated.splice(oldIndex, 1);
+            updated.splice(newIndex, 0, removed);
+            return updated;
+          });
+          // Update selected thumb key if needed - track which key moved
+          const movedKey = adminExistingKeys[oldIndex];
+          if (selectedThumbExistingKey === movedKey) {
+            // The selected thumb is being moved, so no need to update the key itself
+            // since we're tracking by key not index
+          }
+        }}
+        onReorderNewAdminImages={(oldIndex, newIndex)=> {
+          setAdminNewFiles((prev)=> {
+            const updated = [...prev];
+            const [removed] = updated.splice(oldIndex, 1);
+            updated.splice(newIndex, 0, removed);
+            return updated;
+          });
+          // Update selected thumb index if it was one of the moved items
+          if (selectedThumbAdminIndex === oldIndex) {
+            setSelectedThumbAdminIndex(newIndex);
+          } else if (selectedThumbAdminIndex !== null) {
+            if (oldIndex < newIndex && selectedThumbAdminIndex > oldIndex && selectedThumbAdminIndex <= newIndex) {
+              setSelectedThumbAdminIndex(selectedThumbAdminIndex - 1);
+            } else if (oldIndex > newIndex && selectedThumbAdminIndex >= newIndex && selectedThumbAdminIndex < oldIndex) {
+              setSelectedThumbAdminIndex(selectedThumbAdminIndex + 1);
+            }
+          }
+        }}
       />
       {/* Foreground masking is always enabled by default; options removed */}
       <Textarea value={description} onChange={(e)=> setDescription(e.target.value)} placeholder="Description (optional)" rows={2} />

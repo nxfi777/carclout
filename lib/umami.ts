@@ -70,6 +70,20 @@ export async function trackEvent(eventName: string, data?: Record<string, unknow
   client?.track?.(eventName, data);
 }
 
+/**
+ * Track event with revenue (for Umami Revenue reports)
+ * @param eventName - Event name (e.g., "monetization:checkout-complete")
+ * @param revenue - Revenue amount in dollars
+ * @param data - Additional event properties
+ */
+export async function trackRevenue(eventName: string, revenue: number, data?: Record<string, unknown>) {
+  const client = await waitForUmami();
+  client?.track?.(eventName, {
+    ...data,
+    revenue, // Umami uses 'revenue' property for revenue tracking
+  });
+}
+
 export async function identifyUser(distinctId: string, data?: Record<string, unknown>) {
   const client = await waitForUmami();
   if (!client?.identify) return;

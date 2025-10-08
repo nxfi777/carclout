@@ -118,8 +118,10 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const isManagedRootName = useMemo(() => (name: string) => isManagedRoot(name), []);
   const isManagedPath = useMemo(() => isManagedPathUtil(path || ''), [path]);
   const [_maskHint, setMaskHint] = useState<Record<string, 'exists' | 'missing' | 'checking' | 'unknown'>>({});
+  const [blurhashBackfillProcessed, setBlurhashBackfillProcessed] = useState(new Set<string>());
   const creditDepletion = useCreditDepletion();
   const [videoTemplates, setVideoTemplates] = useState<Set<string>>(new Set());
+  const [profileVehicles, setProfileVehicles] = useState<Array<{ make?: string; model?: string; colorFinish?: string; accents?: string; type?: string }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +152,28 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       } catch {}
     })();
     return () => { cancelled = true; };
+  }, []);
+
+  // Fetch profile vehicles for token replacement in video prompts
+  useEffect(() => {
+    let cancelled = false;
+    const fetchVehicles = async () => {
+      try {
+        const profile = await fetch("/api/profile", { cache: "no-store" }).then((r) => r.json());
+        const vehicles: Array<{ make?: string; model?: string; colorFinish?: string; accents?: string; type?: string }> = Array.isArray(profile?.profile?.vehicles) ? profile.profile.vehicles : [];
+        if (!cancelled) setProfileVehicles(vehicles);
+      } catch {}
+    };
+    fetchVehicles();
+    
+    // Re-fetch when profile is updated
+    const onProfileUpdated = () => { fetchVehicles(); };
+    window.addEventListener("profile-updated", onProfileUpdated as EventListener);
+    
+    return () => { 
+      cancelled = true;
+      window.removeEventListener("profile-updated", onProfileUpdated as EventListener);
+    };
   }, []);
 
   function canonicalPlan(p?: string | null): 'base' | 'premium' | 'ultra' | null {
@@ -188,7 +212,6 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       if (res.status === 400 && (data?.error === 'UPSCALE_DIM_OVERFLOW')) { toast.error('Upscale would exceed the 4K limit.'); return; }
       if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { toast.error('This image was already upscaled. Use the original.'); return; }
       if (!res.ok || !data?.key) { toast.error(data?.error || 'Upscale failed'); return; }
-      toast.success('Upscaled image saved to /library');
       await refresh(undefined, { force: true });
       setTreeVersion(v=>v+1);
     } catch {} finally { setUpscaleBusy(false); }
@@ -208,7 +231,6 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       if (res.status === 403) { toast.error('Video upscaling is only available on the Ultra plan.'); return; }
       if (!res.ok || !data?.key) { toast.error(data?.error || 'Video upscale failed'); return; }
       
-      toast.success(`Upscaled video saved to /library (${data.credits_used} credits used)`);
       await refresh(undefined, { force: true });
       setTreeVersion(v => v + 1);
     } catch (e) {
@@ -237,7 +259,6 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       }
       if (!res.ok || !data?.key) { toast.error(data?.error || 'Video smoothing failed'); return; }
       
-      toast.success(`Smooth 60fps video saved to /library (${data.credits_used} credits used)`);
       await refresh(undefined, { force: true });
       setTreeVersion(v => v + 1);
     } catch (e) {
@@ -1086,6 +1107,87 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     );
   }
 
+  function VideoThumb({ storageKey, alt, url: providedUrl, blurhash }: { storageKey: string; alt: string; url?: string | null; blurhash?: string }) {
+    const [url, setUrl] = useState<string | null>(providedUrl || null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [isInView, setIsInView] = useState(false);
+    const [isLoaded, setIsLoaded] = useState(false);
+
+    useEffect(() => {
+      let cancelled = false;
+      if (providedUrl) {
+        setUrl(providedUrl);
+        return () => { cancelled = true; };
+      }
+      (async () => {
+        try {
+          const u = await getViewUrl(storageKey, scope);
+          if (!cancelled && u) setUrl(u);
+        } catch {}
+      })();
+      return () => { cancelled = true; };
+    }, [storageKey, providedUrl]);
+
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            setIsInView(entry.isIntersecting);
+          });
+        },
+        { threshold: 0.5 }
+      );
+
+      observer.observe(video);
+      return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video || !url) return;
+
+      if (isInView) {
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+      }
+    }, [isInView, url]);
+
+    if (!url) return (
+      <Skeleton className="w-full h-full rounded-none" />
+    );
+
+    return (
+      <>
+        {blurhash && !isLoaded && (
+          <BlurhashImage
+            src=""
+            alt={alt}
+            fill
+            sizes="(max-width: 768px) 50vw, 12rem"
+            blurhash={blurhash}
+            className="object-cover"
+            showSkeleton={false}
+          />
+        )}
+        <video
+          ref={videoRef}
+          src={url}
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ opacity: isLoaded ? 1 : 0, transition: 'opacity 0.3s' }}
+          loop
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedData={() => setIsLoaded(true)}
+        />
+      </>
+    );
+  }
+
   const sortedItems = useMemo(() => {
     const last = path.split('/').pop() || '';
     const visibleUnfiltered = items.filter((it) => !(it.type === 'folder' && it.name === last));
@@ -1109,13 +1211,14 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   // Reset cached view URLs on path change
   useEffect(() => { setViewUrls({}); }, [path]);
 
-  // Bulk fetch signed view URLs for image thumbnails in icons view
+  // Bulk fetch signed view URLs for image and video thumbnails in icons view
   useEffect(() => {
     let aborted = false;
     if (view !== 'icons') return () => { aborted = true; };
     const isImage = (n: string) => /(\.png|\.jpe?g|\.gif|\.webp|\.svg|\.bmp|\.tiff?)$/i.test(n);
+    const isVideo = (n: string) => /(\.mp4|\.mov|\.webm|\.avi|\.mkv)$/i.test(n);
     const keys = sortedItems
-      .filter((it) => it.type === 'file' && isImage(it.name))
+      .filter((it) => it.type === 'file' && (isImage(it.name) || isVideo(it.name)))
       .map((it) => it.key || `${path ? `${path}/` : ''}${it.name}`);
     const unique = Array.from(new Set(keys));
     const missing = unique.filter((k) => !viewUrls[k]);
@@ -1128,6 +1231,89 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     })();
     return () => { aborted = true; };
   }, [sortedItems, path, scope, view, viewUrls]);
+
+  // Automatic blurhash backfill for items without blurhashes
+  useEffect(() => {
+    let aborted = false;
+    
+    // Only backfill in library paths
+    const isLibraryPath = path === 'library' || path.startsWith('library/');
+    if (!isLibraryPath || loading) return () => { aborted = true; };
+
+    const isImage = (n: string) => /(\.png|\.jpe?g|\.gif|\.webp|\.svg|\.bmp|\.tiff?)$/i.test(n);
+    const isVideo = (n: string) => /(\.mp4|\.mov|\.webm|\.avi|\.mkv)$/i.test(n);
+
+    // Find items that need blurhash generation
+    const itemsNeedingBlurhash = sortedItems.filter((it) => {
+      if (it.type !== 'file') return false;
+      if (!it.key) return false;
+      if (it.blurhash) return false; // Already has blurhash
+      if (blurhashBackfillProcessed.has(it.key)) return false; // Already attempted
+      return isImage(it.name) || isVideo(it.name);
+    });
+
+    if (itemsNeedingBlurhash.length === 0) return () => { aborted = true; };
+
+    // Process items one at a time with delay to avoid overwhelming server
+    let currentIndex = 0;
+    const processNext = async () => {
+      if (aborted || currentIndex >= itemsNeedingBlurhash.length) return;
+
+      const item = itemsNeedingBlurhash[currentIndex];
+      if (!item?.key) {
+        currentIndex++;
+        setTimeout(processNext, 100);
+        return;
+      }
+
+      try {
+        console.log(`[blurhash-backfill] Generating for: ${item.key}`);
+        
+        const response = await fetch('/api/storage/generate-blurhash-backfill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: item.key, scope }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Update items with the new blurhash
+          if (data.blurhash && !aborted) {
+            setItems((prevItems) =>
+              prevItems.map((it) =>
+                it.key === item.key ? { ...it, blurhash: data.blurhash } : it
+              )
+            );
+            console.log(`[blurhash-backfill] Success: ${item.key}`);
+          }
+        } else {
+          console.warn(`[blurhash-backfill] Failed for ${item.key}:`, await response.text());
+        }
+      } catch (error) {
+        console.error(`[blurhash-backfill] Error for ${item.key}:`, error);
+      } finally {
+        // Mark as processed regardless of success/failure
+        if (!aborted) {
+          setBlurhashBackfillProcessed((prev) => new Set(prev).add(item.key!));
+        }
+      }
+
+      currentIndex++;
+      // Small delay between items to avoid overwhelming the server
+      if (!aborted && currentIndex < itemsNeedingBlurhash.length) {
+        setTimeout(processNext, 500);
+      }
+    };
+
+    // Start processing after a short delay
+    const timeoutId = setTimeout(processNext, 1000);
+
+    return () => {
+      aborted = true;
+      clearTimeout(timeoutId);
+    };
+  }, [sortedItems, path, scope, loading, blurhashBackfillProcessed]);
 
   function updateSort(next: "name" | "size" | "modified") {
     setSortBy((prev) => {
@@ -1770,6 +1956,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                         const isReservedHooksRoot = it.type === 'folder' && it.name === 'hooks' && !path;
                         const isManagedContext = isManagedPath;
                         const isImage = /(\.png|jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(it.name);
+                        const isVideo = /(\.mp4|\.mov|\.webm|\.avi|\.mkv)$/i.test(it.name);
                         const k = itemStorageKey(it);
                         const checked = isSelectedKey(k);
                         return (
@@ -1814,9 +2001,11 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                 {it.type==='folder' ? (
                                   <FolderIconFancy size={0.85} color="#8EA2FF" />
                                 ) : (
-                                  <div className="aspect-square w-full rounded-md bg-black/20 grid place-items-center overflow-hidden">
+                                  <div className="aspect-square w-full rounded-md bg-black/20 grid place-items-center overflow-hidden relative">
                                     {isImage ? (
                                       <div className="w-full h-full"><ImageThumb storageKey={it.key || `${path ? `${path}/` : ''}${it.name}`} alt={it.name} url={viewUrls[(it.key || `${path ? `${path}/` : ''}${it.name}`)] || null} blurhash={it.blurhash} /></div>
+                                    ) : isVideo ? (
+                                      <VideoThumb storageKey={it.key || `${path ? `${path}/` : ''}${it.name}`} alt={it.name} url={viewUrls[(it.key || `${path ? `${path}/` : ''}${it.name}`)] || null} blurhash={it.blurhash} />
                                     ) : (
                                       <svg className="size-10 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeWidth="2" d="M7 21h10a2 2 0 0 0 2-2V9.5L12.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z"/></svg>
                                     )}
@@ -2050,11 +2239,33 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                       const m = name.match(/^[0-9T\-:.]+-([a-z0-9\-]+)/i);
                       if (m && m[1]) slug = m[1].toLowerCase();
                     } catch {}
-                    const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateSlug: slug, startKey: key }) });
+                    
+                    // Build variables for token replacement in video prompts (same as image generation)
+                    const variables: Record<string, string> = {};
+                    // Try to extract vehicle data from user's profile
+                    // Use first vehicle if available, or try to match based on filename
+                    if (profileVehicles.length > 0) {
+                      const v = profileVehicles[0]; // For now, use first vehicle; could be enhanced to match by filename
+                      const brand = v.make || '';
+                      const model = v.model || '';
+                      const cf = v.colorFinish || '';
+                      const acc = v.accents || '';
+                      const combo = acc ? `${cf} with ${acc}` : cf;
+                      if (brand) {
+                        variables.BRAND = brand;
+                        variables.MAKE = brand;
+                        variables.BRAND_CAPS = brand.toUpperCase();
+                      }
+                      if (model) variables.MODEL = model;
+                      if (cf) variables.COLOR_FINISH = cf;
+                      if (acc) variables.ACCENTS = acc;
+                      if (combo) variables.COLOR_FINISH_ACCENTS = combo;
+                    }
+                    
+                    const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateSlug: slug, startKey: key, variables }) });
                     const out = await resp.json().catch(()=>({}));
                     if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, estimatedCredits); return; }
                     if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); return; }
-                    try { toast.success('Video saved to /library'); } catch {}
                     {
                       const outKey = String((out as { key?: string }).key || '');
                       const name = outKey ? (outKey.split('/').pop() || 'video.mp4') : 'video.mp4';

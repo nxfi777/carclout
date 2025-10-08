@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 
 export type AdminVideoConfig = {
   enabled?: boolean;
-  provider?: 'seedance' | 'kling2_5' | 'sora2';
+  provider?: 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro';
   prompt?: string;
   duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
   resolution?: 'auto'|'480p'|'720p'|'1080p';
@@ -33,7 +33,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
         if (cur !== '5' && cur !== '10') {
           onChange({ ...(v||{}), duration: '5' });
         }
-      } else if (provider === 'sora2') {
+      } else if (provider === 'sora2' || provider === 'sora2_pro') {
         const cur = String(v.duration || '4');
         if (!['4', '8', '12'].includes(cur)) {
           onChange({ ...(v||{}), duration: '4' });
@@ -46,33 +46,36 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
   const adminDurations = ((): readonly string[] => {
     const provider = v.provider || 'sora2';
     if (provider === 'kling2_5') return ['5','10'] as const;
-    if (provider === 'sora2') return ['4','8','12'] as const;
+    if (provider === 'sora2' || provider === 'sora2_pro') return ['4','8','12'] as const;
     return ['3','4','5','6','7','8','9','10','11','12'] as const;
   })();
-  const providerResolutions: Record<'seedance' | 'kling2_5' | 'sora2', Array<'auto'|'480p'|'720p'|'1080p'>> = {
+  const providerResolutions: Record<'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro', Array<'auto'|'480p'|'720p'|'1080p'>> = {
     seedance: ['480p','720p','1080p'],
     kling2_5: ['720p','1080p'],
-    sora2: ['auto','720p'],
+    sora2: ['720p','auto'],
+    sora2_pro: ['720p','auto'],
   };
   const resolutionOptions = providerResolutions[v.provider || 'sora2'];
   const resolutionKey = resolutionOptions.join('|');
-  const providerAspectRatios: Record<'seedance' | 'kling2_5' | 'sora2', Array<'21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'>> = {
+  const providerAspectRatios: Record<'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro', Array<'21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'>> = {
     seedance: ['auto','21:9','16:9','4:3','1:1','3:4','9:16'],
     kling2_5: ['auto','16:9','1:1','9:16'],
     sora2: ['auto','16:9','9:16'],
+    sora2_pro: ['auto','16:9','9:16'],
   };
   const aspectOptions = providerAspectRatios[v.provider || 'sora2'];
   const aspectKey = aspectOptions.join('|');
-  const providerLabels: Record<'seedance' | 'kling2_5' | 'sora2', string> = {
+  const providerLabels: Record<'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro', string> = {
     seedance: 'Seedance',
     kling2_5: 'Kling 2.5',
     sora2: 'Sora 2',
+    sora2_pro: 'Sora 2 Pro',
   };
   const providerLabel = providerLabels[v.provider || 'sora2'];
 
   useEffect(() => {
     if (!v?.enabled) return;
-    const current = String(v?.resolution || (v.provider === 'sora2' ? 'auto' : '1080p')) as AdminVideoConfig['resolution'];
+    const current = String(v?.resolution || (v.provider === 'sora2' || v.provider === 'sora2_pro' ? '720p' : '1080p')) as AdminVideoConfig['resolution'];
     if (current && !resolutionOptions.includes(current)) {
       onChange({ ...(v||{}), resolution: resolutionOptions[0] });
     }
@@ -105,7 +108,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
                 const cur = String(v.duration || '5');
                 const fixed = (cur === '5' || cur === '10') ? cur : '5';
                 onChange({ ...(v||{}), provider: nextProvider, duration: fixed as AdminVideoConfig['duration'], resolution: providerResolutions[nextProvider][0] });
-              } else if (nextProvider === 'sora2') {
+              } else if (nextProvider === 'sora2' || nextProvider === 'sora2_pro') {
                 const cur = String(v.duration || '4');
                 const fixed = ['4', '8', '12'].includes(cur) ? cur : '4';
                 onChange({ ...(v||{}), provider: nextProvider, duration: fixed as AdminVideoConfig['duration'], resolution: providerResolutions[nextProvider][0] });
@@ -116,6 +119,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
               <SelectTrigger className="h-9"><SelectValue placeholder="Provider" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="sora2">Sora 2 (Default)</SelectItem>
+                <SelectItem value="sora2_pro">Sora 2 Pro</SelectItem>
                 <SelectItem value="seedance">Seedance</SelectItem>
                 <SelectItem value="kling2_5">Kling 2.5 Turbo Pro</SelectItem>
               </SelectContent>
@@ -136,7 +140,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
             </Select>
             {v.provider === 'kling2_5' ? (
               <div className="mt-1 text-[0.8rem] text-white/60">Kling supports only 5s or 10s.</div>
-            ) : v.provider === 'sora2' ? (
+            ) : v.provider === 'sora2' || v.provider === 'sora2_pro' ? (
               <div className="mt-1 text-[0.8rem] text-white/60">Sora 2 supports 4s, 8s, or 12s.</div>
             ) : null}
           </div>
@@ -160,7 +164,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
               </SelectContent>
             </Select>
           </div>
-          {v.provider !== 'kling2_5' && v.provider !== 'sora2' ? (
+          {v.provider !== 'kling2_5' && v.provider !== 'sora2' && v.provider !== 'sora2_pro' ? (
             <div className="flex items-center gap-2">
               <div className="text-xs text-white/70">Camera fixed</div>
               <Switch checked={!!v.camera_fixed} onCheckedChange={(on)=> onChange({ ...(v||{}), camera_fixed: !!on })} />
@@ -175,7 +179,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
                 onChange({ ...(v||{}), cfg_scale: clamped });
               }} className="w-24 h-9" />
             </div>
-          ) : v.provider !== 'sora2' ? (
+          ) : v.provider !== 'sora2' && v.provider !== 'sora2_pro' ? (
             <div>
               <div className="text-xs text-white/70 mb-1">FPS (for cost estimate)</div>
               <Input type="number" value={String(v.fps || 24)} onChange={(e)=>{ const n = Math.max(1, Math.round(Number(e.currentTarget.value||24))); onChange({ ...(v||{}), fps: n }); }} className="w-24 h-9" />

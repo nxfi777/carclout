@@ -18,6 +18,7 @@ export type TemplateCardData = {
   isFavorited?: boolean;
   proOnly?: boolean;
   isVideoTemplate?: boolean;
+  status?: 'draft' | 'public';
 };
 
 type TemplateCardProps = {
@@ -27,15 +28,19 @@ type TemplateCardProps = {
   showLike?: boolean;
   showFavoriteCount?: boolean;
   userHasPro?: boolean;
+  showDraftBadge?: boolean; // Show draft badge for admins
   onLikeToggle?: () => void;
   onClick?: () => void;
 };
 
 export function TemplateCard(props: TemplateCardProps) {
-  const { data, className, showNewBadge = true, showLike = false, showFavoriteCount = false, userHasPro: _userHasPro = false, onLikeToggle, onClick } = props;
+  const { data, className, showNewBadge = true, showLike = false, showFavoriteCount = false, userHasPro: _userHasPro = false, showDraftBadge = false, onLikeToggle, onClick } = props;
   const [hover, setHover] = React.useState(false);
+  const isDraft = showDraftBadge && data?.status === 'draft';
   const isNew = React.useMemo(() => {
     if (!showNewBadge) return false;
+    // Don't show "NEW" badge if this is a draft template (draft badge takes priority)
+    if (isDraft) return false;
     const raw = data?.createdAt;
     if (!raw) return false;
     try {
@@ -46,7 +51,7 @@ export function TemplateCard(props: TemplateCardProps) {
     } catch {
       return false;
     }
-  }, [data?.createdAt, showNewBadge]);
+  }, [data?.createdAt, showNewBadge, isDraft]);
 
   return (
     <div
@@ -71,6 +76,12 @@ export function TemplateCard(props: TemplateCardProps) {
           <span>Pro</span>
         </span>
       ) : null */}
+
+      {isDraft ? (
+        <div className="absolute top-2 left-2 z-10 bg-yellow-500/90 text-black text-xs font-semibold px-2 py-0.5 rounded">
+          Draft
+        </div>
+      ) : null}
 
       {isNew ? (
         <span className="absolute top-[0.5rem] left-[0.5rem] z-10 text-[0.625rem] px-[0.5em] py-[0.25em] rounded-full border shadow badge-new">

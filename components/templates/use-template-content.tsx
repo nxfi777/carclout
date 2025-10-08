@@ -1,10 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
-const PROVIDER_DURATION_OPTIONS: Record<'seedance' | 'kling2_5' | 'sora2', ReadonlyArray<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>> = {
-  seedance: ['3','4','5','6','7','8','9','10','11','12'],
-  kling2_5: ['5','10'],
-  sora2: ['4','8','12'],
-} as const;
+import { useEffect, useRef, useState } from "react";
 
 import { motion } from "framer-motion";
 import NextImage from "next/image";
@@ -13,9 +8,7 @@ import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
-import { MAKES } from "@/lib/vehicles";
 // import { R2FileTree } from "@/components/ui/file-tree";
 import FixedAspectCropper from "@/components/ui/fixed-aspect-cropper";
 import Designer from "@/components/layer-editor/designer";
@@ -53,7 +46,7 @@ export type UseTemplateTemplate = {
   maxUploadImages?: number;
   video?: {
     enabled?: boolean;
-    provider?: 'seedance' | 'kling2_5' | 'sora2';
+    provider?: 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro';
     prompt?: string;
     duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
     resolution?: 'auto'|'480p'|'720p'|'1080p';
@@ -80,37 +73,6 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
   const [busy, setBusy] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultKey, setResultKey] = useState<string | null>(null);
-  const videoConfig = template?.video || null;
-  const resolvedProvider: 'seedance' | 'kling2_5' | 'sora2' = (() => {
-    const raw = String(videoConfig?.provider || '').toLowerCase();
-    if (raw === 'kling2_5') return 'kling2_5';
-    if (raw === 'sora2' || !raw) return 'sora2';
-    return 'seedance';
-  })();
-  const _allowedDurationsKey = useMemo(() => {
-    if (!Array.isArray(videoConfig?.allowedDurations) || !videoConfig.allowedDurations.length) return '';
-    return videoConfig.allowedDurations.join(',');
-  }, [videoConfig?.allowedDurations]);
-  const availableDurations = useMemo(() => {
-    const allowed = Array.isArray(videoConfig?.allowedDurations) && videoConfig.allowedDurations.length
-      ? videoConfig.allowedDurations
-      : PROVIDER_DURATION_OPTIONS[resolvedProvider];
-    const unique = Array.from(new Set(allowed.map((d) => String(d) as typeof allowed[number])));
-    const filtered = unique.filter((d) => (PROVIDER_DURATION_OPTIONS[resolvedProvider] as ReadonlyArray<string>).includes(d));
-    return filtered as Array<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>;
-  }, [resolvedProvider, videoConfig?.allowedDurations]);
-  const defaultDuration = useMemo(() => {
-    const raw = String(videoConfig?.duration || '').trim();
-    if (availableDurations.includes(raw as typeof availableDurations[number])) return raw as typeof availableDurations[number];
-    return availableDurations[0] || '4';
-  }, [availableDurations, videoConfig?.duration]);
-  const [selectedDuration, setSelectedDuration] = useState<typeof availableDurations[number] | '4'>(defaultDuration);
-  useEffect(() => {
-    setSelectedDuration((prev) => {
-      if (availableDurations.includes(prev as typeof availableDurations[number])) return prev;
-      return defaultDuration;
-    });
-  }, [template?.id, resolvedProvider, defaultDuration, availableDurations]);
   const creditDepletion = useCreditDepletion();
   const [designOpen, setDesignOpen] = useState(false);
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
@@ -421,10 +383,25 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
             } catch {}
           }
       if (newKeys.length) {
-        setUploadedKeys((prev) => Array.from(new Set([...
-          prev,
-          ...newKeys
-        ])));
+        setUploadedKeys((prev) => {
+          const wasEmpty = !prev || prev.length === 0;
+          const newSet = Array.from(new Set([...prev, ...newKeys]));
+          
+          // Track workspace upload
+          try {
+            window.dispatchEvent(new CustomEvent("workspace-upload", { 
+              detail: { count: newKeys.length }
+            }));
+            // If this is first upload, track activation
+            if (wasEmpty) {
+              window.dispatchEvent(new CustomEvent("first-workspace-upload", { 
+                detail: { count: newKeys.length }
+              }));
+            }
+          } catch {}
+          
+          return newSet;
+        });
         setUploadedPreviews((prev) => ({ ...prev, ...newPreviews }));
         if (!browseSelected) setBrowseSelected(newKeys[0] || null);
         // Auto-add up to remaining slots
@@ -653,7 +630,14 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
       }
       const data = d as Record<string, unknown>;
       if (!res.ok) {
-        toast.error(String(data?.error || "Generation failed"));
+        const errorMsg = String(data?.error || "Generation failed");
+        toast.error(errorMsg);
+        // Track generation failure
+        try {
+          window.dispatchEvent(new CustomEvent("template-generation-failed", { 
+            detail: { templateId: template?.id, templateName: template?.name, error: errorMsg }
+          }));
+        } catch {}
         return;
       }
       if (sess !== sessionRef.current) { return; }
@@ -665,6 +649,30 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
         if (typeof data?.key === "string") setDesignOpen(true);
       } catch {}
       setUpscales([]);
+      
+      // Track successful template generation
+      try {
+        window.dispatchEvent(new CustomEvent("template-generated", { 
+          detail: { 
+            templateId: template?.id, 
+            templateName: template?.name, 
+            source,
+            // Add for breakdown analysis
+            template_slug: template?.slug,
+            image_source: source
+          }
+        }));
+        // If this is the first result (no previous resultKey), it might be first generation
+        if (!resultKey) {
+          window.dispatchEvent(new CustomEvent("first-template-generated", { 
+            detail: { 
+              templateId: template?.id, 
+              templateName: template?.name,
+              template_slug: template?.slug
+            }
+          }));
+        }
+      } catch {}
     } finally {
       setBusy(false);
     }
@@ -811,7 +819,7 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
               <AppDialogTitle className="flex items-center justify-between">
                 <span>Designer</span>
                 {!busy && !resultUrl ? (
-                  <span className="hidden sm:inline mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">For best results, use a car photo that matches this template&apos;s orientation</span>
+                  <span className="hidden lg:inline mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70 max-w-[50%] text-center pointer-events-none">For best results, use a car photo that matches this template&apos;s orientation</span>
                 ) : null}
               </AppDialogTitle>
             </AppDialogHeader>
@@ -861,66 +869,8 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                       }
                     } catch {}
                   }}
-                  showAnimate={!!(template?.video && (template.video as { enabled?: boolean })?.enabled)}
-                  onAnimate={async (getBlob)=>{
-                    try {
-                      const blob = await getBlob();
-                      if (!blob) return;
-                      const filename = `design-${Date.now()}.png`;
-                      const file = new File([blob], filename, { type: 'image/png' });
-                      const form = new FormData();
-                      form.append('file', file, filename);
-                      form.append('path', 'library');
-                      const res = await fetch('/api/storage/upload', { method: 'POST', body: form });
-                      const data = await res.json().catch(()=>({}));
-                      const key = typeof data?.key === 'string' ? String(data.key) : '';
-                      if (!key) { toast.error('Failed to prepare animation'); return; }
-                      // Calculate credits and check if user has enough
-                      let estimatedCredits = 500; // Default fallback
-                      try {
-                        const { estimateVideoCredits } = await import('@/lib/credits-client');
-                        const v = template?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2' } | null | undefined;
-                        const duration = Number(selectedDuration || v?.duration || defaultDuration || 4);
-                        const resolution = ((): 'auto'|'480p'|'720p'|'1080p' => {
-                          if (resolvedProvider === 'sora2') {
-                            return (v?.resolution === 'auto' ? 'auto' : '720p');
-                          }
-                          return (v?.resolution || '1080p') as 'auto'|'480p'|'720p'|'1080p';
-                        })();
-                        const provider = resolvedProvider;
-                        const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
-                        const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
-                        estimatedCredits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
-                        const providerNames: Record<'seedance' | 'kling2_5' | 'sora2', string> = {
-                          seedance: 'Seedance',
-                          kling2_5: 'Kling 2.5',
-                          sora2: 'Sora 2',
-                        };
-                        const ok = confirm(`Animate this design into a ${duration}s ${providerNames[provider]} video? This will use ~${estimatedCredits} credits.`);
-                        if (!ok) return;
-                      } catch {}
-                      // Check credits before calling API
-                      const bal = await getCredits();
-                      const insufficientCredits = creditDepletion.checkAndTrigger(bal, estimatedCredits);
-                      if (insufficientCredits) return;
-                      const resp = await fetch('/api/templates/video', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          templateId: template?.id,
-                          templateSlug: template?.slug,
-                          startKey: key,
-                          duration: selectedDuration,
-                          variables: varState,
-                        }),
-                      });
-                      const out = await resp.json().catch(()=>({}));
-                      if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, estimatedCredits); return; }
-                      if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); return; }
-                      try { toast.success('Video is ready'); } catch {}
-                      window.open(String(out.url), '_blank');
-                    } catch {}
-                  }}
+                  showAnimate={false}
+                  onAnimate={undefined}
                 />
               </div>
             </AppDialogContent>
@@ -938,74 +888,17 @@ export function UseTemplateContent({ template }: { template: UseTemplateTemplate
                     (v) => tokensInPrompt.has(String(v?.key || "")) && !builtin.has(String(v?.key || ""))
                   )
                 : [];
-              // Extract custom tokens from video prompt
-              const videoPromptTokens = (() => {
-                if (!template?.video?.enabled || !template?.video?.prompt) return [];
-                const matches = String(template.video.prompt).match(/\[([A-Z0-9_]+)\]/g);
-                if (!matches) return [];
-                const tokens = matches.map((m) => m.replace(/^[\[]|[\]]$/g, ""));
-                const builtin = new Set(["BRAND", "BRAND_CAPS", "MODEL", "COLOR_FINISH", "ACCENTS", "COLOR_FINISH_ACCENTS"]);
-                // Only show custom tokens (not built-in ones) that aren't already in the image prompt
-                const customOnly = tokens.filter((t) => !builtin.has(t) && !tokensInPrompt.has(t));
-                return Array.from(new Set(customOnly));
-              })();
-              if (!needBuiltins.length && !customVarDefs.length && !videoPromptTokens.length) return null;
+              if (!needBuiltins.length && !customVarDefs.length) return null;
               return (
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Options</div>
                   <div className="space-y-2">
-                    {template?.video?.enabled && availableDurations.length > 1 ? (
-                      <div className="space-y-1">
-                        <div className="text-xs text-white/70">Video duration</div>
-                        <Select value={String(selectedDuration)} onValueChange={(val) => setSelectedDuration(val as typeof selectedDuration)}>
-                          <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Duration" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableDurations.map((dur) => (
-                              <SelectItem key={dur} value={dur}>{dur}s</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="text-xs text-white/60">Longer clips cost more credits. Sora 2 is billed at $0.10 per second.</div>
-                      </div>
-                    ) : null}
-                    {videoPromptTokens.map((token) => (
-                      <div key={`video-${token}`} className="space-y-1">
-                        <div className="text-xs text-white/70">{token.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}</div>
-                        <Input 
-                          value={varState[token] || ""} 
-                          onChange={(e) => setVarState((prev) => ({ ...prev, [token]: e.target.value }))} 
-                          placeholder={`Enter ${token.replace(/_/g, " ").toLowerCase()}`} 
-                        />
+                    {needBuiltins.map((key) => (
+                      <div key={key} className="space-y-1">
+                        <div className="text-xs text-white/70">{key.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}</div>
+                        <Input value={varState[key] || ""} onChange={(e) => setVarState((prev) => ({ ...prev, [key]: e.target.value }))} placeholder={key} />
                       </div>
                     ))}
-                    {needBuiltins.map((key) => {
-                      if (key === "BRAND") {
-                        const makeOptions = Array.from(new Set(MAKES)).map((m) => ({ value: m, label: m }));
-                        return (
-                          <div key={key} className="space-y-1">
-                            <div className="text-xs text-white/70">Brand</div>
-                            <Combobox
-                              options={makeOptions}
-                              value={varState[key] || ""}
-                              onValueChange={(val) => setVarState((prev) => ({ ...prev, [key]: val }))}
-                              placeholder="Search brand..."
-                              searchPlaceholder="Search..."
-                              emptyText="No brand found."
-                              allowCustom={false}
-                              className="bg-white/5"
-                            />
-                          </div>
-                        );
-                      }
-                      return (
-                        <div key={key} className="space-y-1">
-                          <div className="text-xs text-white/70">{key.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}</div>
-                          <Input value={varState[key] || ""} onChange={(e) => setVarState((prev) => ({ ...prev, [key]: e.target.value }))} placeholder={key} />
-                        </div>
-                      );
-                    })}
                     {customVarDefs.map((v) => {
                       const key = String(v?.key || "").trim();
                       if (!key) return null;

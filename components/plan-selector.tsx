@@ -127,6 +127,14 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
   async function startCheckout(plan: PlanKey) {
     try {
       setLoading(plan);
+      
+      // Track upgrade initiation
+      try {
+        window.dispatchEvent(new CustomEvent("upgrade-initiated", { 
+          detail: { plan, interval: billingInterval, currentPlan: activeSubscription?.activePlan }
+        }));
+      } catch {}
+      
       // If user is not authenticated, redirect to signup with selected plan
       try {
         const meRes = await fetch("/api/me", { cache: "no-store" });
@@ -135,14 +143,35 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
           return;
         }
       } catch {}
+      
+      // Track checkout started
+      try {
+        window.dispatchEvent(new CustomEvent("checkout-started", { 
+          detail: { plan, interval: billingInterval }
+        }));
+      } catch {}
+      
       const res = await fetch("/api/billing/create-checkout", { 
         method: "POST", 
         headers: { "Content-Type": "application/json" }, 
         body: JSON.stringify({ plan, interval: billingInterval }) 
       });
       const json = await res.json();
-      if (json.url) router.push(json.url);
-      else toast.error(json.error || "Failed to start checkout");
+      if (json.url) {
+        // Store checkout intent for tracking after return
+        try {
+          sessionStorage.setItem('checkoutIntent', JSON.stringify({ plan, interval: billingInterval, timestamp: Date.now() }));
+        } catch {}
+        router.push(json.url);
+      } else {
+        toast.error(json.error || "Failed to start checkout");
+        // Track checkout error
+        try {
+          window.dispatchEvent(new CustomEvent("checkout-error", { 
+            detail: { plan, error: json.error }
+          }));
+        } catch {}
+      }
     } finally {
       setLoading(null);
     }
@@ -150,6 +179,13 @@ export default function PlanSelector({ ctaLabel = "Join" }: { ctaLabel?: string 
 
   async function openBillingPortal() {
     try {
+      // Track billing portal opened
+      try {
+        window.dispatchEvent(new CustomEvent("billing-portal-opened", { 
+          detail: { currentPlan: activeSubscription?.activePlan }
+        }));
+      } catch {}
+      
       const res = await fetch("/api/billing/portal", { method: "POST" });
       const data = await res.json();
       if (data.url) window.location.href = data.url;

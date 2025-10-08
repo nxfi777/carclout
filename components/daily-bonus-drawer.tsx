@@ -216,6 +216,11 @@ export default function DailyBonusDrawer() {
           hasClaimedRef.current = true;
           lastPromptKeyRef.current = todayKey;
           try {
+            window.dispatchEvent(new CustomEvent("daily-bonus-claimed", { 
+              detail: { xpAwarded: awarded, leveledUp, newLevel }
+            }));
+          } catch {}
+          try {
             window.dispatchEvent(new CustomEvent("streak-refresh"));
           } catch {}
           try {

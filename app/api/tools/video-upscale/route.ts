@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireAndReserveCredits } from "@/lib/credits";
 import { createGetUrl, uploadToR2 } from "@/lib/r2";
+import { generateVideoBlurHash } from "@/lib/video-blurhash-server";
+import { getSurreal } from "@/lib/surrealdb";
+import type { LibraryVideo } from "@/lib/library-image";
 
 // Credit cost calculation for video upscale
 // Based on fal.ai pricing: $0.015 per megapixel of output
@@ -133,6 +136,55 @@ export async function POST(req: Request) {
     await uploadToR2(outputKey, videoBuffer, "video/mp4");
 
     console.log("[video-upscale] Success:", outputKey);
+
+    // Generate and store blurhash for upscaled video (non-fatal)
+    try {
+      const { blurhash, width, height, duration } = await generateVideoBlurHash(videoBuffer);
+      
+      const db = await getSurreal();
+      const libraryVideoData: Omit<LibraryVideo, 'id'> = {
+        key: outputKey,
+        email: email,
+        blurhash,
+        width,
+        height,
+        duration,
+        size: videoBuffer.length,
+        created: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+      };
+      
+      // Check if record exists, update or create
+      const existing = await db.query(
+        "SELECT id FROM library_video WHERE key = $key AND email = $email LIMIT 1;",
+        { key: outputKey, email: email }
+      );
+      
+      const existingId = Array.isArray(existing) && Array.isArray(existing[0]) && existing[0][0]
+        ? (existing[0][0] as { id?: string }).id
+        : null;
+
+      if (existingId) {
+        await db.query(
+          "UPDATE $id SET blurhash = $blurhash, width = $width, height = $height, duration = $duration, size = $size, lastModified = $lastModified;",
+          { 
+            id: existingId,
+            blurhash: libraryVideoData.blurhash,
+            width: libraryVideoData.width,
+            height: libraryVideoData.height,
+            duration: libraryVideoData.duration,
+            size: libraryVideoData.size,
+            lastModified: libraryVideoData.lastModified
+          }
+        );
+      } else {
+        await db.create('library_video', libraryVideoData);
+      }
+      
+      console.log(`Stored library video metadata for upscaled video ${outputKey}`);
+    } catch (error) {
+      console.error('Failed to store upscaled video metadata (non-fatal):', error);
+    }
 
     const { url: outputUrl } = await createGetUrl(outputKey);
     return NextResponse.json({

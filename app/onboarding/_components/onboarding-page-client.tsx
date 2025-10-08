@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import VehiclesEditor, { type Vehicle } from "@/components/vehicles-editor";
 import CarPhotosUploader from "@/components/car-photos-uploader";
@@ -33,13 +33,16 @@ function OnboardingPageInner() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [carPhotos, setCarPhotos] = useState<string[]>([]);
   const [confirmSkipVehiclesOpen, setConfirmSkipVehiclesOpen] = useState(false);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const initialLoadCompleteRef = useRef(false);
+  
   const missingVehicle = vehicles.length === 0;
   const missingPhotos = carPhotos.length === 0;
   const skipWarning = missingVehicle && missingPhotos
     ? "Your profile has no vehicles or car photos yet. Continuing means your account will look empty until you add them later."
     : missingVehicle
-      ? "You haven’t added a vehicle yet. People won’t know what you drive until you add one."
-      : "You’ve added a vehicle but no photos. Upload at least one so your build stands out.";
+      ? "You haven't added a vehicle yet. People won't know what you drive until you add one."
+      : "You've added a vehicle but no photos. Upload at least one so your build stands out.";
 
   useEffect(() => {
     let mounted = true;
@@ -83,7 +86,13 @@ function OnboardingPageInner() {
         }
         setUsername(nextUsername || emailFallback);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+          // Mark initial load as complete after a short delay to avoid auto-saving initial state
+          setTimeout(() => {
+            initialLoadCompleteRef.current = true;
+          }, 500);
+        }
       }
     })();
     return () => {
@@ -96,6 +105,42 @@ function OnboardingPageInner() {
     [vehicles, carPhotos],
   );
 
+  // Auto-save profile data as user makes changes (debounced)
+  const autoSaveProfile = useCallback(() => {
+    if (!initialLoadCompleteRef.current) return;
+    
+    // Clear any pending auto-save
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    
+    // Debounce auto-save by 1 second
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      const payload = {
+        name: username ? sanitizeInstagramHandle(username) : undefined,
+        displayName: (displayName || "").trim() ? (displayName || "").replace(/\s+/g, " ").trim().slice(0, 50) : null,
+        vehicles,
+        carPhotos,
+        // Don't set onboardingCompleted - that only happens when they click Continue
+      };
+      
+      // Save in background without blocking UI or showing errors (silent auto-save)
+      fetch("/api/profile", { method: "POST", body: JSON.stringify(payload) }).catch(() => {
+        // Silently fail - we'll try again on next change
+      });
+    }, 1000);
+  }, [username, displayName, vehicles, carPhotos]);
+
+  // Trigger auto-save when any field changes
+  useEffect(() => {
+    autoSaveProfile();
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [username, displayName, vehicles, carPhotos, autoSaveProfile]);
+
   async function continueToPlan(options?: { allowVehicleSkip?: boolean }) {
     const allowVehicleSkip = options?.allowVehicleSkip ?? false;
     if (!username) {
@@ -106,30 +151,35 @@ function OnboardingPageInner() {
       setConfirmSkipVehiclesOpen(true);
       return;
     }
-    setLoading(true);
-    try {
-      const payload = {
-        name: sanitizeInstagramHandle(username),
-        displayName: (displayName || "").trim() ? (displayName || "").replace(/\s+/g, " ").trim().slice(0, 50) : null,
-        vehicles,
-        carPhotos,
-        onboardingCompleted: true,
-      };
-      const response = await fetch("/api/profile", { method: "POST", body: JSON.stringify(payload) });
-      if (!response.ok) {
-        try {
-          const data = await response.json();
-          toast.error(data?.error || "Failed to save profile");
-        } catch {
-          toast.error("Failed to save profile");
+    
+    // Prepare payload
+    const payload = {
+      name: sanitizeInstagramHandle(username),
+      displayName: (displayName || "").trim() ? (displayName || "").replace(/\s+/g, " ").trim().slice(0, 50) : null,
+      vehicles,
+      carPhotos,
+      onboardingCompleted: true,
+    };
+    
+    // Navigate immediately (optimistic)
+    const chosenPlan = params.get("plan");
+    router.replace(chosenPlan ? `/plan?plan=${encodeURIComponent(chosenPlan)}` : "/plan");
+    
+    // Save profile asynchronously in the background
+    fetch("/api/profile", { method: "POST", body: JSON.stringify(payload) })
+      .then(async (response) => {
+        if (!response.ok) {
+          try {
+            const data = await response.json();
+            toast.error(data?.error || "Failed to save profile. Please check your profile.");
+          } catch {
+            toast.error("Failed to save profile. Please check your profile.");
+          }
         }
-        return;
-      }
-      const chosenPlan = params.get("plan");
-      router.replace(chosenPlan ? `/plan?plan=${encodeURIComponent(chosenPlan)}` : "/plan");
-    } finally {
-      setLoading(false);
-    }
+      })
+      .catch(() => {
+        toast.error("Failed to save profile. Please check your profile.");
+      });
   }
 
   if (loading) return null;

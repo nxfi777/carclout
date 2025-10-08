@@ -123,6 +123,25 @@ export async function POST(req: Request) {
               console.error("[Webhook] Failed to store customer ID from top-up:", e);
             }
           }
+          
+          // Track revenue for credit top-up (server-side logging for analytics)
+          try {
+            const revenueAmount = typeof session.amount_total === 'number' ? session.amount_total / 100 : 0; // Convert cents to dollars
+            if (revenueAmount > 0 && customerEmail) {
+              console.log('[REVENUE] Credit top-up:', {
+                email: customerEmail,
+                amount: revenueAmount,
+                credits: credits,
+                currency: session.currency || 'usd',
+                sessionId: session.id,
+                eventType: 'topup'
+              });
+              // Note: This logs for server-side tracking. Client-side revenue tracking
+              // happens via checkout-completed event with revenue property
+            }
+          } catch (e) {
+            console.error('Failed to log revenue:', e);
+          }
         } else {
           let plan: Plan | null = (session.metadata?.plan as Plan) || null;
           if (!plan) {
@@ -183,6 +202,25 @@ export async function POST(req: Request) {
             if (included > 0) {
               await adjustCredits(customerEmail, included, "plan_included", session.id);
             }
+          }
+          
+          // Track revenue for subscription purchase (server-side logging for analytics)
+          try {
+            const revenueAmount = typeof session.amount_total === 'number' ? session.amount_total / 100 : 0; // Convert cents to dollars
+            if (revenueAmount > 0 && customerEmail && plan) {
+              console.log('[REVENUE] Subscription purchase:', {
+                email: customerEmail,
+                plan,
+                amount: revenueAmount,
+                currency: session.currency || 'usd',
+                sessionId: session.id,
+                eventType: 'subscription'
+              });
+              // Note: This logs for server-side tracking. Client-side revenue tracking
+              // happens via checkout-completed event with revenue property
+            }
+          } catch (e) {
+            console.error('Failed to log revenue:', e);
           }
         }
       } catch (e) {

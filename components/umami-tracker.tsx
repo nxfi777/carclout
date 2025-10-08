@@ -84,16 +84,76 @@ function usePageTags(tags: string[] | undefined) {
 function useGlobalEvents() {
   useEffect(() => {
     const mapping: Record<string, string> = {
+      // Existing events
       "open-pro-upsell": "upsell:open",
       "streak-refresh": "streak:refresh",
       "xp-refresh": "xp:refresh",
       "profile-updated": "profile:updated",
+      
+      // Activation events (leading indicators of retention)
+      "first-template-generated": "activation:first-template",
+      "first-vehicle-added": "activation:first-vehicle",
+      "first-chat-message": "activation:first-message",
+      "first-workspace-upload": "activation:first-upload",
+      "first-dm-sent": "activation:first-dm",
+      "onboarding-completed": "activation:onboarding-complete",
+      "profile-photo-added": "activation:profile-photo",
+      "first-vehicle-complete": "activation:vehicle-complete",
+      
+      // Engagement events
+      "template-generated": "engagement:template",
+      "message-sent": "engagement:message",
+      "dm-sent": "engagement:dm",
+      "workspace-upload": "engagement:upload",
+      "vehicle-updated": "engagement:vehicle",
+      "feature-request-submitted": "engagement:feature-request",
+      "daily-bonus-claimed": "engagement:daily-bonus",
+      "level-up": "engagement:level-up",
+      
+      // Community events (retention drivers)
+      "first-dm-conversation": "community:first-conversation",
+      "dm-reply-received": "community:dm-reply",
+      "message-replied-to": "community:message-reply",
+      "message-reaction-received": "community:reaction",
+      "mention-received": "community:mention",
+      "attachment-shared": "community:attachment",
+      
+      // Monetization events
+      "upgrade-initiated": "monetization:upgrade-start",
+      "checkout-started": "monetization:checkout-start",
+      "checkout-completed": "monetization:checkout-complete",
+      "monetization:checkout-complete": "monetization:checkout-complete", // Direct event name
+      "checkout-abandoned": "monetization:checkout-abandon",
+      "usage-limit-hit": "monetization:limit-hit",
+      "pricing-page-viewed": "monetization:pricing-view",
+      "billing-portal-opened": "monetization:portal-open",
+      "credits-depleted": "monetization:credits-depleted",
+      
+      // Value realization events
+      "first-template-download": "value:first-download",
+      "template-download": "value:template-download",
+      "vehicle-photos-complete": "value:vehicle-complete",
+      "streak-milestone": "value:streak-milestone",
+      "template-batch-generated": "value:batch-generation",
+      
+      // Friction events
+      "template-generation-failed": "friction:generation-fail",
+      "upload-failed": "friction:upload-fail",
+      "checkout-error": "friction:checkout-error",
+      "onboarding-skipped": "friction:onboarding-skip",
+      "feature-blocked": "friction:feature-blocked",
     };
+    
     const handler = (event: Event) => {
       const type = event.type;
       const mapped = mapping[type];
-      if (mapped) trackEvent(mapped);
+      if (mapped) {
+        // Extract event detail data if available
+        const detail = (event as CustomEvent).detail;
+        trackEvent(mapped, detail);
+      }
     };
+    
     Object.keys(mapping).forEach((eventName) => {
       window.addEventListener(eventName, handler);
     });
@@ -118,6 +178,51 @@ export default function UmamiTracker({ session, pageTag, tags }: UmamiTrackerPro
       setUmamiValue("pageTag", pageTag);
     });
   }, [pageTag]);
+  
+  // Track checkout completion with revenue when returning from Stripe
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    // Check if user just returned from successful checkout
+    try {
+      const checkoutIntent = sessionStorage.getItem('checkoutIntent');
+      const urlParams = new URLSearchParams(window.location.search);
+      const sessionId = urlParams.get('session_id');
+      
+      // If we have both checkout intent and Stripe session_id, checkout completed
+      if (checkoutIntent && sessionId) {
+        const intent = JSON.parse(checkoutIntent);
+        
+        // Track checkout completion with revenue
+        // Revenue amounts based on plan (adjust to match your actual pricing)
+        const revenueMap: Record<string, Record<string, number>> = {
+          minimum: { monthly: 1, yearly: 12 },
+          pro: { monthly: 17, yearly: 156 },
+          ultra: { monthly: 39, yearly: 374 }
+        };
+        
+        const revenue = revenueMap[intent.plan]?.[intent.interval] || 0;
+        
+        // Dispatch event with revenue data
+        window.dispatchEvent(new CustomEvent("monetization:checkout-complete", {
+          detail: {
+            plan: intent.plan,
+            interval: intent.interval,
+            revenue, // Umami will use this for Revenue reports
+            currency: 'usd',
+            sessionId
+          }
+        }));
+        
+        // Clear the checkout intent so we don't track again
+        sessionStorage.removeItem('checkoutIntent');
+        
+        console.log('[REVENUE] Checkout completed:', { plan: intent.plan, revenue });
+      }
+    } catch (e) {
+      console.error('Failed to track checkout completion:', e);
+    }
+  }, []);
 
   const domains = getUmamiDomains();
 

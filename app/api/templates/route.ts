@@ -38,7 +38,7 @@ type TemplateDoc = {
   // Video generation config (Seedance/Kling/Sora 2 image-to-video)
   video?: {
     enabled?: boolean;
-    provider?: 'seedance' | 'kling2_5' | 'sora2';
+    provider?: 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro';
     prompt?: string;
     duration?: '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12';
     resolution?: 'auto' | '480p' | '720p' | '1080p';
@@ -275,7 +275,7 @@ export async function POST(req: Request) {
           const aspectRatios = ['21:9','16:9','4:3','1:1','3:4','9:16','auto'] as const;
           const ar = (aspectRatios as readonly string[]).includes(arRaw) ? (arRaw as (typeof aspectRatios)[number]) : 'auto';
           const provRaw = String((v as { provider?: unknown })?.provider || 'sora2');
-          const provider: 'seedance' | 'kling2_5' | 'sora2' = provRaw === 'kling2_5' ? 'kling2_5' : provRaw === 'sora2' ? 'sora2' : 'seedance';
+          const provider: 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro' = provRaw === 'kling2_5' ? 'kling2_5' : provRaw === 'sora2' ? 'sora2' : provRaw === 'sora2_pro' ? 'sora2_pro' : 'seedance';
           const cfg_scale = ((): number | undefined => {
             try {
               const n = Number((v as { cfg_scale?: unknown })?.cfg_scale);

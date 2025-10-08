@@ -11,10 +11,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import Designer from '@/components/layer-editor/designer';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Combobox } from '@/components/ui/combobox';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Vehicle } from '@/components/vehicles-editor';
-import { MAKES } from '@/lib/vehicles';
 // import CircularGallery from '@/components/ui/circular-gallery';
 import ThreeDCarousel from '@/components/ui/three-d-carousel';
 import { Button } from '@/components/ui/button';
@@ -561,6 +559,8 @@ type Template = {
   fixedAspectRatio?: boolean;
   aspectRatio?: number;
   allowedImageSources?: Array<'vehicle'|'user'>;
+  status?: 'draft' | 'public';
+  proOnly?: boolean;
   // deprecated
   autoOpenDesigner?: boolean;
   createdAt?: string;
@@ -585,7 +585,7 @@ export function TemplatesTabContent(){
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<{ id?: string; name: string; slug?: string } | null>(null);
   const [chevHover, setChevHover] = useState(false);
-  const [me, setMe] = useState<{ plan?: string | null } | null>(null);
+  const [me, setMe] = useState<{ plan?: string | null; role?: string | null } | null>(null);
   const [source, setSource] = useState<'vehicle' | 'upload' | 'workspace'>('vehicle');
   const [sortBy, setSortBy] = useState<'recent'|'favorites'>('recent');
   const [filterBy, setFilterBy] = useState<'all'|'favorites'|'video'>('all');
@@ -622,6 +622,8 @@ export function TemplatesTabContent(){
   const [animResultUrl, setAnimResultUrl] = useState<string | null>(null);
   const [animResultKey, setAnimResultKey] = useState<string | null>(null);
   const [animLoading, setAnimLoading] = useState(false);
+  const [animDuration, setAnimDuration] = useState<string>('');
+  const [animVariables, setAnimVariables] = useState<Record<string, string>>({});
   const sessionRef = useRef<number>(0);
   const deeplinkedRef = useRef<boolean>(false);
   const animPendingBlobRef = useRef<Blob | null>(null);
@@ -663,7 +665,7 @@ export function TemplatesTabContent(){
     (async () => {
       try {
         const m = await fetch('/api/me', { cache: 'no-store' }).then(r => r.json()).catch(() => null);
-        if (!cancelled) setMe({ plan: m?.plan ?? null });
+        if (!cancelled) setMe({ plan: m?.plan ?? null, role: m?.role ?? null });
       } catch {}
     })();
     return () => { cancelled = true; };
@@ -743,6 +745,7 @@ export function TemplatesTabContent(){
             favoriteCount: Number((t as Record<string, unknown>).favoriteCount || 0),
             isFavorited: Boolean((t as Record<string, unknown>).isFavorited),
     proOnly: Boolean((t as Record<string, unknown>).proOnly),
+            status: ((t as { status?: unknown })?.status === 'draft' || (t as { status?: unknown })?.status === 'public') ? (t as { status: 'draft' | 'public' }).status : undefined,
             // deprecated field ignored
             autoOpenDesigner: Boolean((t as Record<string, unknown>).autoOpenDesigner),
             createdAt: typeof (t as { created_at?: unknown })?.created_at === 'string' ? String((t as { created_at?: unknown }).created_at) : undefined,
@@ -997,11 +1000,12 @@ export function TemplatesTabContent(){
         {displayedItems.map((it, idx)=> (
           <div key={idx} className="h-full">
             <TemplateCard
-              data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, blurhash: it.blurhash, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`carclout:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })(), proOnly: Boolean((it as Record<string, unknown>).proOnly), isVideoTemplate: Boolean(it.video?.enabled) }}
+              data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, blurhash: it.blurhash, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`carclout:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })(), proOnly: Boolean((it as Record<string, unknown>).proOnly), isVideoTemplate: Boolean(it.video?.enabled), status: it.status }}
               className="h-full"
               showNewBadge={true}
               showLike={true}
               showFavoriteCount={true}
+              showDraftBadge={me?.role === 'admin'}
               userHasPro={canonicalPlan(me?.plan) === 'ultra'}
               onLikeToggle={()=> toggleFavorite(it.id, it.slug)}
               onClick={()=>{
@@ -1505,7 +1509,7 @@ export function TemplatesTabContent(){
             <DialogTitle className="flex items-center justify-between">
               <span>{designOpen ? 'Designer' : (active?.name || 'Template')}</span>
               {(!designOpen && !busy && !resultUrl) ? (
-                <span className="hidden sm:inline mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70">
+                <span className="hidden lg:inline mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70 max-w-[50%] text-center pointer-events-none">
                   For best results, use a car photo that matches this template&apos;s orientation
                 </span>
               ) : null}
@@ -1556,7 +1560,6 @@ export function TemplatesTabContent(){
                 <div className="space-y-3">
                   <div className="w-full grid place-items-center">
                     <video src={animResultUrl} controls autoPlay loop muted playsInline className="rounded bg-black w-auto max-w-full sm:max-w-[48rem] max-h-[56vh] h-auto object-contain" />
-                    <div className="text-xs text-white/70 mt-2">Saved to <a href="/dashboard?view=forge&tab=workspace&path=library" target="_blank" rel="noreferrer" className="underline">/library</a></div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button className="w-full sm:w-auto" variant="outline" onClick={()=>{ setAnimResultUrl(null); setAnimResultKey(null); }}>Return to designer</Button>
@@ -1640,6 +1643,8 @@ export function TemplatesTabContent(){
                       animPendingBlobRef.current = null;
                       setAnimHasPending(false);
                       setAnimCredits(undefined);
+                      setAnimDuration('');
+                      setAnimVariables({});
                     }
                   }}>
                     <DialogContent
@@ -1649,10 +1654,83 @@ export function TemplatesTabContent(){
                         <DialogTitle>Animate this design?</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-3">
-                        <div className="text-sm text-white/80">Generate a short video from your current canvas. The video will be auto-saved to /library.</div>
+                        <div className="text-sm text-white/80">Generate a short video from your current canvas.</div>
                         {animBusy ? (
                           <div className="text-xs text-white/60">Preparing start frame…</div>
                         ) : null}
+                        {(() => {
+                          const PROVIDER_DURATION_OPTIONS: Record<'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro', ReadonlyArray<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>> = {
+                            seedance: ['3','4','5','6','7','8','9','10','11','12'],
+                            kling2_5: ['5','10'],
+                            sora2: ['4','8','12'],
+                            sora2_pro: ['4','8','12'],
+                          } as const;
+                          const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro'; prompt?: string; allowedDurations?: Array<string> } | null | undefined;
+                          const resolvedProvider: 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro' = (() => {
+                            const raw = String(v?.provider || '').toLowerCase();
+                            if (raw === 'kling2_5') return 'kling2_5';
+                            if (raw === 'sora2_pro') return 'sora2_pro';
+                            if (raw === 'sora2' || !raw) return 'sora2';
+                            return 'seedance';
+                          })();
+                          const availableDurations = (() => {
+                            const allowed = Array.isArray(v?.allowedDurations) && v.allowedDurations.length
+                              ? v.allowedDurations
+                              : PROVIDER_DURATION_OPTIONS[resolvedProvider];
+                            const unique = Array.from(new Set(allowed.map((d) => String(d))));
+                            const filtered = unique.filter((d) => (PROVIDER_DURATION_OPTIONS[resolvedProvider] as ReadonlyArray<string>).includes(d));
+                            return filtered;
+                          })();
+                          const defaultDuration = (() => {
+                            const sortedDurations = [...availableDurations].sort((a, b) => Number(a) - Number(b));
+                            return String(sortedDurations[0] || availableDurations[0] || '4');
+                          })();
+                          if (!animDuration && defaultDuration) setAnimDuration(defaultDuration);
+                          
+                          const videoPromptTokens = (() => {
+                            if (!v?.prompt) return [];
+                            const matches = String(v.prompt).match(/\[([A-Z0-9_]+)\]/g);
+                            if (!matches) return [];
+                            const tokens = matches.map((m) => m.replace(/^[\[]|[\]]$/g, ""));
+                            const builtin = new Set(["BRAND", "BRAND_CAPS", "MODEL", "COLOR_FINISH", "ACCENTS", "COLOR_FINISH_ACCENTS"]);
+                            const tokensInPrompt = new Set(String(activeTemplate?.prompt || "").match(/\[([A-Z0-9_]+)\]/g)?.map((m) => m.replace(/^[\[]|[\]]$/g, "")) || []);
+                            const customOnly = tokens.filter((t) => !builtin.has(t) && !tokensInPrompt.has(t));
+                            return Array.from(new Set(customOnly));
+                          })();
+                          
+                          const showDuration = availableDurations.length > 1;
+                          if (!showDuration && !videoPromptTokens.length) return null;
+                          
+                          return (
+                            <div className="space-y-3">
+                              {showDuration ? (
+                                <div className="space-y-1">
+                                  <div className="text-xs text-white/70">Video duration</div>
+                                  <Select value={animDuration || defaultDuration} onValueChange={setAnimDuration}>
+                                    <SelectTrigger className="h-9">
+                                      <SelectValue placeholder="Duration" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {availableDurations.map((dur) => (
+                                        <SelectItem key={dur} value={dur}>{dur}s</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              ) : null}
+                              {videoPromptTokens.map((token) => (
+                                <div key={`anim-${token}`} className="space-y-1">
+                                  <div className="text-xs text-white/70">{token.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}</div>
+                                  <Input 
+                                    value={animVariables[token] || ""} 
+                                    onChange={(e) => setAnimVariables((prev) => ({ ...prev, [token]: e.target.value }))} 
+                                    placeholder={`Enter ${token.replace(/_/g, " ").toLowerCase()}`} 
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
                         {typeof animCredits === 'number' ? (
                           <div className="text-xs text-white/70">Estimated credits: <span className="font-medium text-white/90">{animCredits}</span></div>
                         ) : null}
@@ -1685,10 +1763,10 @@ export function TemplatesTabContent(){
 
                             try {
                               const { estimateVideoCredits } = await import('@/lib/credits-client');
-                              const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2' } | null | undefined;
+                              const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro' } | null | undefined;
                               const duration = Number(v?.duration || 5);
-                              const resolution = (v?.resolution || (v?.provider === 'sora2' ? 'auto' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
-                              const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : 'seedance';
+                              const resolution = (v?.resolution || (v?.provider === 'sora2' || v?.provider === 'sora2_pro' ? '720p' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
+                              const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : v?.provider === 'sora2_pro' ? 'sora2_pro' : 'seedance';
                               const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
                               const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
                               const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
@@ -1701,7 +1779,9 @@ export function TemplatesTabContent(){
                             const insufficientCredits = creditDepletion.checkAndTrigger(bal, animCredits || 500);
                             if (insufficientCredits) return;
                             setAnimLoading(true);
-                            const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: active?.id, templateSlug: active?.slug, startKey }) });
+                            // Merge varState with animVariables for video generation
+                            const allVariables = { ...varState, ...animVariables };
+                            const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId: active?.id, templateSlug: active?.slug, startKey, duration: animDuration, variables: allVariables }) });
                             const out = await resp.json().catch(()=>({}));
                             if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, animCredits || 500); setAnimLoading(false); return; }
                             if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed'); setAnimLoading(false); return; }
@@ -1819,32 +1899,12 @@ export function TemplatesTabContent(){
                     <div className="space-y-2">
                       <div className="text-sm font-medium">Options</div>
                       <div className="space-y-2">
-                        {needBuiltins.map((key)=> {
-                          if (key === 'BRAND') {
-                            const makeOptions = Array.from(new Set(MAKES)).map((m)=> ({ value: m, label: m }));
-                            return (
-                              <div key={key} className="space-y-1">
-                                <div className="text-xs text-white/70">Brand</div>
-                                <Combobox
-                                  options={makeOptions}
-                                  value={varState[key] || ''}
-                                  onValueChange={(val)=> setVarState((prev)=> ({ ...prev, [key]: val }))}
-                                  placeholder="Search brand..."
-                                  searchPlaceholder="Search..."
-                                  emptyText="No brand found."
-                                  allowCustom={false}
-                                  className="bg-white/5"
-                                />
-                              </div>
-                            );
-                          }
-                          return (
-                            <div key={key} className="space-y-1">
-                              <div className="text-xs text-white/70">{key.replace(/_/g,' ').toLowerCase().replace(/\b\w/g, (c)=> c.toUpperCase())}</div>
-                              <Input value={varState[key] || ''} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder={key} />
-                            </div>
-                          );
-                        })}
+                        {needBuiltins.map((key)=> (
+                          <div key={key} className="space-y-1">
+                            <div className="text-xs text-white/70">{key.replace(/_/g,' ').toLowerCase().replace(/\b\w/g, (c)=> c.toUpperCase())}</div>
+                            <Input value={varState[key] || ''} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder={key} />
+                          </div>
+                        ))}
                         {customVarDefs.map((v)=> {
                           const key = String(v?.key || '').trim();
                           if (!key) return null;

@@ -79,7 +79,7 @@ export async function GET(req: Request) {
     return a.name.localeCompare(b.name);
   });
 
-  // Fetch blurhash from database for library images
+  // Fetch blurhash from database for library images and videos
   const isLibraryPath = path === 'library' || path.startsWith('library/');
   if (isLibraryPath) {
     try {
@@ -87,28 +87,49 @@ export async function GET(req: Request) {
       const imageKeys = items
         .filter(item => item.type === 'file' && item.key && /\.(jpe?g|png|webp|gif|bmp)$/i.test(item.key))
         .map(item => item.key!);
+      
+      const videoKeys = items
+        .filter(item => item.type === 'file' && item.key && /\.(mp4|mov|webm|avi|mkv)$/i.test(item.key))
+        .map(item => item.key!);
 
+      const blurhashMap = new Map<string, string>();
+      
+      // Fetch blurhashes for images
       if (imageKeys.length > 0) {
-        // Fetch all blurhashes for these keys in one query
-        const blurhashRes = await db.query(
+        const imageBlurhashRes = await db.query(
           "SELECT key, blurhash FROM library_image WHERE key IN $keys AND email = $email;",
           { keys: imageKeys, email: user.email }
         );
 
-        const blurhashMap = new Map<string, string>();
-        const records = Array.isArray(blurhashRes) && Array.isArray(blurhashRes[0]) ? blurhashRes[0] : [];
-        for (const record of records) {
+        const imageRecords = Array.isArray(imageBlurhashRes) && Array.isArray(imageBlurhashRes[0]) ? imageBlurhashRes[0] : [];
+        for (const record of imageRecords) {
           const r = record as { key?: string; blurhash?: string };
           if (r.key && r.blurhash) {
             blurhashMap.set(r.key, r.blurhash);
           }
         }
+      }
+      
+      // Fetch blurhashes for videos
+      if (videoKeys.length > 0) {
+        const videoBlurhashRes = await db.query(
+          "SELECT key, blurhash FROM library_video WHERE key IN $keys AND email = $email;",
+          { keys: videoKeys, email: user.email }
+        );
 
-        // Add blurhash to items
-        for (const item of items) {
-          if (item.key && blurhashMap.has(item.key)) {
-            item.blurhash = blurhashMap.get(item.key);
+        const videoRecords = Array.isArray(videoBlurhashRes) && Array.isArray(videoBlurhashRes[0]) ? videoBlurhashRes[0] : [];
+        for (const record of videoRecords) {
+          const r = record as { key?: string; blurhash?: string };
+          if (r.key && r.blurhash) {
+            blurhashMap.set(r.key, r.blurhash);
           }
+        }
+      }
+
+      // Add blurhash to items
+      for (const item of items) {
+        if (item.key && blurhashMap.has(item.key)) {
+          item.blurhash = blurhashMap.get(item.key);
         }
       }
     } catch (error) {

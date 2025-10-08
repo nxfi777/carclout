@@ -7,6 +7,8 @@ import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sd
 import { fal } from "@fal-ai/client";
 import { RecordId } from "surrealdb";
 import { estimateVideoCredits, DEFAULT_VIDEO_FPS, chargeCreditsOnce, type VideoResolution, type VideoAspectRatio, type VideoProvider } from "@/lib/credits";
+import { generateVideoBlurHash } from "@/lib/video-blurhash-server";
+import type { LibraryVideo } from "@/lib/library-image";
 export const runtime = "nodejs";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
@@ -31,18 +33,21 @@ const PROVIDER_DURATION_OPTIONS: Record<VideoProvider, ReadonlyArray<'3'|'4'|'5'
   seedance: ['3','4','5','6','7','8','9','10','11','12'],
   kling2_5: ['5','10'],
   sora2: ['4','8','12'],
+  sora2_pro: ['4','8','12'],
 } as const;
 
 const PROVIDER_RESOLUTION_OPTIONS: Record<VideoProvider, ReadonlyArray<VideoResolution>> = {
   seedance: ['480p','720p','1080p'],
   kling2_5: ['720p','1080p'],
-  sora2: ['auto','720p'],
+  sora2: ['720p','auto'],
+  sora2_pro: ['720p','auto'],
 } as const;
 
 const PROVIDER_ASPECT_OPTIONS: Record<VideoProvider, ReadonlyArray<VideoAspectRatio>> = {
   seedance: ['21:9','16:9','4:3','1:1','3:4','9:16','auto'],
   kling2_5: ['16:9','1:1','9:16','auto'],
   sora2: ['auto','9:16','16:9'],
+  sora2_pro: ['auto','9:16','16:9'],
 } as const;
 
 function coerceRecordId(raw: string): RecordId<string> | string {
@@ -113,6 +118,7 @@ export async function POST(req: Request) {
       const raw = String((vconf?.provider || 'sora2')).toLowerCase();
       if (raw === 'kling2_5') return 'kling2_5';
       if (raw === 'sora2') return 'sora2';
+      if (raw === 'sora2_pro') return 'sora2_pro';
       return 'seedance';
     })();
     let videoPrompt = String((body?.prompt ?? vconf?.prompt ?? '') || '').trim();
@@ -143,7 +149,7 @@ export async function POST(req: Request) {
     const durationSeconds = Math.max(1, Math.min(120, Math.round(Number(normalizedDurationLabel)))) || Number(providerDefaultDurations[0] ?? 5);
 
     const providerResOptions = PROVIDER_RESOLUTION_OPTIONS[provider];
-    const requestedResolution = String(body?.resolution ?? vconf?.resolution ?? (provider === 'sora2' ? 'auto' : '1080p')) as VideoResolution;
+    const requestedResolution = String(body?.resolution ?? vconf?.resolution ?? (provider === 'sora2' || provider === 'sora2_pro' ? '720p' : '1080p')) as VideoResolution;
     const resolution = providerResOptions.includes(requestedResolution) ? requestedResolution : providerResOptions[0];
 
     const providerAspectOptions = PROVIDER_ASPECT_OPTIONS[provider];
@@ -217,6 +223,26 @@ export async function POST(req: Request) {
             try {
               if (update?.status === 'IN_PROGRESS') {
                 (update.logs || []).map((l: any)=> l?.message).filter(Boolean).forEach((m: string)=> console.log(`[FAL VIDEO-SORA2] ${m}`));
+              }
+            } catch {}
+          },
+        });
+      } else if (provider === 'sora2_pro') {
+        const input = {
+          prompt: videoPrompt,
+          image_url,
+          aspect_ratio,
+          resolution,
+          duration: durationSeconds,
+        } as const;
+        try { console.log("[FAL INPUT]", JSON.stringify({ model: "fal-ai/sora-2/image-to-video/pro", input }, null, 2)); } catch {}
+        result = await fal.subscribe("fal-ai/sora-2/image-to-video/pro", {
+          input: input as any,
+          logs: true,
+          onQueueUpdate: (update: any) => {
+            try {
+              if (update?.status === 'IN_PROGRESS') {
+                (update.logs || []).map((l: any)=> l?.message).filter(Boolean).forEach((m: string)=> console.log(`[FAL VIDEO-SORA2-PRO] ${m}`));
               }
             } catch {}
           },
@@ -309,6 +335,55 @@ export async function POST(req: Request) {
     } catch {
       try { await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: singleOutKey })); } catch {}
       return NextResponse.json({ error: 'INSUFFICIENT_CREDITS' }, { status: 402 });
+    }
+
+    // Generate and store blurhash for video (non-fatal)
+    try {
+      const videoBuffer = Buffer.from(finalVideoBytes);
+      const { blurhash, width, height, duration } = await generateVideoBlurHash(videoBuffer);
+      
+      const libraryVideoData: Omit<LibraryVideo, 'id'> = {
+        key: singleOutKey,
+        email: user.email,
+        blurhash,
+        width,
+        height,
+        duration,
+        size: finalVideoBytes.length,
+        created: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+      };
+      
+      // Check if record exists, update or create
+      const existing = await db.query(
+        "SELECT id FROM library_video WHERE key = $key AND email = $email LIMIT 1;",
+        { key: singleOutKey, email: user.email }
+      );
+      
+      const existingId = Array.isArray(existing) && Array.isArray(existing[0]) && existing[0][0]
+        ? (existing[0][0] as { id?: string }).id
+        : null;
+
+      if (existingId) {
+        await db.query(
+          "UPDATE $id SET blurhash = $blurhash, width = $width, height = $height, duration = $duration, size = $size, lastModified = $lastModified;",
+          { 
+            id: existingId,
+            blurhash: libraryVideoData.blurhash,
+            width: libraryVideoData.width,
+            height: libraryVideoData.height,
+            duration: libraryVideoData.duration,
+            size: libraryVideoData.size,
+            lastModified: libraryVideoData.lastModified
+          }
+        );
+      } else {
+        await db.create('library_video', libraryVideoData);
+      }
+      
+      console.log(`Stored library video metadata for ${singleOutKey}`);
+    } catch (error) {
+      console.error('Failed to store video metadata (non-fatal):', error);
     }
 
     const { url } = await createViewUrl(singleOutKey);

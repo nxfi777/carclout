@@ -139,6 +139,7 @@ export default function ProfileDialog() {
     setIsSaving(true);
     try {
       let imageUrl: string | undefined;
+      // Upload avatar synchronously (quick and small)
       if (image) {
         const form = new FormData();
         let uploadBlob: Blob = image;
@@ -158,29 +159,47 @@ export default function ProfileDialog() {
         toast.error('Please fill Body color/finish for each vehicle. Accents are optional.');
         return;
       }
-      const res = await fetch("/api/profile", { method: "POST", body: JSON.stringify({ name, displayName: (displayName || '').replace(/\s+/g,' ').trim() || null, image: imageUrl, vehicles, carPhotos, chatProfilePhotos, bio }) });
-      if (!res.ok) {
-        try {
-          const data = await res.json();
-          toast.error(data?.error || 'Failed to save profile');
-        } catch {
-          toast.error('Failed to save profile');
-        }
-        return;
-      }
-      // Notify UI pieces (header, chat) to refresh live without full reload
-      try {
-        const effectiveName = (displayName && displayName.trim()) ? displayName.trim() : name;
-        window.dispatchEvent(new CustomEvent('profile-updated', { detail: { name: effectiveName, image: imageUrl } }));
-      } catch {}
-      // Close only if not in required mode or requirements are satisfied
+      
+      // Close dialog immediately (optimistic UI)
       if (!isRequired || areRequiredFieldsSatisfied()) {
         setOpen(false);
         setIsRequired(false);
         setRequiredFields([]);
-        // After completing required profile, re-prompt daily bonus if needed
-        try { window.dispatchEvent(new CustomEvent('prompt-daily-bonus')); } catch {}
       }
+      
+      // Save profile data asynchronously in the background
+      const profilePayload = { 
+        name, 
+        displayName: (displayName || '').replace(/\s+/g,' ').trim() || null, 
+        image: imageUrl, 
+        vehicles, 
+        carPhotos, 
+        chatProfilePhotos, 
+        bio 
+      };
+      
+      fetch("/api/profile", { method: "POST", body: JSON.stringify(profilePayload) })
+        .then(async (res) => {
+          if (!res.ok) {
+            try {
+              const data = await res.json();
+              toast.error(data?.error || 'Failed to save profile. Please try again.');
+            } catch {
+              toast.error('Failed to save profile. Please try again.');
+            }
+            return;
+          }
+          // Notify UI pieces (header, chat) to refresh live without full reload
+          try {
+            const effectiveName = (displayName && displayName.trim()) ? displayName.trim() : name;
+            window.dispatchEvent(new CustomEvent('profile-updated', { detail: { name: effectiveName, image: imageUrl } }));
+          } catch {}
+          // After completing required profile, re-prompt daily bonus if needed
+          try { window.dispatchEvent(new CustomEvent('prompt-daily-bonus')); } catch {}
+        })
+        .catch(() => {
+          toast.error('Failed to save profile. Please try again.');
+        });
     } finally {
       setIsSaving(false);
     }

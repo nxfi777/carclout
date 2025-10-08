@@ -35,8 +35,9 @@ function DashboardHomePageInner() {
   const [streak, setStreak] = useState<number>(0);
   const [series, setSeries] = useState<StreakPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [suggestions, setSuggestions] = useState<Array<{ id?: string; name: string; description?: string; slug?: string; thumbnailKey?: string; blurhash?: string; thumbUrl?: string; createdAt?: string }>>([]);
+  const [suggestions, setSuggestions] = useState<Array<{ id?: string; name: string; description?: string; slug?: string; thumbnailKey?: string; blurhash?: string; thumbUrl?: string; createdAt?: string; status?: 'draft' | 'public' }>>([]);
   const [isMobile, setIsMobile] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const streakScrollRef = useRef<HTMLDivElement | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const streakNotificationsShownRef = useRef<Set<string>>(new Set());
@@ -54,6 +55,7 @@ function DashboardHomePageInner() {
           const me = await fetch('/api/me', { cache: 'no-store' }).then((r) => r.json()).catch(() => ({}));
           if (!mounted) return;
           setName(String(me?.name || me?.email || ''));
+          setIsAdmin(me?.role === 'admin');
         }
       } catch {}
       try {
@@ -95,7 +97,7 @@ function DashboardHomePageInner() {
         
         const res = await fetch('/api/templates?limit=200', { cache: 'no-store' });
         const data = await res.json().catch(()=>({}));
-        const all = Array.isArray(data?.templates) ? data.templates as Array<{ id?: string; name?: string; description?: string; slug?: string; thumbnailKey?: string; created_at?: string; proOnly?: boolean }> : [];
+        const all = Array.isArray(data?.templates) ? data.templates as Array<{ id?: string; name?: string; description?: string; slug?: string; thumbnailKey?: string; created_at?: string; proOnly?: boolean; status?: 'draft' | 'public' }> : [];
         // Resolve up to 4 random items with thumbnails
         const pool = [...all];
         for (let i = pool.length - 1; i > 0; i--) {
@@ -110,6 +112,7 @@ function DashboardHomePageInner() {
           const createdAt = typeof (t as { created_at?: unknown })?.created_at === 'string' ? String((t as { created_at?: unknown }).created_at) : undefined;
           const keyRaw = typeof t?.thumbnailKey === 'string' ? t.thumbnailKey : undefined;
           const blurhash = typeof (t as { blurhash?: string })?.blurhash === 'string' ? (t as { blurhash?: string }).blurhash : undefined;
+          const status = ((t as { status?: unknown })?.status === 'draft' || (t as { status?: unknown })?.status === 'public') ? (t as { status: 'draft' | 'public' }).status : undefined;
           let thumbUrl: string | undefined;
           if (keyRaw) {
             try {
@@ -118,7 +121,7 @@ function DashboardHomePageInner() {
               if (typeof url === 'string') thumbUrl = url as string;
             } catch {}
           }
-          return { id: typeof t?.id === 'string' ? t.id : undefined, name, description, slug, thumbnailKey: keyRaw, blurhash, thumbUrl, createdAt, proOnly: !!t?.proOnly };
+          return { id: typeof t?.id === 'string' ? t.id : undefined, name, description, slug, thumbnailKey: keyRaw, blurhash, thumbUrl, createdAt, proOnly: !!t?.proOnly, status };
         }));
         const filtered = resolved.filter((t)=> !!t.thumbUrl).slice(0, suggestionsLimit);
         if (mounted) setSuggestions(filtered);
@@ -383,10 +386,11 @@ function DashboardHomePageInner() {
             {suggestions.map((t, i)=> (
               <Link key={t.id || t.slug || i} href={t.slug ? `/dashboard/templates?slug=${encodeURIComponent(t.slug)}` : '/dashboard/templates'} className="block">
                 <TemplateCard
-                  data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, blurhash: t.blurhash, thumbUrl: t.thumbUrl, createdAt: t.createdAt }}
+                  data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, blurhash: t.blurhash, thumbUrl: t.thumbUrl, createdAt: t.createdAt, status: t.status }}
                   showNewBadge={true}
                   showLike={false}
                   showFavoriteCount={false}
+                  showDraftBadge={isAdmin}
                   className="h-full"
                 />
               </Link>

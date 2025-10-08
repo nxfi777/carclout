@@ -2,7 +2,7 @@
 
 export type VideoResolution = 'auto' | '480p' | '720p' | '1080p';
 export type VideoAspectRatio = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16' | 'auto';
-export type VideoProvider = 'seedance' | 'kling2_5' | 'sora2';
+export type VideoProvider = 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro';
 
 export const PRICE_PER_CREDIT_USD = 0.001; // 1 credit = $0.001 (10x scale)
 export const CREDITS_PER_DOLLAR = Math.round(1 / PRICE_PER_CREDIT_USD); // 1000
@@ -13,6 +13,9 @@ export const VIDEO_MARKUP_MULTIPLIER = 2.25; // ~125% margin aligned with image 
 // Sora 2 pricing
 export const SORA2_VENDOR_USD_PER_SECOND = 0.1; // our cost
 export const SORA2_USER_USD_PER_SECOND = 0.25; // user charge target => 250 credits/sec
+// Sora 2 Pro pricing (720p)
+export const SORA2_PRO_VENDOR_USD_PER_SECOND = 0.30; // our cost for 720p
+export const SORA2_PRO_USER_USD_PER_SECOND = 0.75; // user charge target => 750 credits/sec (2.5x markup)
 
 function heightForResolution(resolution: VideoResolution): number {
   switch (resolution) {
@@ -75,6 +78,10 @@ export function estimateVideoVendorUsd(
     const duration = Math.max(1, Math.round(durationSeconds));
     return Math.max(0, SORA2_VENDOR_USD_PER_SECOND * duration);
   }
+  if (provider === 'sora2_pro') {
+    const duration = Math.max(1, Math.round(durationSeconds));
+    return Math.max(0, SORA2_PRO_VENDOR_USD_PER_SECOND * duration);
+  }
   const tokens = estimateVideoTokens(resolution, durationSeconds, fps, aspect);
   return Math.max(0, (tokens / 1_000_000) * VIDEO_VENDOR_USD_PER_MILLION_TOKENS);
 }
@@ -89,6 +96,8 @@ export function estimateVideoCredits(
   const vendorUsd = estimateVideoVendorUsd(resolution, durationSeconds, fps, aspect, provider);
   const usd = provider === 'sora2'
     ? SORA2_USER_USD_PER_SECOND * Math.max(1, Math.round(durationSeconds))
+    : provider === 'sora2_pro'
+    ? SORA2_PRO_USER_USD_PER_SECOND * Math.max(1, Math.round(durationSeconds))
     : vendorUsd * VIDEO_MARKUP_MULTIPLIER;
   const credits = Math.ceil(usd * CREDITS_PER_DOLLAR);
   return Math.max(1, credits);

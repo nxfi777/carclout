@@ -272,6 +272,28 @@ export async function POST(request: Request) {
   });
   const row = Array.isArray(created) ? created[0] : created;
   
+  // Track message sent (fire-and-forget)
+  try {
+    // Check if this is user's first message for activation tracking
+    const msgCountRes = await db.query(
+      "SELECT count() AS c FROM message WHERE userEmail = $email;",
+      { email: session.user.email }
+    );
+    const msgCount = Array.isArray(msgCountRes) && Array.isArray(msgCountRes[0]) 
+      ? (msgCountRes[0][0] as { c?: number } | undefined)?.c ?? 1
+      : 1;
+    
+    if (msgCount === 1) {
+      console.log('[ACTIVATION] First chat message by:', session.user.email);
+    }
+    
+    if (attachments.length > 0) {
+      console.log('[COMMUNITY] Message with attachments by:', session.user.email, 'count:', attachments.length);
+    }
+  } catch (err) {
+    console.error('Failed to track message:', err);
+  }
+  
   // Parse mentions and create notifications (fire-and-forget)
   try {
     const messageId = typeof row?.id === 'object' && 'toString' in row.id ? row.id.toString() : String(row?.id || '');
