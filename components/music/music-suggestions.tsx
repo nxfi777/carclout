@@ -283,12 +283,12 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
                         );
                       })()}
                       {activeId===t.id && isPlaying ? (
-                        <svg width='12' height='12' viewBox='0 0 24 24' fill='currentColor' className='z-10'>
+                        <svg width='12' height='12' viewBox='0 0 24 24' fill='currentColor' className='z-1'>
                           <rect x='6' y='5' width='4' height='14' rx='1'></rect>
                           <rect x='14' y='5' width='4' height='14' rx='1'></rect>
                         </svg>
                       ) : (
-                        <svg width='12' height='12' viewBox='0 0 24 24' fill='currentColor' className='z-10'>
+                        <svg width='12' height='12' viewBox='0 0 24 24' fill='currentColor' className='z-1'>
                           <path d='M8 5v14l11-7z'></path>
                         </svg>
                       )}
@@ -361,12 +361,12 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
                           );
                         })()}
                         {activeId===t.id && isPlaying ? (
-                          <svg width='12' height='12' viewBox='0 0 24 24' fill='currentColor' className='z-10'>
+                          <svg width='12' height='12' viewBox='0 0 24 24' fill='currentColor' className='z-1'>
                             <rect x='6' y='5' width='4' height='14' rx='1'></rect>
                             <rect x='14' y='5' width='4' height='14' rx='1'></rect>
                           </svg>
                         ) : (
-                          <svg width='12' height='12' viewBox='0 0 24 24' fill='currentColor' className='z-10'>
+                          <svg width='12' height='12' viewBox='0 0 24 24' fill='currentColor' className='z-1'>
                             <path d='M8 5v14l11-7z'></path>
                           </svg>
                         )}
@@ -471,12 +471,12 @@ export default function MusicSuggestions({ admin = false }: MusicSuggestionsProp
                           );
                         })()}
                         {activeId===t.id && isPlaying ? (
-                          <svg width='14' height='14' viewBox='0 0 24 24' fill='currentColor' className='z-10'>
+                          <svg width='14' height='14' viewBox='0 0 24 24' fill='currentColor' className='z-1'>
                             <rect x='6' y='5' width='4' height='14' rx='1'></rect>
                             <rect x='14' y='5' width='4' height='14' rx='1'></rect>
                           </svg>
                         ) : (
-                          <svg width='14' height='14' viewBox='0 0 24 24' fill='currentColor' className='z-10'>
+                          <svg width='14' height='14' viewBox='0 0 24 24' fill='currentColor' className='z-1'>
                             <path d='M8 5v14l11-7z'></path>
                           </svg>
                         )}

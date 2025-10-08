@@ -53,7 +53,7 @@ export default function HeaderDock() {
 
   if (!mounted || !mode) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-[100] flex items-center justify-center overflow-visible">
+    <div className="pointer-events-none absolute inset-0 z-3 flex items-center justify-center overflow-visible">
       <div className="w-full flex justify-center overflow-visible">
         <div className="pointer-events-auto w-fit overflow-visible" style={{ height: 56 }}>
           <Dock items={items} panelHeight={56} baseItemSize={36} magnification={48} />

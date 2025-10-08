@@ -319,7 +319,7 @@ function VideoCard({
         </video>
         
         {/* Step indicator overlay - always visible */}
-        <div className="absolute top-[0.75rem] left-[0.75rem] md:top-[1rem] md:left-[1rem] bg-[color:var(--primary)] text-white text-[0.75rem] md:text-[0.8rem] font-bold px-[0.75rem] py-[0.35rem] rounded-full z-10 shadow-lg">
+        <div className="absolute top-[0.75rem] left-[0.75rem] md:top-[1rem] md:left-[1rem] bg-[color:var(--primary)] text-white text-[0.75rem] md:text-[0.8rem] font-bold px-[0.75rem] py-[0.35rem] rounded-full z-1 shadow-lg">
           Step {index + 1}
         </div>
       </div>

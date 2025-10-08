@@ -122,7 +122,7 @@ export default function BrandMarquee() {
       <div className="relative mb-[2rem]">
         {/* Left fade */}
         <div 
-          className="absolute left-0 top-0 bottom-0 w-[8rem] md:w-[12rem] z-[2] pointer-events-none"
+          className="absolute left-0 top-0 bottom-0 w-[8rem] md:w-[12rem] z-2 pointer-events-none"
           style={{
             background: "linear-gradient(to right, var(--background), transparent)"
           }}
@@ -130,7 +130,7 @@ export default function BrandMarquee() {
         
         {/* Right fade */}
         <div 
-          className="absolute right-0 top-0 bottom-0 w-[8rem] md:w-[12rem] z-[2] pointer-events-none"
+          className="absolute right-0 top-0 bottom-0 w-[8rem] md:w-[12rem] z-2 pointer-events-none"
           style={{
             background: "linear-gradient(to left, var(--background), transparent)"
           }}
@@ -161,7 +161,7 @@ export default function BrandMarquee() {
         </div>
       </div>
 
-      <div className="relative z-[1] text-center mt-[2rem] px-[1rem]">
+      <div className="relative z-1 text-center mt-[2rem] px-[1rem]">
         <div className="flex flex-col sm:flex-row items-center justify-center gap-[0.75rem] sm:gap-[1.5rem] text-[color:var(--foreground)]/70 text-[0.85rem] md:text-[0.95rem]">
           <span>🚗 Compatible With All Vehicles</span>
           <span className="hidden sm:inline text-[color:var(--border)]">•</span>

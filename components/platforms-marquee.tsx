@@ -63,7 +63,7 @@ export default function PlatformsMarquee() {
         }}
       />
 
-      <div className="relative z-[1] text-center mb-[2rem] px-[1rem]">
+      <div className="relative z-1 text-center mb-[2rem] px-[1rem]">
         <h3 className="text-[1.2rem] md:text-[1.4rem] font-semibold text-[color:var(--foreground)]/90">
           📱 Platforms we work with
         </h3>
@@ -73,7 +73,7 @@ export default function PlatformsMarquee() {
       <div className="relative">
         {/* Left fade */}
         <div 
-          className="absolute left-0 top-0 bottom-0 w-[8rem] md:w-[12rem] z-[2] pointer-events-none"
+          className="absolute left-0 top-0 bottom-0 w-[8rem] md:w-[12rem] z-2 pointer-events-none"
           style={{
             background: "linear-gradient(to right, var(--background), transparent)"
           }}
@@ -81,7 +81,7 @@ export default function PlatformsMarquee() {
         
         {/* Right fade */}
         <div 
-          className="absolute right-0 top-0 bottom-0 w-[8rem] md:w-[12rem] z-[2] pointer-events-none"
+          className="absolute right-0 top-0 bottom-0 w-[8rem] md:w-[12rem] z-2 pointer-events-none"
           style={{
             background: "linear-gradient(to left, var(--background), transparent)"
           }}

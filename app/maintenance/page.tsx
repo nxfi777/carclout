@@ -20,7 +20,7 @@ export default function MaintenancePage() {
         }}
       />
       
-      <div className="relative z-10 max-w-2xl w-full">
+      <div className="relative z-1 max-w-2xl w-full">
         {/* Logo and brand */}
         <div className="flex items-center justify-center gap-2 mb-8">
           <Image
@@ -47,7 +47,7 @@ export default function MaintenancePage() {
             }}
           />
 
-          <div className="relative z-10">
+          <div className="relative z-1">
             {/* Icon */}
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 border border-primary/20 mb-6">
               <Wrench className="w-8 h-8 text-primary" />

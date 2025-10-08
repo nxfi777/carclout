@@ -44,7 +44,7 @@ export default function NotFound() {
         </ElectricBorder>
 
         {/* ambient hero-like glow */}
-        <div aria-hidden className="pointer-events-none absolute -z-10 inset-x-0 -top-24 h-[18rem]">
+        <div aria-hidden className="pointer-events-none absolute -z-1 inset-x-0 -top-24 h-[18rem]">
           <div
             className="mx-auto max-w-xl h-full rounded-[2.5rem] opacity-60"
             style={{

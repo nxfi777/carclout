@@ -279,7 +279,7 @@ export async function POST(req: Request) {
           const arRaw = String((v as { aspect_ratio?: unknown })?.aspect_ratio || 'auto');
           const aspectRatios = ['21:9','16:9','4:3','1:1','3:4','9:16','auto'] as const;
           const ar = (aspectRatios as readonly string[]).includes(arRaw) ? (arRaw as (typeof aspectRatios)[number]) : 'auto';
-          const provRaw = String((v as { provider?: unknown })?.provider || 'sora2');
+          const provRaw = String((v as { provider?: unknown })?.provider || 'seedance');
           const provider: 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro' = provRaw === 'kling2_5' ? 'kling2_5' : provRaw === 'sora2' ? 'sora2' : provRaw === 'sora2_pro' ? 'sora2_pro' : 'seedance';
           const cfg_scale = ((): number | undefined => {
             try {

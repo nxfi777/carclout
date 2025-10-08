@@ -170,11 +170,11 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
       >
 
         {/* Screen base (full white background inside the phone) */}
-        <div className="absolute inset-[0.24rem] z-10 rounded-[1.9rem] bg-white" />
+        <div className="absolute inset-[0.24rem] z-1 rounded-[1.9rem] bg-white" />
 
         {/* Status bar (time + indicators) aligned to sides of the notch */}
         <div
-          className="absolute z-40 grid items-center pointer-events-none select-none text-black"
+          className="absolute z-4 grid items-center pointer-events-none select-none text-black"
           style={{
             left: "1.2rem",
             right: "1.2rem",
@@ -201,11 +201,11 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
         </div>
 
         {/* Dynamic Island (floating pill under the frame) */}
-        <div className="absolute z-30 left-1/2 -translate-x-1/2 top-[0.7rem] h-[1.6rem] w-[5rem] bg-black/90 rounded-full shadow-[0_4px_10px_rgba(0,0,0,0.22)]" />
+        <div className="absolute z-3 left-1/2 -translate-x-1/2 top-[0.7rem] h-[1.6rem] w-[5rem] bg-black/90 rounded-full shadow-[0_4px_10px_rgba(0,0,0,0.22)]" />
 
         {/* Instagram-like overlay */}
         <div
-          className="absolute z-50 grid text-black rounded-[1.9rem] overflow-hidden pointer-events-auto"
+          className="absolute z-5 grid text-black rounded-[1.9rem] overflow-hidden pointer-events-auto"
           style={{
             gridTemplateRows: "auto 1fr",
             left: "0.24rem",
@@ -268,7 +268,7 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
                     <div key={idx} className="relative w-full h-full flex-shrink-0" suppressHydrationWarning>
                       {/* Pulsing overlay on top of blurhash */}
                       {!imageLoaded && idx === currentSlide && (
-                        <div className="absolute inset-0 z-10 bg-white/5 animate-pulse rounded-none" />
+                        <div className="absolute inset-0 z-1 bg-white/5 animate-pulse rounded-none" />
                       )}
                       <Image
                         src={image.src}
@@ -285,7 +285,7 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
                         draggable={false}
                       />
                       {/* Before/After badge */}
-                      <div className="absolute left-[0.75rem] top-[0.75rem] z-20 pointer-events-none">
+                      <div className="absolute left-[0.75rem] top-[0.75rem] z-2 pointer-events-none">
                         <div className="rounded-md bg-black/80 backdrop-blur-sm text-white text-[1.1rem] font-bold px-[1rem] py-[0.5rem] shadow-lg">
                           {image.label}
                         </div>
@@ -296,7 +296,7 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
               </div>
 
               {/* Carousel indicator dots */}
-              <div className="absolute bottom-[0.75rem] left-1/2 -translate-x-1/2 z-20 flex gap-[0.35rem] pointer-events-none">
+              <div className="absolute bottom-[0.75rem] left-1/2 -translate-x-1/2 z-2 flex gap-[0.35rem] pointer-events-none">
                 {carouselImages.map((_, idx) => (
                   <div
                     key={idx}
@@ -310,7 +310,7 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
               </div>
             </div>
             {/* Actions and caption */}
-          <div className="px-[0.9rem] pb-[1.1rem] pt-[0.9rem] relative z-50 pointer-events-auto">
+          <div className="px-[0.9rem] pb-[1.1rem] pt-[0.9rem] relative z-5 pointer-events-auto">
             <div className="flex items-center justify-between pb-[0.4rem]">
               <div className="flex items-center gap-[1rem]">
                 <button
@@ -318,7 +318,7 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
                   onClick={() => setLiked((prev) => !prev)}
                   aria-pressed={liked}
                   aria-label={liked ? "Unlike" : "Like"}
-                  className="inline-flex items-center gap-[0.35rem] cursor-pointer select-none relative z-50 pointer-events-auto"
+                  className="inline-flex items-center gap-[0.35rem] cursor-pointer select-none relative z-5 pointer-events-auto"
                 >
                   <Heart
                     className={`size-[1.6rem] transition-colors cursor-pointer ${liked ? "text-red-500 fill-red-500 stroke-red-500" : "fill-transparent"}`}
@@ -345,7 +345,7 @@ export default function InstagramPhone({ likes = 77, comments = 12, shares = 30 
                 onClick={() => setSaved((prev) => !prev)}
                 aria-pressed={saved}
                 aria-label={saved ? "Unsave" : "Save"}
-                className="inline-flex items-center justify-center cursor-pointer select-none relative z-50 pointer-events-auto"
+                className="inline-flex items-center justify-center cursor-pointer select-none relative z-5 pointer-events-auto"
               >
                 <Bookmark
                   className={`size-[1.6rem] transition-colors ${saved ? "text-black fill-black stroke-black" : "fill-transparent"}`}

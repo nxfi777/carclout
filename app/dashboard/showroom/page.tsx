@@ -1768,7 +1768,7 @@ function DashboardShowroomPageInner() {
         {/* hasMinimumPlan && (
           <>
             <div 
-              className="fixed inset-0 z-[9999] backdrop-blur-[12px]" 
+              className="fixed inset-0 z-6 backdrop-blur-[12px]" 
               style={{ 
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
@@ -1778,7 +1778,7 @@ function DashboardShowroomPageInner() {
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
             />
             <div 
-              className="fixed inset-0 z-[10000] flex items-center justify-center"
+              className="fixed inset-0 z-6 flex items-center justify-center"
               style={{ pointerEvents: 'none' }}
             >
               <div className="text-center" style={{ pointerEvents: 'auto' }}>
@@ -1796,7 +1796,7 @@ function DashboardShowroomPageInner() {
           </>
         ) */}
         {showroomView === 'showroom' && showChannels ? (
-        <aside className="h-full min-h-0 border-r border-[color:var(--border)] overflow-y-auto p-2 bg-[var(--card)] md:static absolute inset-0 z-40"> 
+        <aside className="h-full min-h-0 border-r border-[color:var(--border)] overflow-y-auto p-2 bg-[var(--card)] md:static absolute inset-0 z-4"> 
           {/* Mobile close */}
                   <button className="md:hidden absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-full border border-[color:var(--border)]/60 bg-white/5 hover:bg-white/10 text-xs" onClick={() => setShowChannels(false)} aria-label="Close channels">
             <span className="sr-only">Close</span>
@@ -2413,7 +2413,7 @@ function DashboardShowroomPageInner() {
           )}
         </section>
         {showMembers && showroomView === 'showroom' && activeChatType === 'channel' ? (
-          <aside className="h-full min-h-0 border-l border-[color:var(--border)] overflow-y-auto p-3 bg-[var(--popover)] space-y-3 md:static absolute inset-0 z-40">
+          <aside className="h-full min-h-0 border-l border-[color:var(--border)] overflow-y-auto p-3 bg-[var(--popover)] space-y-3 md:static absolute inset-0 z-4">
             {/* Header row: left chevron, right-aligned Online count */}
             <div className="flex items-center gap-2">
               <button className="md:hidden inline-flex items-center justify-center rounded-full border border-[color:var(--border)]/60 bg-white/5 hover:bg-white/10 size-7" onClick={() => setShowMembers(false)} aria-label="Hide members">
@@ -2993,7 +2993,7 @@ function DashboardShowroomPageInner() {
                                       <Loader2 className="h-4 w-4 animate-spin" />
                                     </div>
                                   )}
-                          <span className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center rounded bg-black/70 p-1 transition-colors ${selected ? 'text-emerald-300' : (pendingAttachments.length >= maxAttachments ? 'text-white/50' : 'text-white/70')}`}>
+                          <span className={`absolute left-2 top-2 z-1 inline-flex items-center justify-center rounded bg-black/70 p-1 transition-colors ${selected ? 'text-emerald-300' : (pendingAttachments.length >= maxAttachments ? 'text-white/50' : 'text-white/70')}`}>
                             {selected ? <SquareCheckBig className="h-4 w-4" /> : (pendingAttachments.length >= maxAttachments ? <SquareSlash className="h-4 w-4" /> : <SquarePlus className="h-4 w-4" />)}
                                   </span>
                                   {status === 'uploading' ? (
@@ -3065,7 +3065,7 @@ function DashboardShowroomPageInner() {
                               <div className="flex h-full items-center justify-center text-xs text-white/50">No preview</div>
                             )}
                             <span
-                              className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center rounded bg-black/70 p-1 transition-colors ${selected ? 'text-emerald-300' : 'text-white/70'}`}
+                              className={`absolute left-2 top-2 z-1 inline-flex items-center justify-center rounded bg-black/70 p-1 transition-colors ${selected ? 'text-emerald-300' : 'text-white/70'}`}
                             >
                               {selected ? <SquareCheckBig className="h-4 w-4" /> : <SquarePlus className="h-4 w-4" />}
                             </span>

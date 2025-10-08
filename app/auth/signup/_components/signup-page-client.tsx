@@ -55,10 +55,10 @@ function SignUpPageInner() {
               "linear-gradient(90deg, color-mix(in srgb, var(--primary) 14%, transparent), transparent 35%, color-mix(in srgb, var(--primary) 14%, transparent))",
           }}
         />
-        <CardHeader className="relative z-10">
+        <CardHeader className="relative z-1">
           <CardTitle>Create your account</CardTitle>
         </CardHeader>
-        <CardContent className="relative z-10">
+        <CardContent className="relative z-1">
           <form onSubmit={submit} className="space-y-3">
             <div className="space-y-1">
               <div className="text-sm font-medium">Instagram username</div>

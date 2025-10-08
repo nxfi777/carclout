@@ -23,7 +23,7 @@ export default function VerifyPage() {
               "linear-gradient(90deg, color-mix(in srgb, var(--primary) 14%, transparent), transparent 35%, color-mix(in srgb, var(--primary) 14%, transparent))",
           }}
         />
-        <div className="relative z-10">
+        <div className="relative z-1">
           <h1 className="text-2xl font-semibold">Check your email</h1>
           <p className="text-muted-foreground">We sent you a magic link to sign in.</p>
         </div>

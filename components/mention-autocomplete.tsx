@@ -141,7 +141,7 @@ export function MentionAutocomplete({ inputRef, users, isAdmin, onSelect }: Ment
   return (
     <div
       ref={popupRef}
-      className="fixed z-50 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-lg overflow-hidden"
+      className="fixed z-5 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-lg overflow-hidden"
       style={{
         maxWidth: '16rem',
         width: 'max-content',

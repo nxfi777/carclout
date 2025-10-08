@@ -230,7 +230,7 @@ export default function TransformControls() {
           title="Rotate"
           onPointerDown={handleRotatePointerDown}
           style={{ touchAction: 'none' }}
-          className="relative z-10 size-3 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
+          className="relative z-1 size-3 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
         />
       </div>
       {/* Rotate handle antenna at bottom-center */}
@@ -240,7 +240,7 @@ export default function TransformControls() {
           title="Rotate"
           onPointerDown={handleRotatePointerDown}
           style={{ touchAction: 'none' }}
-          className="relative z-10 size-3 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
+          className="relative z-1 size-3 rounded-full bg-white border border-white/50 shadow pointer-events-auto cursor-grab"
         />
       </div>
       {(['tl','tr','bl','br'] as const).map((h)=> (

@@ -522,14 +522,14 @@ export default function LayerCanvas({ className }: { className?: string }) {
           {(state.maskTranslateXPct || 0) !== 0 || (state.maskTranslateYPct || 0) !== 0 ? (
             <button
               type="button"
-              className="absolute top-2 right-2 z-[11] text-[0.8rem] px-2 py-1 rounded-md border border-[var(--border)] bg-[var(--card)] hover:bg-white/10"
+              className="absolute top-2 right-2 z-3 text-[0.8rem] px-2 py-1 rounded-md border border-[var(--border)] bg-[var(--card)] hover:bg-white/10"
               onClick={(e)=>{ e.stopPropagation(); dispatch({ type: 'reset_mask' }); }}
             >
               Reset cutout
             </button>
           ) : null}
           {selectRect ? (
-            <div className="pointer-events-none absolute inset-0 z-[10]">
+            <div className="pointer-events-none absolute inset-0 z-1">
               <div className="absolute border-2 border-primary/70 bg-primary/10" style={{ left: selectRect.x, top: selectRect.y, width: selectRect.w, height: selectRect.h }} />
             </div>
           ) : null}

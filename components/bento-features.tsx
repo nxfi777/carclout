@@ -132,7 +132,7 @@ export default function BentoFeatures({ initialTemplates = [] }: BentoFeaturesPr
         }}
       />
 
-      <div className="max-w-7xl mx-auto relative z-[1] h-full">
+      <div className="max-w-7xl mx-auto relative z-1 h-full">
         {/* Title */}
         <div className="text-center mb-[2rem] px-[1rem] sm:px-[1.75rem]">
           <h2 className="text-[2.5rem] sm:text-[3.5rem] md:text-[4rem] font-bold tracking-tight text-white">

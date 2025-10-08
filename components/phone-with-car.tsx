@@ -74,7 +74,7 @@ function PhoneWithCarParallax() {
 
       {/* Phone on top */}
       <div
-        className="relative z-[2] pointer-events-none max-w-[84vw] [--igp-w:12rem] sm:[--igp-w:16rem] md:[--igp-w:19rem]"
+        className="relative z-2 pointer-events-none max-w-[84vw] [--igp-w:12rem] sm:[--igp-w:16rem] md:[--igp-w:19rem]"
         style={{
           transform: phoneTranslate,
           transition: "transform 200ms ease-out",

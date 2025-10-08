@@ -98,7 +98,7 @@ export default async function Home() {
   return (
     <main className="page-glow -mx-2 md:-mx-3">
       <PageBottomBlur />
-      <section className="w-full pt-[1rem] md:pt-[2rem] pb-[4rem] grid grid-cols-1 lg:grid-cols-2 gap-[2rem] items-start relative z-[1] px-[1rem] sm:px-[1.75rem] overflow-visible">
+      <section className="w-full pt-[1rem] md:pt-[2rem] pb-[4rem] grid grid-cols-1 lg:grid-cols-2 gap-[2rem] items-start relative z-1 px-[1rem] sm:px-[1.75rem] overflow-visible">
         <div className="ml-0 sm:ml-[1.25rem] lg:ml-[3rem] space-y-[1.2rem] text-center lg:text-left mt-[1rem] md:mt-[2rem] lg:mt-[4.5rem]">
           {/* badge removed per request */}
           <h1 className="leading-tight font-semibold text-[clamp(2.4rem,6vw,4rem)]">

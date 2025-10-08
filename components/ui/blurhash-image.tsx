@@ -84,7 +84,7 @@ export function BlurhashImage({
       {showSkeleton && !isLoaded && (
         fuseSkeleton ? (
           // Fusion mode: subtle pulsing overlay on top of blurhash
-          <div className={cn('absolute inset-0 z-10 bg-white/5 animate-pulse', skeletonClassName)} />
+          <div className={cn('absolute inset-0 z-1 bg-white/5 animate-pulse', skeletonClassName)} />
         ) : (
           // Legacy mode: solid skeleton background
           <Skeleton className={cn('absolute inset-0', skeletonClassName)} />
@@ -152,7 +152,7 @@ export function BlurhashBackgroundImage({
       {showSkeleton && !isLoaded && (
         fuseSkeleton ? (
           // Fusion mode: subtle pulsing overlay on top of blurhash
-          <div className={cn('absolute inset-0 z-10 bg-white/5 animate-pulse rounded-none', skeletonClassName)} />
+          <div className={cn('absolute inset-0 z-1 bg-white/5 animate-pulse rounded-none', skeletonClassName)} />
         ) : (
           // Legacy mode: solid skeleton background
           <Skeleton className={cn('absolute inset-0 rounded-none', skeletonClassName)} />

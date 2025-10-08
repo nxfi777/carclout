@@ -690,7 +690,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
       {/* Loading overlay during download */}
       {(downloading || saving) && (
         <div 
-          className="fixed inset-0 z-50 bg-[var(--background)]/95 flex items-center justify-center"
+          className="fixed inset-0 z-5 bg-[var(--background)]/95 flex items-center justify-center"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >

@@ -203,7 +203,7 @@ const ElectricBorder: React.FC<ElectricBorderProps> = ({
   return (
     <div
       ref={rootRef}
-      className={"relative isolate overflow-visible md:overflow-visible z-0 md:z-20 " + (className ?? "")}
+      className={"relative isolate overflow-visible md:overflow-visible z-0 md:z-2 " + (className ?? "")}
       style={style}
     >
       <svg

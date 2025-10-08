@@ -198,7 +198,7 @@ export function DropZone({ onDrop, children, className, accept, disabled, cover,
   }
 
   const baseClasses = cover
-    ? `absolute inset-0 z-50 ${isOver ? 'bg-[color:var(--primary)]/10' : ''}`
+    ? `absolute inset-0 z-5 ${isOver ? 'bg-[color:var(--primary)]/10' : ''}`
     : `relative rounded-md border border-[color:var(--border)] border-dashed p-4 text-sm ${disabled ? "opacity-60 pointer-events-none" : "cursor-pointer"} ${isOver ? "border-[color:var(--primary)] bg-[color:var(--primary)]/10" : "hover:border-[color:var(--border)]"}`;
   const classes = `${baseClasses} ${className || ""}`;
   const overlayStyle: React.CSSProperties | undefined = cover ? { pointerEvents: isOver ? "auto" : "none" } : undefined;

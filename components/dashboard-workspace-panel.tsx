@@ -9,6 +9,16 @@ import { R2FileTree } from "@/components/ui/file-tree";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -46,6 +56,9 @@ const ITEMS_TTL_MS = 60_000; // UI hint only; we still revalidate in background
 const SESSION_PREFIX = "carclout:workspace:list:";
 type WorkspaceCacheEntry = { items: ItemWithTag[]; timestamp: number; etag?: string };
 const workspaceItemsCache = new Map<string, WorkspaceCacheEntry>();
+
+const IMAGE_FILE_REGEX = /\.(png|jpe?g|gif|webp|svg|bmp|tiff?)$/i;
+const VIDEO_FILE_REGEX = /\.(mp4|mov|webm|avi|mkv)$/i;
 
 function readSessionCache(key: string): WorkspaceCacheEntry | null {
   try {
@@ -124,6 +137,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
   const [videoTemplates, setVideoTemplates] = useState<Set<string>>(new Set());
   const [profileVehicles, setProfileVehicles] = useState<Array<{ make?: string; model?: string; colorFinish?: string; accents?: string; type?: string }>>([]);
   const [activeUpscaleOps, setActiveUpscaleOps] = useState<Set<string>>(new Set()); // Track which videos are being upscaled
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -908,17 +924,21 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
     });
   }
 
-  async function onDelete(it: Item) {
+  function isManagedFolderPath(targetPath: string) {
+    return targetPath.startsWith('vehicles/') || targetPath.startsWith('designer_masks/') || targetPath.startsWith('designer_states/') || targetPath.startsWith('chat-uploads/');
+  }
+
+  async function onDelete(it: Item, opts: { skipPrompt?: boolean } = {}) {
     // Prevent deletes inside managed folders
     const managedPath = path === 'vehicles' || (path || '').startsWith('vehicles/') || path === 'designer_masks' || (path || '').startsWith('designer_masks/') || path === 'designer_states' || (path || '').startsWith('designer_states/') || path === 'chat-uploads' || (path || '').startsWith('chat-uploads/');
-    if (managedPath) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
-    if (it.type === 'folder') {
+    if (managedPath) { toast.info('This folder is managed. Deletion is disabled here.'); return false; }
+    if (it.type === 'folder' && !opts.skipPrompt) {
       const ok = await confirmToast({ title: `Delete folder "${it.name}"?`, message: 'All contents will be deleted.' });
-      if (!ok) return;
+      if (!ok) return false;
     }
     const key = it.key || `${path ? `${path}/` : ""}${it.name}${it.type==='folder'?'/':''}`;
     const normalizedKey = String(key).replace(/^\/+/, '');
-    if (normalizedKey.startsWith('vehicles/') || normalizedKey.startsWith('designer_masks/') || normalizedKey.startsWith('designer_states/') || normalizedKey.startsWith('chat-uploads/')) { toast.info('This folder is managed. Deletion is disabled here.'); return; }
+    if (isManagedFolderPath(normalizedKey)) { toast.info('This folder is managed. Deletion is disabled here.'); return false; }
     const cacheKey = `${scope === 'admin' ? 'admin' : 'user'}:${path}`;
     const prevItems = items;
     // Optimistic UI: remove immediately and update cache
@@ -935,11 +955,36 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         try { delete next[key.replace(/\/$/, '')]; } catch {}
         return next;
       });
+      return true;
     } catch {
       // Revert on failure
       setItems(prevItems);
       workspaceItemsCache.set(cacheKey, { items: prevItems, timestamp: Date.now() });
       toast.error(`Failed to delete ${it.type==='folder'?'folder':'file'}`);
+      return false;
+    }
+  }
+
+function requestDelete(it: Item) {
+    if (it.type === 'file' && (IMAGE_FILE_REGEX.test(it.name) || VIDEO_FILE_REGEX.test(it.name))) {
+      setDeleteTarget(it);
+      setDeleteDialogOpen(true);
+      return;
+    }
+    void onDelete(it);
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    try {
+      const success = await onDelete(deleteTarget, { skipPrompt: true });
+      if (success) {
+        setDeleteDialogOpen(false);
+        setDeleteTarget(null);
+      }
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -1786,7 +1831,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
             <DropZone cover onDrop={onUpload} className="rounded-none border-0" />
             {selectionRect ? (
               <div
-                className="pointer-events-none fixed z-50 border border-[color:var(--border)] bg-[color:var(--primary)]/10"
+                className="pointer-events-none fixed z-5 border border-[color:var(--border)] bg-[color:var(--primary)]/10"
                 style={{
                   left: `${Math.min(selectionRect.x, selectionRect.x + selectionRect.w)}px`,
                   top: `${Math.min(selectionRect.y, selectionRect.y + selectionRect.h)}px`,
@@ -1852,7 +1897,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
               <div className="text-sm">
                 {view === 'list' ? (
                 <>
-                <div className="sticky top-0 z-10 bg-black/20 backdrop-blur supports-[backdrop-filter]:bg-black/10 border-b border-[color:var(--border)] px-3 py-1 grid grid-cols-[24px_1fr_120px_180px_120px] gap-2">
+                <div className="sticky top-0 z-1 bg-black/20 backdrop-blur supports-[backdrop-filter]:bg-black/10 border-b border-[color:var(--border)] px-3 py-1 grid grid-cols-[24px_1fr_120px_180px_120px] gap-2">
                   <div className="flex items-center">
                     <Checkbox
                       checked={selectedKeys.size > 0 && selectedKeys.size === sortedItems.length ? true : (selectedKeys.size === 0 ? false : "indeterminate")}
@@ -1950,12 +1995,12 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                             {it.type==='file' && /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(it.name) ? (
                               <>
                                 <ContextMenuItem onSelect={()=>{ const key = it.key || `${path ? `${path}/` : ''}${it.name}`; setDesignKey(key); setDesignOpen(true); }}>Open in Designer</ContextMenuItem>
-                                  <ContextMenuItem onSelect={async()=>{
+                                <ContextMenuItem onSelect={async()=>{
                                   // Comment out plan check - all users now have video generation access
                                   // if (canonicalPlan(me?.plan) !== 'ultra') { try { window.dispatchEvent(new CustomEvent('open-pro-upsell')); } catch {} return; }
                                   const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
                                   await doUpscale(key);
-                                  }}>Upscale</ContextMenuItem>
+                                }}>Upscale</ContextMenuItem>
                               </>
                             ) : null}
                             {it.type==='file' && /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name) ? (
@@ -1963,7 +2008,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                 {(() => {
                                   // Hide upscale button if video is already at max resolution or already upscaled
                                   if (it.name.includes('upscaled') || it.name.includes('2x')) return null;
-                                  
+
                                   // Check if video dimensions are at or above max (1080p smaller dim, 1920p larger dim)
                                   const w = it.width || 0;
                                   const h = it.height || 0;
@@ -1973,9 +2018,9 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                     // Hide if already at or above max resolution
                                     if (smallerDim >= 1080 || largerDim >= 1920) return null;
                                   }
-                                  
+
                                   return (
-                                    <ContextMenuItem 
+                                    <ContextMenuItem
                                       disabled={videoUpscaleBusy}
                                       onSelect={async()=>{
                                         // Comment out plan check - all users now have video generation access
@@ -1993,7 +2038,12 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                             ) : null}
                             {!isReservedHooksRoot ? (
                               !(isManagedContext) ? (
-                                <ContextMenuItem onSelect={()=>{ onDelete(it); setTreeVersion(v=>v+1); }}>Delete</ContextMenuItem>
+                                <ContextMenuItem
+                                  variant="destructive"
+                                  onSelect={()=>{
+                                    requestDelete(it);
+                                  }}
+                                >Delete</ContextMenuItem>
                               ) : (
                                 <ContextMenuItem disabled className="cursor-default pointer-events-none opacity-60">Managed folder</ContextMenuItem>
                               )
@@ -2055,7 +2105,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                 }}
                               >
                                 {!(it as ItemWithTag).isUpscaling ? (
-                                  <div className="absolute left-2 top-2 z-10" onClick={(e)=>{ e.stopPropagation(); }} onPointerDown={(e)=>{ e.stopPropagation(); }}>
+                                  <div className="absolute left-2 top-2 z-1" onClick={(e)=>{ e.stopPropagation(); }} onPointerDown={(e)=>{ e.stopPropagation(); }}>
                                     <Checkbox checked={checked} onCheckedChange={(v)=>toggleKey(k, v)} aria-label={`Select ${it.name}`} />
                                   </div>
                                 ) : null}
@@ -2155,15 +2205,15 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                                   { /* Frame interpolation hidden */ }
                                 </>
                               ) : null}
-                              {!isReservedHooksRoot ? (
-                                !(isManagedContext) ? (
-                                  <ContextMenuItem onSelect={()=>{ onDelete(it); setTreeVersion(v=>v+1); }}>Delete</ContextMenuItem>
-                                ) : (
-                                  <ContextMenuItem disabled className="cursor-default pointer-events-none opacity-60">Managed folder</ContextMenuItem>
-                                )
+                            {!isReservedHooksRoot ? (
+                              !(isManagedContext) ? (
+                                <ContextMenuItem variant="destructive" onSelect={()=>{ requestDelete(it); }}>Delete</ContextMenuItem>
                               ) : (
-                                <ContextMenuItem disabled>Reserved folder</ContextMenuItem>
-                              )}
+                                <ContextMenuItem disabled className="cursor-default pointer-events-none opacity-60">Managed folder</ContextMenuItem>
+                              )
+                            ) : (
+                              <ContextMenuItem disabled>Reserved folder</ContextMenuItem>
+                            )}
                             </ContextMenuContent>
                           </ContextMenu>
                         );
@@ -2177,7 +2227,7 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
         </section>
       </div>
       {preview ? (
-        <div className="fixed inset-0 bg-black/70 grid place-items-center z-[12000]" onClick={()=>setPreview(null)}>
+        <div className="fixed inset-0 bg-black/70 grid place-items-center z-6" onClick={()=>setPreview(null)}>
           <div className="bg-[var(--popover)] rounded-lg p-3 max-w-[90vw] max-h-[85vh]" onClick={(e)=>e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-2">
               <div className="text-sm font-medium truncate">{preview.name}</div>
@@ -2385,6 +2435,57 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
           </div>
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open)=>{
+          if (deleteBusy && !open) return;
+          setDeleteDialogOpen(open);
+          if (!open && !deleteBusy) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteTarget?.type === 'folder'
+                ? 'Delete folder?'
+                : deleteTarget && VIDEO_FILE_REGEX.test(deleteTarget.name)
+                  ? 'Delete video?'
+                  : deleteTarget && IMAGE_FILE_REGEX.test(deleteTarget.name)
+                    ? 'Delete image?'
+                    : 'Delete this item?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.type === 'folder'
+                ? 'Deleting a folder will remove all contents. This action cannot be undone.'
+                : deleteTarget && VIDEO_FILE_REGEX.test(deleteTarget.name)
+                  ? 'The selected video will be permanently deleted from your workspace.'
+                  : deleteTarget && IMAGE_FILE_REGEX.test(deleteTarget.name)
+                    ? 'The selected image will be permanently deleted from your workspace.'
+                    : 'This item will be permanently removed.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={deleteBusy}
+              onClick={()=>{
+                if (deleteBusy) return;
+                setDeleteDialogOpen(false);
+                setDeleteTarget(null);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteBusy}
+              onClick={handleConfirmDelete}
+            >
+              {deleteBusy ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <CreditDepletionDrawer
         open={creditDepletion.isOpen}
         onOpenChange={creditDepletion.close}

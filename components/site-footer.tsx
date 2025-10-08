@@ -12,7 +12,7 @@ export default function SiteFooter() {
 
   return (
     <footer className="py-[2.5rem] px-[1rem] sm:px-[1.5rem] lg:px-[2rem] relative overflow-hidden">
-      <div className="max-w-7xl mx-auto flex flex-col items-center relative z-10">
+      <div className="max-w-7xl mx-auto flex flex-col items-center relative z-1">
         <div className="flex items-center justify-center">
           <Link href="/" className="flex items-center justify-center">
             <Image src="/carcloutlogo.webp" alt="CarClout" width={48} height={48} className="rounded" />

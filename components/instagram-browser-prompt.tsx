@@ -142,7 +142,7 @@ export default function InstagramBrowserPrompt() {
       {/* Redirect Overlay - Shows first */}
       {showRedirectOverlay && (
         <div 
-          className="fixed inset-0 z-[10000] flex items-center justify-center"
+          className="fixed inset-0 z-6 flex items-center justify-center"
           style={{
             background: 'rgba(11, 16, 32, 0.95)',
             backdropFilter: 'blur(12px)',
@@ -172,7 +172,7 @@ export default function InstagramBrowserPrompt() {
       {/* Fallback Banner - Shows if redirect fails */}
       {showBanner && !showRedirectOverlay && (
         <div 
-          className="fixed top-0 left-0 right-0 z-[9999] shadow-lg"
+          className="fixed top-0 left-0 right-0 z-6 shadow-lg"
           style={{ 
             background: 'linear-gradient(135deg, #111a36 0%, #1a2447 50%, #263166 100%)',
             borderBottom: '1px solid #263166',

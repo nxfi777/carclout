@@ -119,7 +119,7 @@ function DockLabel({ children, className = '', ...rest }: DockLabelProps) {
           animate={{ opacity: 1, y: 8 }}
           exit={{ opacity: 0, y: 0 }}
           transition={{ duration: 0.2 }}
-          className={`${className} absolute top-full left-1/2 mt-1 w-fit whitespace-pre rounded-md border border-[color:var(--border)] bg-[var(--popover)] px-2 py-0.5 text-2xs text-[color:var(--foreground)]/90 z-[200]`}
+          className={`${className} absolute top-full left-1/2 mt-1 w-fit whitespace-pre rounded-md border border-[color:var(--border)] bg-[var(--popover)] px-2 py-0.5 text-2xs text-[color:var(--foreground)]/90 z-5`}
           role="tooltip"
           style={{ x: '-50%' }}
         >

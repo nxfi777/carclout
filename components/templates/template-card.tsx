@@ -71,27 +71,27 @@ export function TemplateCard(props: TemplateCardProps) {
     >
       {/* Comment out proOnly badge - no more pro-only templates */}
       {/* data?.proOnly ? (
-        <span className="absolute top-[2.5rem] left-[0.5rem] z-10 inline-flex items-center gap-1 rounded-full bg-black/60 px-[0.6rem] py-[0.35rem] text-[0.625rem] uppercase tracking-wide text-[#ff6a00] border border-[#ff6a00]/40">
+        <span className="absolute top-[2.5rem] left-[0.5rem] z-1 inline-flex items-center gap-1 rounded-full bg-black/60 px-[0.6rem] py-[0.35rem] text-[0.625rem] uppercase tracking-wide text-[#ff6a00] border border-[#ff6a00]/40">
           {userHasPro ? <FaLockOpen className="text-[0.75rem]" /> : <FaLock className="text-[0.75rem]" />}
           <span>Pro</span>
         </span>
       ) : null */}
 
       {isDraft ? (
-        <div className="absolute top-2 left-2 z-10 bg-yellow-500/90 text-black text-xs font-semibold px-2 py-0.5 rounded">
+        <div className="absolute top-2 left-2 z-1 bg-yellow-500/90 text-black text-xs font-semibold px-2 py-0.5 rounded">
           Draft
         </div>
       ) : null}
 
       {isNew ? (
-        <span className="absolute top-[0.5rem] left-[0.5rem] z-10 text-[0.625rem] px-[0.5em] py-[0.25em] rounded-full border shadow badge-new">
+        <span className="absolute top-[0.5rem] left-[0.5rem] z-1 text-[0.625rem] px-[0.5em] py-[0.25em] rounded-full border shadow badge-new">
           <span className="shiny-text">NEW</span>
         </span>
       ) : null}
 
       {showLike ? (
         <button
-          className="absolute top-[0.5rem] right-[0.5rem] z-10 rounded-full cursor-pointer bg-black/60 hover:bg-black/70 text-white px-[0.6rem] py-[0.4rem] focus:outline-none focus:ring-2 focus:ring-primary"
+          className="absolute top-[0.5rem] right-[0.5rem] z-1 rounded-full cursor-pointer bg-black/60 hover:bg-black/70 text-white px-[0.6rem] py-[0.4rem] focus:outline-none focus:ring-2 focus:ring-primary"
           aria-label={data?.isFavorited ? "Remove from favourites" : "Add to favourites"}
           onClick={(e) => { e.stopPropagation(); if (onLikeToggle) onLikeToggle(); }}
           type="button"
@@ -145,7 +145,7 @@ export function TemplateCard(props: TemplateCardProps) {
       )}
 
       {data?.isVideoTemplate ? (
-        <span className="absolute bottom-[0.5rem] right-[0.5rem] z-10 text-[0.625rem] px-[0.5rem] py-[0.25rem] rounded bg-black/60 text-[#8b5cf6] uppercase tracking-wide">
+        <span className="absolute bottom-[0.5rem] right-[0.5rem] z-1 text-[0.625rem] px-[0.5rem] py-[0.25rem] rounded bg-black/60 text-[#8b5cf6] uppercase tracking-wide">
           Video
         </span>
       ) : null}

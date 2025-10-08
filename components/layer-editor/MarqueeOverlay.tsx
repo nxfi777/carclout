@@ -78,7 +78,7 @@ export default function MarqueeOverlay() {
   const show = (rect || persist) as PixelRect | null;
   if (!show) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-[10]">
+    <div className="pointer-events-none absolute inset-0 z-1">
       <div className="absolute border-2 border-primary/70 bg-primary/10" style={{ left: show.x, top: show.y, width: show.w, height: show.h, borderRadius: state.marqueeMode==='ellipse' ? '9999px' : 6 }} />
     </div>
   );

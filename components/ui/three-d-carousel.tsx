@@ -106,7 +106,7 @@ const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, canPl
           onClick={onClick}
         >
           <div
-            className="w-full h-full rounded-2xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg dark:shadow-gray-900/50 transition-transform duration-300 hover:scale-105 hover:shadow-2xl dark:hover:shadow-gray-900/70 hover:z-10"
+            className="w-full h-full rounded-2xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg dark:shadow-gray-900/50 transition-transform duration-300 hover:scale-105 hover:shadow-2xl dark:hover:shadow-gray-900/70 hover:z-1"
             style={{ backfaceVisibility: 'hidden', position: 'relative' }}
           >
             {/* Video layer */}
@@ -130,7 +130,7 @@ const Card = React.memo(({ src, videoUrl, transform, cardW, cardH, active, canPl
                 type="button"
                 aria-label={muted ? 'Unmute preview' : 'Mute preview'}
                 onClick={(e) => { e.stopPropagation(); onToggleMute(); try { videoRef.current?.play().catch(()=>{}); } catch {} }}
-                className="absolute right-2 top-2 z-20 bg-black/55 text-white rounded-full w-8 h-8 border border-white/10 hover:bg-black/65 active:scale-95 inline-flex items-center justify-center"
+                className="absolute right-2 top-2 z-2 bg-black/55 text-white rounded-full w-8 h-8 border border-white/10 hover:bg-black/65 active:scale-95 inline-flex items-center justify-center"
               >
                 {muted ? <VolumeX width={14} height={14} /> : <Volume2 width={14} height={14} />}
               </button>

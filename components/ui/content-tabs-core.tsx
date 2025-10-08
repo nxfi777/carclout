@@ -23,16 +23,23 @@ const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 import FixedAspectCropper from '@/components/ui/fixed-aspect-cropper';
 import { toast } from 'sonner';
 import { UploadIcon, ChevronRight, SquarePlus, SquareCheckBig, RotateCw } from 'lucide-react';
+import { confirmToast } from '@/components/ui/toast-helpers';
 import { TemplateCard } from '@/components/templates/template-card';
 import { DropZone } from '@/components/ui/drop-zone';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
-import { confirmToast } from '@/components/ui/toast-helpers';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { getViewUrl, getViewUrls } from '@/lib/view-url-client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import CreditDepletionDrawer from '@/components/credit-depletion-drawer';
 import { useCreditDepletion } from '@/lib/use-credit-depletion';
 import { useAsyncVideoGeneration } from '@/lib/use-async-video-generation';
- 
+
+type DeleteTarget =
+  | { type: 'library'; key: string; name: string }
+  | { type: 'upload'; key: string; name?: string }
+  | { type: 'generated-video'; key: string }
+  | { type: 'generated-image'; key: string };
+
 
 export function HooksTabContent() {
   const [items, setItems] = useState<{ image: string; text: string; videoUrl?: string }[] | null>(null);
@@ -415,7 +422,7 @@ function MobileHooksSkeleton(){
   return (
     <div className="w-full h-full min-h-[65vh]">
       <div className="flex-1 min-h-0 overflow-auto">
-        <div className="sticky top-0 z-20 -mx-6 px-6 pt-1 pb-2 bg-[color:var(--card)]/80 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--card)]/60">
+        <div className="sticky top-0 z-2 -mx-6 px-6 pt-1 pb-2 bg-[color:var(--card)]/80 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--card)]/60">
           <Skeleton className="h-9 w-full" />
         </div>
         <div className="grid grid-cols-2 gap-3 pb-6">
@@ -475,7 +482,7 @@ export default function ContentTabs() {
                 {activeTab === t.id && (
                   <motion.div layoutId='tabBackground' className='absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg' initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} />
                 )}
-                <div className='flex items-center gap-3 z-10'>
+                <div className='flex items-center gap-3 z-1'>
                   <span className='text-xl'>{t.icon}</span>
                   <span className='font-medium'>{t.name}</span>
                 </div>
@@ -486,7 +493,7 @@ export default function ContentTabs() {
         <div className='flex-1 relative rounded-xl bg-[var(--card)] shadow-lg overflow-hidden min-h-[24rem] h-[calc(100%-0px)]'>
           <AnimatePresence>
             {isLoading && (
-              <motion.div key='loader' className='absolute inset-0 z-20 flex items-center justify-center bg-[color:var(--card)]/90 backdrop-blur-sm' initial={{ opacity: 0 }} animate={{ opacity: 0.7 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+              <motion.div key='loader' className='absolute inset-0 z-2 flex items-center justify-center bg-[color:var(--card)]/90 backdrop-blur-sm' initial={{ opacity: 0 }} animate={{ opacity: 0.7 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
                 <svg className='animate-spin h-8 w-8 text-indigo-600' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'>
                   <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='4'></circle>
                   <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'></path>
@@ -645,6 +652,11 @@ export function TemplatesTabContent(){
   const [animHasPending, setAnimHasPending] = useState(false);
   const [isolateCar, setIsolateCar] = useState(true); // Default to force_on
 
+  // Delete dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
   // Credit depletion drawer hook
   const creditDepletion = useCreditDepletion();
   const videoGeneration = useAsyncVideoGeneration();
@@ -666,6 +678,65 @@ export function TemplatesTabContent(){
     const lastSource = uniqueSources.pop();
     return `Deselect an image from ${uniqueSources.join(', ')} or ${lastSource} first`;
   }, [selectedImageKeys, vehiclePhotos, uploadedKeys, libraryItems]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    const targetKey = String(deleteTarget.key || '');
+    try {
+      if (deleteTarget.type === 'library') {
+        await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key: targetKey, isFolder: false }) });
+        setLibraryItems((prev) => prev.filter((item) => item.key !== targetKey));
+        setSelectedImageKeys((prev) => prev.filter((key) => key !== targetKey));
+        toast.success('Deleted');
+      } else if (deleteTarget.type === 'upload') {
+        if (!targetKey.startsWith('temp-')) {
+          await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key: targetKey, isFolder: false }) });
+        }
+        setUploadedKeys((prev) => prev.filter((key) => key !== targetKey));
+        setUploadedPreviews((prev) => {
+          const next = { ...prev };
+          const previewUrl = next[targetKey];
+          if (previewUrl && previewUrl.startsWith('blob:')) {
+            try { URL.revokeObjectURL(previewUrl); } catch {}
+          }
+          delete next[targetKey];
+          return next;
+        });
+        setUploadedFiles((prev) => {
+          const next = { ...prev };
+          delete next[targetKey];
+          return next;
+        });
+        setSelectedImageKeys((prev) => prev.filter((key) => key !== targetKey));
+        toast.success('Deleted');
+      } else if (deleteTarget.type === 'generated-video') {
+        const folder = targetKey.replace(/\/[^\\/]+$/, '/').replace(/\/[^/]+$/, '/').replace(/\/+/g, '/').replace(/\/$/, '/');
+        const normalized = folder || targetKey.replace(/\/[^/]+$/, '/');
+        if (normalized) {
+          await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key: normalized, isFolder: true }) });
+        }
+        setAnimResultUrl(null);
+        setAnimResultKey(null);
+        toast.success('Deleted');
+      } else if (deleteTarget.type === 'generated-image') {
+        await fetch('/api/tools/generations/image', { method: 'DELETE', body: JSON.stringify({ key: targetKey }) });
+        setResultUrl(null);
+        setResultKey(null);
+        setUpscales([]);
+        setActiveKey(null);
+        setActiveUrl(null);
+        toast.success('Deleted');
+      }
+    } catch (error) {
+      console.error('Delete failed', error);
+      toast.error('Delete failed');
+    } finally {
+      setDeleteBusy(false);
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
+    }
+  }, [deleteTarget]);
 
   // Cleanup object URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -1821,13 +1892,11 @@ export function TemplatesTabContent(){
                                  (item.name.startsWith('upscaled') && item.name.includes(baseName)))
                               );
                               
-                              if (hasUpscaled) {
-                                const confirmed = await confirmToast({
-                                  title: 'Upscaled version exists',
-                                  message: 'An upscaled version of this video already exists in your library. Upscale again?'
-                                });
-                                if (!confirmed) return;
-                              }
+                      if (hasUpscaled) {
+                        setDeleteTarget({ type: 'generated-video', key: String(animResultKey) });
+                        setDeleteDialogOpen(true);
+                        return;
+                      }
                             } catch (e) {
                               console.error('Error checking for existing upscale:', e);
                             }
@@ -2156,11 +2225,9 @@ export function TemplatesTabContent(){
                       );
                       
                       if (hasUpscaled) {
-                        const confirmed = await confirmToast({
-                          title: 'Upscaled version exists',
-                          message: 'An upscaled version of this image already exists in your library. Upscale again?'
-                        });
-                        if (!confirmed) return;
+                        setDeleteTarget({ type: 'generated-image', key: String(resultKey) });
+                        setDeleteDialogOpen(true);
+                        return;
                       }
                     } catch (e) {
                       console.error('Error checking for existing upscale:', e);
@@ -2413,7 +2480,7 @@ export function TemplatesTabContent(){
                                         ) : (
                                           <div className="w-full aspect-[4/3] bg-black/20" />
                                         )}
-                                        <span className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`} onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error(getDeselectMessage()); } catch {} return; } setSource('vehicle'); setSelectedVehicleKey(k); toggleSelect(k); }}>
+                                        <span className={`absolute left-1 top-1 z-1 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`} onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error(getDeselectMessage()); } catch {} return; } setSource('vehicle'); setSelectedVehicleKey(k); toggleSelect(k); }}>
                                           <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
                                             {selectedImageKeys.includes(k) ? (<SquareCheckBig className="w-4 h-4" />) : (<SquarePlus className="w-4 h-4" />)}
                                           </motion.span>
@@ -2452,7 +2519,7 @@ export function TemplatesTabContent(){
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                                 <img src={uploadedPreviews[k] || ''} alt="Uploaded" className="w-full h-auto object-contain cursor-pointer" />
                                                 <span
-                                                  className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`}
+                                                  className={`absolute left-1 top-1 z-1 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(k)?'text-green-400':'text-white'} p-1`}
                                                   onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(k) && selectedImageKeys.length >= requiredImages) { try { toast.error(getDeselectMessage()); } catch {} return; } setSource('upload'); toggleSelect(k); }}
                                                 >
                                                   <motion.span animate={selectedImageKeys.includes(k) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
@@ -2464,34 +2531,17 @@ export function TemplatesTabContent(){
                                           </button>
                                         </li>
                                       </ContextMenuTrigger>
-                                      <ContextMenuContent className="w-48">
-                                        <ContextMenuItem variant="destructive" onSelect={async()=>{
-                                          const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
-                                          if (!ok) return;
-                                          try {
-                                            await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: k, isFolder: false }) });
-                                            setUploadedKeys(prev=> prev.filter(x=> x!==k));
-                                            setUploadedPreviews(prev=> { 
-                                              const next = { ...prev }; 
-                                              // Clean up object URL if it's a temporary upload
-                                              if (prev[k] && prev[k].startsWith('blob:')) {
-                                                try { URL.revokeObjectURL(prev[k]); } catch {}
-                                              }
-                                              try { delete (next as Record<string,string>)[k]; } catch {}; 
-                                              return next; 
-                                            });
-                                            setUploadedFiles(prev=> {
-                                              const next = { ...prev };
-                                              delete next[k];
-                                              return next;
-                                            });
-                                            setSelectedImageKeys(prev=> prev.filter(x=> x!==k));
-                                            toast.success('Deleted');
-                                          } catch {
-                                            toast.error('Delete failed');
-                                          }
-                                        }}>Delete</ContextMenuItem>
-                                      </ContextMenuContent>
+                                    <ContextMenuContent className="w-48">
+                                      <ContextMenuItem
+                                        variant="destructive"
+                                        onSelect={() => {
+                                          setDeleteTarget({ type: 'upload', key: k });
+                                          setDeleteDialogOpen(true);
+                                        }}
+                                      >
+                                        Delete
+                                      </ContextMenuItem>
+                                    </ContextMenuContent>
                                     </ContextMenu>
                                   ))}
                                 </ul>
@@ -2536,7 +2586,7 @@ export function TemplatesTabContent(){
                                                 <img src={it.url} alt={it.name} className="w-full h-auto object-contain cursor-pointer" />
                                               )}
                                               <span
-                                                className={`absolute left-1 top-1 z-10 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(it.key)?'text-green-400':'text-white'} p-1`}
+                                                className={`absolute left-1 top-1 z-1 inline-flex items-center justify-center rounded bg-black/60 ${(!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) ? 'cursor-not-allowed text-white/50' : 'hover:bg-black/70 cursor-pointer'} ${selectedImageKeys.includes(it.key)?'text-green-400':'text-white'} p-1`}
                                                 onClick={(e)=>{ e.stopPropagation(); if (!selectedImageKeys.includes(it.key) && selectedImageKeys.length >= requiredImages) { try { toast.error(getDeselectMessage()); } catch {} return; } setSource('upload'); toggleSelect(it.key); }}
                                               >
                                                 <motion.span animate={selectedImageKeys.includes(it.key) ? { scale: [0.7, 1.15, 1] } : { scale: 1 }} transition={{ duration: 0.25 }}>
@@ -2549,18 +2599,15 @@ export function TemplatesTabContent(){
                                       </li>
                                     </ContextMenuTrigger>
                                     <ContextMenuContent className="w-48">
-                                      <ContextMenuItem variant="destructive" onSelect={async()=>{
-                                        const ok = await confirmToast({ title: 'Delete image?', message: 'This will also delete any associated masks.' });
-                                        if (!ok) return;
-                                        try {
-                                          await fetch('/api/storage/delete', { method:'POST', body: JSON.stringify({ key: it.key, isFolder: false }) });
-                                          setLibraryItems(prev=> prev.filter(x=> x.key !== it.key));
-                                          setSelectedImageKeys(prev=> prev.filter(x=> x !== it.key));
-                                          toast.success('Deleted');
-                                        } catch {
-                                          toast.error('Delete failed');
-                                        }
-                                      }}>Delete</ContextMenuItem>
+                                      <ContextMenuItem
+                                        variant="destructive"
+                                        onSelect={() => {
+                                          setDeleteTarget({ type: 'library', key: it.key, name: it.name });
+                                          setDeleteDialogOpen(true);
+                                        }}
+                                      >
+                                        Delete
+                                      </ContextMenuItem>
                                     </ContextMenuContent>
                                   </ContextMenu>
                                 ))}
@@ -2715,6 +2762,55 @@ export function TemplatesTabContent(){
         creditsRemaining={creditDepletion.creditsRemaining}
         requiredCredits={creditDepletion.requiredCredits}
       />
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (deleteBusy && !open) return;
+          setDeleteDialogOpen(open);
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteTarget?.type === 'generated-video'
+                ? 'Delete video?'
+                : deleteTarget?.type === 'generated-image'
+                  ? 'Delete generated image?'
+                  : deleteTarget?.type === 'library'
+                    ? 'Delete library image?'
+                    : 'Delete image?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.type === 'generated-video'
+                ? 'This will delete the generated video and its associated files from your workspace.'
+                : deleteTarget?.type === 'generated-image'
+                  ? 'This will delete the generated image and any related upscales from your workspace.'
+                  : deleteTarget?.type === 'library'
+                    ? 'This will remove the image from your library and delete any associated masks. This action cannot be undone.'
+                    : deleteTarget?.type === 'upload'
+                      ? 'This will permanently delete the uploaded image and any associated masks.'
+                      : 'This action cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy} onClick={() => {
+              if (deleteBusy) return;
+              setDeleteDialogOpen(false);
+              setDeleteTarget(null);
+            }}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              disabled={deleteBusy}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 flex items-center justify-center"
+            >
+              {deleteBusy ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

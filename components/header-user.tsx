@@ -106,7 +106,7 @@ export default function HeaderUser({
               </div>
             </div>
           </DropdownMenuTrigger>
-          <div className="absolute right-0 bottom-0 translate-x-[20%] translate-y-[20%] z-10 pointer-events-auto">
+          <div className="absolute right-0 bottom-0 translate-x-[20%] translate-y-[20%] z-1 pointer-events-auto">
             <PresenceMenu email={email} variant="dot" />
           </div>
         </div>

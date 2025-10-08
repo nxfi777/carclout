@@ -717,7 +717,7 @@ export default function DrawToEditOverlay() {
     <>
       {/* Loading overlay during generation */}
       {isGenerating && (
-        <div className="absolute inset-0 bg-black/50 z-20 flex items-center justify-center pointer-events-auto">
+        <div className="absolute inset-0 bg-black/50 z-2 flex items-center justify-center pointer-events-auto">
           <div className="bg-[var(--card)] rounded-lg p-6 flex flex-col items-center gap-3">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
             <div className="text-white text-sm font-medium">Generating your edit...</div>
@@ -747,7 +747,7 @@ export default function DrawToEditOverlay() {
       />
 
       {/* Control panel */}
-      <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-4 z-10 pointer-events-auto">
+      <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-4 z-1 pointer-events-auto">
         {/* Left side: Brush size */}
         <div className="flex items-center gap-3 bg-[var(--card)] rounded-lg px-4 py-2 border border-[var(--border)] shadow-sm">
           <span className="text-sm text-white/70 whitespace-nowrap">Brush Size</span>

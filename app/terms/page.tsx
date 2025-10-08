@@ -25,7 +25,7 @@ export default function TermsPage() {
                 "linear-gradient(90deg, color-mix(in srgb, var(--primary) 10%, transparent), transparent 40%, color-mix(in srgb, var(--primary) 10%, transparent))",
             }}
           />
-          <div className="relative z-10 p-[1.25rem] md:p-[1.75rem]">
+          <div className="relative z-1 p-[1.25rem] md:p-[1.75rem]">
             <h1 className="text-[1.8rem] md:text-[2.2rem] font-semibold mb-[0.75rem]">Terms of Service</h1>
             <p className="text-sm text-[color:var(--muted-foreground)] mb-[1.25rem]">Last updated: {lastUpdated}</p>
 

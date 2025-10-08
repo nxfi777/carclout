@@ -103,7 +103,7 @@ export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactN
   return (
     <div className="space-y-1">
       <div className="w-full flex justify-center">
-        <div ref={scrollContainerRef} className="relative z-10 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm overflow-x-auto overflow-y-visible scrollbar-thin max-w-[70vw] lg:max-w-[84vw]">
+        <div ref={scrollContainerRef} className="relative z-1 rounded-xl bg-[var(--card)] border border-[var(--border)] shadow-sm overflow-x-auto overflow-y-visible scrollbar-thin max-w-[70vw] lg:max-w-[84vw]">
           <div className="flex items-center gap-2 px-2 py-1 w-max min-w-full">
             <div className="flex items-center gap-1 pr-2 border-r border-[var(--border)]">
               <Button size="icon" variant="outline" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" /></Button>
