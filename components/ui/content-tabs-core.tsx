@@ -572,11 +572,12 @@ type Template = {
     enabled?: boolean;
     prompt?: string;
     duration?: '3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12';
-  resolution?: 'auto'|'480p'|'720p'|'1080p';
+    resolution?: 'auto'|'480p'|'720p'|'1080p';
     aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
     camera_fixed?: boolean;
     fps?: number;
-    provider?: 'seedance'|'kling2_5';
+    provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro';
+    allowedDurations?: Array<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>;
   } | null;
   isolateCar?: {
     mode?: 'user_choice' | 'force_on' | 'force_off';
@@ -785,7 +786,8 @@ export function TemplatesTabContent(){
                   aspect_ratio: typeof v?.aspect_ratio === 'string' ? (v?.aspect_ratio as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto') : undefined,
                   camera_fixed: !!(v as { camera_fixed?: unknown })?.camera_fixed,
                   fps: ((): number | undefined => { const n = Number((v as { fps?: unknown })?.fps); return Number.isFinite(n) && n>0 ? Math.round(n) : undefined; })(),
-                  provider: (v as { provider?: unknown })?.provider as 'seedance'|'kling2_5' | undefined,
+                  provider: (v as { provider?: unknown })?.provider as 'seedance'|'kling2_5'|'sora2'|'sora2_pro' | undefined,
+                  allowedDurations: Array.isArray((v as { allowedDurations?: unknown })?.allowedDurations) ? ((v as { allowedDurations?: unknown })?.allowedDurations as Array<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>) : undefined,
                 };
               }
               return null;
@@ -1948,7 +1950,7 @@ export function TemplatesTabContent(){
                             const raw = String(v?.provider || '').toLowerCase();
                             if (raw === 'kling2_5') return 'kling2_5';
                             if (raw === 'sora2_pro') return 'sora2_pro';
-                            if (raw === 'sora2' || !raw) return 'sora2';
+                            if (raw === 'sora2') return 'sora2';
                             return 'seedance';
                           })();
                           const availableDurations = (() => {
@@ -2580,11 +2582,49 @@ export function TemplatesTabContent(){
                     </div>
                   );
                 })()}
-                <div className="w-full flex items-center justify-between">
-                  <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
-                  {selectedImageKeys.length >= requiredImages ? (
-                    <span className="text-xs text-white/70 whitespace-nowrap">Costs 100 credits</span>
-                  ) : null}
+                <div className="w-full space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
+                    {selectedImageKeys.length >= requiredImages ? (
+                      <span className="text-xs text-white/70 whitespace-nowrap">Costs 100 credits</span>
+                    ) : null}
+                  </div>
+                  {/* Show source info for selected images when they're from different tabs */}
+                  {selectedImageKeys.length > 0 && (() => {
+                    const sources = selectedImageKeys.map(key => {
+                      if (vehiclePhotos.includes(key)) return 'vehicles';
+                      if (uploadedKeys.includes(key)) return 'upload';
+                      if (libraryItems.some(item => item.key === key)) return 'workspace';
+                      return null;
+                    }).filter(Boolean);
+                    
+                    const uniqueSources = Array.from(new Set(sources));
+                    const sourceLabels = uniqueSources.map(s => {
+                      if (s === 'vehicles') return 'Vehicles';
+                      if (s === 'upload') return 'Upload';
+                      if (s === 'workspace') return 'Library';
+                      return null;
+                    }).filter(Boolean);
+                    
+                    // Only show if there are selected images
+                    if (sourceLabels.length === 0) return null;
+                    
+                    return (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-white/50">From:</span>
+                        <div className="flex items-center gap-1.5">
+                          {sourceLabels.map(label => (
+                            <span 
+                              key={label}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="w-full text-base">
                   {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}

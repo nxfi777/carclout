@@ -8,7 +8,8 @@
     "build:analyze": "ANALYZE=true next build",
     "start": "next start",
     "lint": "eslint",
-    "init:analytics": "bun run scripts/init-analytics-schema.ts"
+    "init:analytics": "bun run scripts/init-analytics-schema.ts",
+    "init:video-jobs": "bun run scripts/init-video-job-table.ts"
   },
   "dependencies": {
     "@auth/surrealdb-adapter": "^2.1.0",

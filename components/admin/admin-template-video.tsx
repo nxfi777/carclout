@@ -25,7 +25,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
 
 
   const adminDurations = ((): readonly string[] => {
-    const provider = v.provider || 'sora2';
+    const provider = v.provider || 'seedance';
     if (provider === 'kling2_5') return ['5','10'] as const;
     if (provider === 'sora2' || provider === 'sora2_pro') return ['4','8','12'] as const;
     return ['3','4','5','6','7','8','9','10','11','12'] as const;
@@ -36,7 +36,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
     sora2: ['720p','auto'],
     sora2_pro: ['720p','auto'],
   };
-  const resolutionOptions = providerResolutions[v.provider || 'sora2'];
+  const resolutionOptions = providerResolutions[v.provider || 'seedance'];
   const resolutionKey = resolutionOptions.join('|');
   const providerAspectRatios: Record<'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro', Array<'21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'>> = {
     seedance: ['auto','21:9','16:9','4:3','1:1','3:4','9:16'],
@@ -44,7 +44,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
     sora2: ['auto','16:9','9:16'],
     sora2_pro: ['auto','16:9','9:16'],
   };
-  const aspectOptions = providerAspectRatios[v.provider || 'sora2'];
+  const aspectOptions = providerAspectRatios[v.provider || 'seedance'];
   const aspectKey = aspectOptions.join('|');
   const providerLabels: Record<'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro', string> = {
     seedance: 'Seedance',
@@ -52,7 +52,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
     sora2: 'Sora 2',
     sora2_pro: 'Sora 2 Pro',
   };
-  const providerLabel = providerLabels[v.provider || 'sora2'];
+  const providerLabel = providerLabels[v.provider || 'seedance'];
 
   useEffect(() => {
     if (!v?.enabled) return;

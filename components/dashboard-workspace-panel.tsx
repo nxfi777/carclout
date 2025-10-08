@@ -2345,17 +2345,62 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
                       if (combo) variables.COLOR_FINISH_ACCENTS = combo;
                     }
                     
+                    // Start async video generation
                     const resp = await fetch('/api/templates/video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateSlug: slug, startKey: key, variables }) });
                     const out = await resp.json().catch(()=>({}));
                     if (resp.status === 402) { const bal = await getCredits(); creditDepletion.checkAndTrigger(bal, estimatedCredits); return; }
-                    if (!resp.ok || !out?.url) { toast.error(out?.error || 'Video generation failed. Please try again in a moment.'); return; }
-                    {
-                      const outKey = String((out as { key?: string }).key || '');
-                      const name = outKey ? (outKey.split('/').pop() || 'video.mp4') : 'video.mp4';
-                      setPreview({ url: String(out.url), name, key: outKey });
-                    }
-                    await refresh(undefined, { force: true });
-                    setTreeVersion(v=>v+1);
+                    if (!resp.ok || !out?.jobId) { toast.error(out?.error || 'Video generation failed to start.'); return; }
+                    
+                    const jobId = out.jobId;
+                    toast.success('Video generation started! This may take a few minutes...');
+                    
+                    // Poll for completion
+                    const pollInterval = 3000; // Poll every 3 seconds
+                    const maxPolls = 200; // Max 10 minutes (200 * 3s = 600s)
+                    let pollCount = 0;
+                    
+                    const poll = async (): Promise<void> => {
+                      if (pollCount >= maxPolls) {
+                        toast.error('Video generation timed out. Please check your library later.');
+                        return;
+                      }
+                      pollCount++;
+                      
+                      try {
+                        const statusResp = await fetch(`/api/templates/video/status?jobId=${encodeURIComponent(jobId)}`);
+                        const statusData = await statusResp.json().catch(()=>({}));
+                        
+                        if (statusResp.status === 402) {
+                          const bal = await getCredits();
+                          creditDepletion.checkAndTrigger(bal, estimatedCredits);
+                          return;
+                        }
+                        
+                        if (statusData.status === 'completed') {
+                          const outKey = String(statusData.key || '');
+                          const name = outKey ? (outKey.split('/').pop() || 'video.mp4') : 'video.mp4';
+                          setPreview({ url: String(statusData.url), name, key: outKey });
+                          await refresh(undefined, { force: true });
+                          setTreeVersion(v=>v+1);
+                          toast.success('Video generated successfully!');
+                          return;
+                        }
+                        
+                        if (statusData.status === 'failed') {
+                          toast.error(statusData.error || 'Video generation failed.');
+                          return;
+                        }
+                        
+                        // Still pending or processing - continue polling
+                        setTimeout(poll, pollInterval);
+                      } catch (pollErr) {
+                        console.error('Error polling video status:', pollErr);
+                        setTimeout(poll, pollInterval);
+                      }
+                    };
+                    
+                    // Start polling
+                    setTimeout(poll, pollInterval);
                   } catch {}
                 }}
               />

@@ -2,13 +2,11 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { getSurreal } from "@/lib/surrealdb";
-import { createViewUrl, ensureFolder, r2, bucket } from "@/lib/r2";
-import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { r2, bucket } from "@/lib/r2";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { fal } from "@fal-ai/client";
 import { RecordId } from "surrealdb";
-import { estimateVideoCredits, DEFAULT_VIDEO_FPS, chargeCreditsOnce, type VideoResolution, type VideoAspectRatio, type VideoProvider } from "@/lib/credits";
-import { generateVideoBlurHash } from "@/lib/video-blurhash-server";
-import type { LibraryVideo } from "@/lib/library-image";
+import { estimateVideoCredits, DEFAULT_VIDEO_FPS, type VideoResolution, type VideoAspectRatio, type VideoProvider } from "@/lib/credits";
 export const runtime = "nodejs";
 export const maxDuration = 600; // 10 minutes for video generation
 
@@ -116,7 +114,7 @@ export async function POST(req: Request) {
     const vconf = (template?.video && typeof template.video === 'object') ? template.video as any : null;
     const enabled = !!(vconf?.enabled);
     const provider: VideoProvider = ((): VideoProvider => {
-      const raw = String((vconf?.provider || 'sora2')).toLowerCase();
+      const raw = String((vconf?.provider || 'seedance')).toLowerCase();
       if (raw === 'kling2_5') return 'kling2_5';
       if (raw === 'sora2') return 'sora2';
       if (raw === 'sora2_pro') return 'sora2_pro';
@@ -182,7 +180,9 @@ export async function POST(req: Request) {
     const image_url = await uploadToFal(bytes, startMime);
     if (!image_url) return NextResponse.json({ error: 'Failed to upload start frame to video service' }, { status: 502 });
 
-    let result: any;
+    // ASYNC JOB SUBMISSION - Queue the job instead of waiting for completion
+    let queueResult: any;
+    let modelName: string;
     try {
       if (provider === 'kling2_5') {
         const klingDuration = durationSeconds >= 10 ? '10' : '5';
@@ -196,18 +196,9 @@ export async function POST(req: Request) {
           negative_prompt: 'blur, distort, and low quality',
           cfg_scale: cfgScale,
         } as const;
-        try { console.log("[FAL INPUT]", JSON.stringify({ model: "fal-ai/kling-video/v2.5-turbo/pro/image-to-video", input }, null, 2)); } catch {}
-        result = await fal.subscribe("fal-ai/kling-video/v2.5-turbo/pro/image-to-video", {
-          input: input as any,
-          logs: true,
-          onQueueUpdate: (update: any) => {
-            try {
-              if (update?.status === 'IN_PROGRESS') {
-                (update.logs || []).map((l: any)=> l?.message).filter(Boolean).forEach((m: string)=> console.log(`[FAL VIDEO-KLING] ${m}`));
-              }
-            } catch {}
-          },
-        });
+        modelName = "fal-ai/kling-video/v2.5-turbo/pro/image-to-video";
+        try { console.log("[FAL ASYNC INPUT]", JSON.stringify({ model: modelName, input }, null, 2)); } catch {}
+        queueResult = await fal.queue.submit(modelName, { input: input as any });
       } else if (provider === 'sora2') {
         const input = {
           prompt: videoPrompt,
@@ -216,18 +207,9 @@ export async function POST(req: Request) {
           resolution,
           duration: durationSeconds,
         } as const;
-        try { console.log("[FAL INPUT]", JSON.stringify({ model: "fal-ai/sora-2/image-to-video", input }, null, 2)); } catch {}
-        result = await fal.subscribe("fal-ai/sora-2/image-to-video", {
-          input: input as any,
-          logs: true,
-          onQueueUpdate: (update: any) => {
-            try {
-              if (update?.status === 'IN_PROGRESS') {
-                (update.logs || []).map((l: any)=> l?.message).filter(Boolean).forEach((m: string)=> console.log(`[FAL VIDEO-SORA2] ${m}`));
-              }
-            } catch {}
-          },
-        });
+        modelName = "fal-ai/sora-2/image-to-video";
+        try { console.log("[FAL ASYNC INPUT]", JSON.stringify({ model: modelName, input }, null, 2)); } catch {}
+        queueResult = await fal.queue.submit(modelName, { input: input as any });
       } else if (provider === 'sora2_pro') {
         const input = {
           prompt: videoPrompt,
@@ -236,18 +218,9 @@ export async function POST(req: Request) {
           resolution,
           duration: durationSeconds,
         } as const;
-        try { console.log("[FAL INPUT]", JSON.stringify({ model: "fal-ai/sora-2/image-to-video/pro", input }, null, 2)); } catch {}
-        result = await fal.subscribe("fal-ai/sora-2/image-to-video/pro", {
-          input: input as any,
-          logs: true,
-          onQueueUpdate: (update: any) => {
-            try {
-              if (update?.status === 'IN_PROGRESS') {
-                (update.logs || []).map((l: any)=> l?.message).filter(Boolean).forEach((m: string)=> console.log(`[FAL VIDEO-SORA2-PRO] ${m}`));
-              }
-            } catch {}
-          },
-        });
+        modelName = "fal-ai/sora-2/image-to-video/pro";
+        try { console.log("[FAL ASYNC INPUT]", JSON.stringify({ model: modelName, input }, null, 2)); } catch {}
+        queueResult = await fal.queue.submit(modelName, { input: input as any });
       } else {
         const input = {
           prompt: videoPrompt,
@@ -259,136 +232,54 @@ export async function POST(req: Request) {
           enable_safety_checker: true,
           ...(typeof seed === 'number' ? { seed } : {}),
         } as const;
-        try { console.log("[FAL INPUT]", JSON.stringify({ model: "fal-ai/bytedance/seedance/v1/pro/image-to-video", input }, null, 2)); } catch {}
-        result = await fal.subscribe("fal-ai/bytedance/seedance/v1/pro/image-to-video", {
-          input: input as any,
-          logs: true,
-          onQueueUpdate: (update: any) => {
-            try {
-              if (update?.status === 'IN_PROGRESS') {
-                (update.logs || []).map((l: any)=> l?.message).filter(Boolean).forEach((m: string)=> console.log(`[FAL VIDEO-SEEDANCE] ${m}`));
-              }
-            } catch {}
-          },
-        });
+        modelName = "fal-ai/bytedance/seedance/v1/pro/image-to-video";
+        try { console.log("[FAL ASYNC INPUT]", JSON.stringify({ model: modelName, input }, null, 2)); } catch {}
+        queueResult = await fal.queue.submit(modelName, { input: input as any });
       }
     } catch (e: unknown) {
       try {
-        console.error('Video generation error', e);
+        console.error('Video generation queue error', e);
       } catch {}
-      return NextResponse.json({ error: 'Video generation failed. Please try again in a moment.' }, { status: 502 });
-    }
-    const data = (result?.data || {}) as any;
-    const videoUrl: string | null = data?.video?.url || data?.url || null;
-    if (!videoUrl) return NextResponse.json({ error: 'Video generation failed. Please try again in a moment.' }, { status: 502 });
-
-    // Persist to R2 as a single MP4 file with embedded cover art (the input image) when possible
-    const createdIso = new Date().toISOString();
-    const safeSlug = (String(template?.slug || template?.name || 'template').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')) || 'template';
-    const fileBase = `${createdIso.replace(/[:.]/g, '-')}-${safeSlug}`;
-    const singleOutKey = `${userRoot}/library/${fileBase}.mp4`;
-    const fileRes = await fetch(videoUrl);
-    if (!fileRes.ok) return NextResponse.json({ error: 'Video generation failed. Please try again in a moment.' }, { status: 502 });
-    const videoBytes = new Uint8Array(await fileRes.arrayBuffer());
-
-    // Try to embed cover art using ffmpeg.wasm in browser-like runtimes only; fall back silently on Node
-    let finalVideoBytes: Uint8Array = videoBytes;
-    try {
-      const canUseFfmpegWasm = typeof (globalThis as any).window !== 'undefined';
-      if (!canUseFfmpegWasm) throw new Error('ffmpeg.wasm unavailable in this runtime');
-
-      const { FFmpeg } = await import('@ffmpeg/ffmpeg');
-      const ffmpeg = new FFmpeg();
-      await ffmpeg.load();
-      // Write inputs
-      const videoIn = 'input.mp4';
-      await ffmpeg.writeFile(videoIn, videoBytes);
-      const coverExt = (startMime.includes('png') ? 'png' : (startMime.includes('webp') ? 'webp' : 'jpg'));
-      const coverIn = `cover.${coverExt}`;
-      await ffmpeg.writeFile(coverIn, bytes);
-
-      // Build with attached cover picture
-      const outName = 'output.mp4';
-      await ffmpeg.exec([
-        '-i', videoIn,
-        '-i', coverIn,
-        '-map', '0',
-        '-map', '1',
-        '-c', 'copy',
-        '-c:v:1', 'mjpeg',
-        '-disposition:v:1', 'attached_pic',
-        '-movflags', '+faststart',
-        outName,
-      ]);
-      const outArr = await ffmpeg.readFile(outName);
-      finalVideoBytes = outArr as Uint8Array;
-    } catch {
-      // Skip embedding on server; use original bytes without noisy warnings
-      try { console.log('[video] Skipping ffmpeg cover embedding'); } catch {}
+      return NextResponse.json({ error: 'Video generation failed to start. Please try again in a moment.' }, { status: 502 });
     }
 
-    await ensureFolder(`${userRoot}/library/`);
-    await r2.send(new PutObjectCommand({ Bucket: bucket, Key: singleOutKey, Body: finalVideoBytes, ContentType: 'video/mp4' }));
+    const requestId = queueResult?.requestId || queueResult?.request_id;
+    if (!requestId) return NextResponse.json({ error: 'Failed to queue video generation' }, { status: 502 });
+    
+    console.log(`[VIDEO JOB] Queued job ${requestId} for user ${user.email}`);
 
-    // Charge idempotently after successful persistence; use object key as ref
+    // Store job metadata in database
+    const now = new Date().toISOString();
+    const templateIdStr = template?.id instanceof RecordId ? template.id.toString() : String(template?.id || body.templateId || body.templateSlug);
+    
     try {
-      await chargeCreditsOnce(user.email, credits, 'video', singleOutKey);
-    } catch {
-      try { await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: singleOutKey })); } catch {}
-      return NextResponse.json({ error: 'INSUFFICIENT_CREDITS' }, { status: 402 });
-    }
-
-    // Generate and store blurhash for video (non-fatal)
-    try {
-      const videoBuffer = Buffer.from(finalVideoBytes);
-      const { blurhash, width, height, duration } = await generateVideoBlurHash(videoBuffer);
-      
-      const libraryVideoData: Omit<LibraryVideo, 'id'> = {
-        key: singleOutKey,
+      await db.create('video_job', {
         email: user.email,
-        blurhash,
-        width,
-        height,
-        duration,
-        size: finalVideoBytes.length,
-        created: new Date().toISOString(),
-        lastModified: new Date().toISOString(),
-      };
-      
-      // Check if record exists, update or create
-      const existing = await db.query(
-        "SELECT id FROM library_video WHERE key = $key AND email = $email LIMIT 1;",
-        { key: singleOutKey, email: user.email }
-      );
-      
-      const existingId = Array.isArray(existing) && Array.isArray(existing[0]) && existing[0][0]
-        ? (existing[0][0] as { id?: string }).id
-        : null;
-
-      if (existingId) {
-        await db.query(
-          "UPDATE $id SET blurhash = $blurhash, width = $width, height = $height, duration = $duration, size = $size, lastModified = $lastModified;",
-          { 
-            id: existingId,
-            blurhash: libraryVideoData.blurhash,
-            width: libraryVideoData.width,
-            height: libraryVideoData.height,
-            duration: libraryVideoData.duration,
-            size: libraryVideoData.size,
-            lastModified: libraryVideoData.lastModified
-          }
-        );
-      } else {
-        await db.create('library_video', libraryVideoData);
-      }
-      
-      console.log(`Stored library video metadata for ${singleOutKey}`);
-    } catch (error) {
-      console.error('Failed to store video metadata (non-fatal):', error);
+        fal_request_id: requestId,
+        template_id: templateIdStr,
+        start_key: startKey,
+        status: 'pending',
+        provider,
+        prompt: videoPrompt,
+        duration: durationSeconds,
+        resolution,
+        aspect_ratio,
+        credits,
+        created_at: now,
+        updated_at: now,
+      });
+    } catch (dbErr) {
+      console.error('Failed to store video job in database:', dbErr);
+      // Job is queued on fal.ai, so we continue despite DB error
     }
 
-    const { url } = await createViewUrl(singleOutKey);
-    return NextResponse.json({ key: singleOutKey, url, credits });
+    // Return job ID immediately - client will poll for status
+    return NextResponse.json({ 
+      jobId: requestId,
+      status: 'pending',
+      credits,
+      message: 'Video generation started. Check status at /api/templates/video/status'
+    });
   } catch (err) {
     try { console.error('/api/templates/video error', err); } catch {}
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
