@@ -2,10 +2,8 @@
 import React from "react";
 import { useLayerEditor } from "@/components/layer-editor/LayerEditorProvider";
 import { cn } from "@/lib/utils";
-import { MousePointer2, Type, Images, Shapes, Layers, Paintbrush } from "lucide-react";
+import { MousePointer2, Type, Images, Shapes, Paintbrush } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import LayersPanel from "@/components/layer-editor/LayersPanel";
 import { SHOW_IMAGE_TOOL } from "@/components/layer-editor/config";
 
 type Item = {
@@ -85,7 +83,8 @@ export default function Toolbox({ className, orientation = "vertical", extraEnd 
           </Tooltip>
         );
       })}
-      <Popover>
+      {/* Layers tool temporarily commented out */}
+      {/* <Popover>
         <Tooltip>
           <PopoverTrigger asChild>
             <TooltipTrigger asChild>
@@ -111,7 +110,7 @@ export default function Toolbox({ className, orientation = "vertical", extraEnd 
         >
           <LayersPanel />
         </PopoverContent>
-      </Popover>
+      </Popover> */}
       {extras}
     </div>
   );

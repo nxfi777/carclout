@@ -2029,7 +2029,7 @@ function requestDelete(it: Item) {
                                         await doVideoUpscale(key);
                                       }}
                                     >
-                                      {videoUpscaleBusy ? 'Upscaling...' : 'Upscale'}
+                                      {videoUpscaleBusy ? 'Upscaling…' : 'Upscale'}
                                     </ContextMenuItem>
                                   );
                                 })()}
@@ -2120,7 +2120,7 @@ function requestDelete(it: Item) {
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0a12 12 0 00-8 20l-2-3.464A8 8 0 014 12z"></path>
                                           </svg>
-                                          <span className="text-xs text-indigo-400">Upscaling...</span>
+                                          <span className="text-xs text-indigo-400">Upscaling…</span>
                                         </div>
                                       </div>
                                     ) : isImage ? (
@@ -2198,7 +2198,7 @@ function requestDelete(it: Item) {
                                           await doVideoUpscale(key);
                                         }}
                                       >
-                                        {videoUpscaleBusy ? 'Upscaling...' : 'Upscale'}
+                                        {videoUpscaleBusy ? 'Upscaling…' : 'Upscale'}
                                       </ContextMenuItem>
                                     );
                                   })()}

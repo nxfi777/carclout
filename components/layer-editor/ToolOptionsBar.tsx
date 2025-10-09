@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import type { ShapeLayer, TextLayer } from "@/types/designer";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2, Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical, Check, Trash2, Copy, ArrowRight } from "lucide-react";
+import { Bold, Italic, Underline, ChevronDown, TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify, Undo2, Redo2, Square, Circle, Triangle, Wand2, AlignCenterHorizontal, AlignCenterVertical, Check, Trash2, Copy, ArrowRight, RefreshCcw } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { BsTransparency } from "react-icons/bs";
@@ -96,7 +96,8 @@ export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactN
     }
   }, [selectedLayers, dispatch]);
 
-  // Get upscale and animate actions for select tool
+  // Get actions for select tool
+  const regenerateAction = actions.find((a) => a.key === 'regenerate');
   const upscaleAction = actions.find((a) => a.key === 'upscale');
   const animateAction = actions.find((a) => a.key === 'animate');
 
@@ -131,13 +132,14 @@ export default function ToolOptionsBar({ accessory }: { accessory?: React.ReactN
                 {animateAction ? <DesignerActionButton action={animateAction} /> : null}
               </div>
             ) : null}
-            {(hasSelection || accessory) ? (
+            {(hasSelection || regenerateAction || accessory) ? (
               <div className="flex items-center gap-3 pl-2 ml-auto">
                 {hasSelection ? (
                   <Button size="icon" variant="outline" onClick={handleDeleteSelected} title="Delete selected" aria-label="Delete selected">
                     <Trash2 className="size-4" />
                   </Button>
                 ) : null}
+                {regenerateAction ? <DesignerActionButton action={regenerateAction} /> : null}
                 {accessory}
               </div>
             ) : null}
@@ -1637,7 +1639,7 @@ function DesignerActionButton({ action }: { action: import("@/components/layer-e
   const content = (
     <Button
       type="button"
-      size="sm"
+      size={action.key === 'regenerate' ? "icon" : "sm"}
       variant={action.variant ?? "outline"}
       onClick={async () => {
         try {
@@ -1646,11 +1648,18 @@ function DesignerActionButton({ action }: { action: import("@/components/layer-e
       }}
       disabled={action.disabled || action.loading}
       className="h-8"
+      title={action.key === 'regenerate' ? action.label : undefined}
     >
-      {action.loading ? (action.loadingLabel || "Working…") : (
+      {action.loading ? (action.loadingLabel || action.label) : (
         <>
-          {action.icon ? <span className="mr-2 inline-flex">{action.icon}</span> : null}
-          <span>{action.label}</span>
+          {action.key === 'regenerate' ? (
+            <RefreshCcw className="size-4" />
+          ) : (
+            <>
+              {action.icon ? <span className="mr-2 inline-flex">{action.icon}</span> : null}
+              <span>{action.label}</span>
+            </>
+          )}
           {action.srLabel ? <span className="sr-only">{action.srLabel}</span> : null}
         </>
       )}

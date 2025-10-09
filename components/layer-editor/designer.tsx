@@ -30,7 +30,7 @@ type IsolateCutoutConfig = {
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey, onTryAgain, showAnimate, onAnimate, projectState, sourceImageKey, closeOnDownload }: {
+function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey: _onReplaceBgKey, onTryAgain, onRegenerate, showAnimate, onAnimate, projectState, sourceImageKey, closeOnDownload }: {
   bgKey: string;
   bgBlurhash?: string | null; // Optional blurhash for smooth loading
   rembg?: RembgConfig;
@@ -41,6 +41,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
   aspectRatio?: number;
   onReplaceBgKey?: (newKey: string, newUrl?: string) => void;
   onTryAgain?: () => void;
+  onRegenerate?: () => void | Promise<void>;
   showAnimate?: boolean;
   onAnimate?: (getBlob: () => Promise<Blob | null>) => Promise<void> | void;
   projectState?: import("@/lib/layer-export").DesignerProjectState | null;
@@ -78,6 +79,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
   const [_dirty, setDirty] = useState(false);
   const dirtyCommitRef = React.useRef<(() => void) | null>(null);
   const stateRef = React.useRef<import("@/types/layer-editor").LayerEditorState | null>(null);
+  const dispatchRef = React.useRef<React.Dispatch<import("@/types/layer-editor").LayerEditorAction> | null>(null);
   void aspectRatio; void onClose; void saveLabel; // accepted for API compatibility
   const creditDepletion = useCreditDepletion();
 
@@ -530,6 +532,13 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
 
   const upscaleBackground = useCallback(async () => {
     if (upscaling) return;
+    
+    // Check if already upscaled (check both bgKey and current bgUrl)
+    if (/-upscaled-\d+x\./i.test(bgKey) || (bgUrl && /-upscaled-\d+x\./i.test(bgUrl))) {
+      try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('This image was already upscaled.'); } catch {}
+      return;
+    }
+    
     // Check credits before attempting upscale
     const bal = await getCredits();
     const insufficientCredits = creditDepletion.checkAndTrigger(bal, 20);
@@ -549,12 +558,27 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
       if (res.status === 402) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Not enough credits.'); } catch {} setUpscaling(false); return; }
       if (res.status === 400 && (data?.error === 'UPSCALE_AT_MAX')) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Already at maximum resolution.'); } catch {} setUpscaling(false); return; }
       if (res.status === 400 && (data?.error === 'UPSCALE_DIM_OVERFLOW')) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Upscale would exceed the 4K limit.'); } catch {} setUpscaling(false); return; }
+      if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('This image was already upscaled.'); } catch {} setUpscaling(false); return; }
       if (!res.ok || !data?.key) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.(String((data as { error?: string })?.error || 'Upscale failed')); } catch {} setUpscaling(false); return; }
-      if (typeof onReplaceBgKey === 'function') {
-        try { onReplaceBgKey(String(data.key), typeof data?.url === 'string' ? String(data.url) : undefined); } catch {}
+      
+      // Get the upscaled image URL
+      let upscaledUrl = typeof data?.url === 'string' ? String(data.url) : null;
+      if (!upscaledUrl) {
+        try {
+          upscaledUrl = await getViewUrl(String(data.key));
+        } catch {}
+      }
+      
+      // Update the canvas with the upscaled image (enables undo/redo)
+      // Note: We don't call onReplaceBgKey here because that would change the bgKey prop
+      // and remount the Designer, wiping out the undo/redo history.
+      // The upscale is already saved to the library server-side.
+      if (upscaledUrl && dispatchRef.current) {
+        dispatchRef.current({ type: 'set_bg', url: upscaledUrl });
+        setBgUrl(upscaledUrl);
       }
     } catch {} finally { setUpscaling(false); }
-  }, [bgKey, onReplaceBgKey, upscaling, creditDepletion]);
+  }, [bgKey, bgUrl, upscaling, creditDepletion]);
 
   const actions = React.useMemo(() => {
     const list: import("@/components/layer-editor/DesignerActionsContext").DesignerActionDescriptor[] = [];
@@ -580,11 +604,24 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
         section: "primary",
       });
     }
+    // Show regenerate button if callback is provided (template generation)
+    if (onRegenerate) {
+      list.push({
+        key: "regenerate",
+        label: "Regenerate",
+        onSelect: onRegenerate,
+        variant: "outline",
+        electric: true,
+        section: "primary",
+      });
+    }
+    // Check if already upscaled by looking at the current background URL or original bgKey
+    const isAlreadyUpscaled = /-upscaled-\d+x\./i.test(bgKey) || (bgUrl && /-upscaled-\d+x\./i.test(bgUrl));
     list.push({
       key: "upscale",
       label: upscaling ? "Upscaling…" : "Upscale",
       onSelect: upscaleBackground,
-      disabled: upscaling,
+      disabled: !!(upscaling || isAlreadyUpscaled),
       variant: "outline",
       electric: true,
       loading: upscaling,
@@ -622,7 +659,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
       section: "desktop-only",
     });
     return list;
-  }, [onTryAgain, showAnimate, onAnimate, downloading, saving, upscaling, isCuttingOut, hasCutout, isolateCutout, downloadComposite, downloadProject, upscaleBackground, cutoutCar, exportCompositeBlob]);
+  }, [onTryAgain, onRegenerate, showAnimate, onAnimate, downloading, saving, upscaling, isCuttingOut, hasCutout, isolateCutout, downloadComposite, downloadProject, upscaleBackground, cutoutCar, exportCompositeBlob, bgKey, bgUrl]);
 
   if (busy) {
     return (
@@ -664,6 +701,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
               }}
             >
               <ExposeLayerState stateRef={stateRef} />
+              <ExposeLayerDispatch dispatchRef={dispatchRef} />
               <LayerEditorShell
                 mobileHeaderAccessory={null}
                 toolbarDownloadButton={null}
@@ -722,6 +760,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
           }}
         >
           <ExposeLayerState stateRef={stateRef} />
+          <ExposeLayerDispatch dispatchRef={dispatchRef} />
           <LayerEditorShell
             mobileHeaderAccessory={(
               <Button
@@ -799,6 +838,15 @@ function ExposeLayerState({ stateRef }: { stateRef: React.MutableRefObject<impor
   React.useEffect(() => {
     stateRef.current = state;
   }, [state, stateRef]);
+  return null;
+}
+
+// Expose dispatch so upscale can update the background with undo/redo support
+function ExposeLayerDispatch({ dispatchRef }: { dispatchRef: React.MutableRefObject<React.Dispatch<import("@/types/layer-editor").LayerEditorAction> | null> }){
+  const { dispatch } = useLayerEditor();
+  React.useEffect(() => {
+    dispatchRef.current = dispatch;
+  }, [dispatch, dispatchRef]);
   return null;
 }
 

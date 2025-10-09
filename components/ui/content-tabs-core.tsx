@@ -22,7 +22,7 @@ import carLoadAnimation from '@/public/carload.json';
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 import FixedAspectCropper from '@/components/ui/fixed-aspect-cropper';
 import { toast } from 'sonner';
-import { UploadIcon, ChevronRight, SquarePlus, SquareCheckBig, RotateCw } from 'lucide-react';
+import { UploadIcon, ChevronRight, SquarePlus, SquareCheckBig, RotateCw, X } from 'lucide-react';
 import { confirmToast } from '@/components/ui/toast-helpers';
 import { TemplateCard } from '@/components/templates/template-card';
 import { DropZone } from '@/components/ui/drop-zone';
@@ -657,6 +657,16 @@ export function TemplatesTabContent(){
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  // Generation params for regenerate
+  const [generationParams, setGenerationParams] = useState<{
+    templateId?: string;
+    templateSlug?: string;
+    userImageKeys?: string[];
+    userImageDataUrls?: string[];
+    variables?: Record<string, string | number | boolean>;
+    isolateCar?: boolean;
+  } | null>(null);
+
   // Credit depletion drawer hook
   const creditDepletion = useCreditDepletion();
   const videoGeneration = useAsyncVideoGeneration();
@@ -774,6 +784,8 @@ export function TemplatesTabContent(){
       setAnimResultUrl(null);
       setAnimResultKey(null);
       setAnimLoading(false);
+      // Clear generation params
+      setGenerationParams(null);
     } catch {}
   }
 
@@ -1381,6 +1393,41 @@ export function TemplatesTabContent(){
     } catch {}
   }, []);
 
+  const handleDesignerRegenerate = useCallback(async () => {
+    if (!generationParams) return;
+    
+    try {
+      setBusy(true);
+      const res = await fetch('/api/templates/generate', { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json'}, 
+        body: JSON.stringify(generationParams) 
+      });
+      let d: unknown = {};
+      try { d = await res.json(); } catch { d = {}; }
+      const data = d as Record<string, unknown>;
+      if (!res.ok) { 
+        toast.error(String(data?.error || 'Regeneration failed')); 
+        return; 
+      }
+      if (typeof data?.url === 'string') setResultUrl(String(data.url));
+      if (typeof data?.key === 'string') setResultKey(String(data.key));
+      if (typeof data?.url === 'string') setActiveUrl(String(data.url));
+      if (typeof data?.key === 'string') {
+        setActiveKey(String(data.key));
+        // Notify designer to reload the background image
+        handleDesignerReplaceBgKey(String(data.key), String(data.url));
+      }
+      setUpscales([]);
+      toast.success('Regenerated successfully');
+    } catch (err) {
+      console.error('Regenerate error:', err);
+      toast.error('Regeneration failed');
+    } finally {
+      setBusy(false);
+    }
+  }, [generationParams, handleDesignerReplaceBgKey]);
+
   const handleDesignerAnimate = useCallback(async (getBlob: () => Promise<Blob | null>) => {
     try {
       // Comment out plan check - all users now have video generation access
@@ -1742,6 +1789,17 @@ export function TemplatesTabContent(){
       if (typeof data?.key === 'string') setResultKey(String(data.key));
       if (typeof data?.url === 'string') setActiveUrl(String(data.url));
       if (typeof data?.key === 'string') setActiveKey(String(data.key));
+      
+      // Store generation params for regenerate
+      setGenerationParams({
+        templateId: active.id,
+        templateSlug: active.slug,
+        userImageKeys,
+        ...(userImageDataUrls.length > 0 && { userImageDataUrls }),
+        variables,
+        isolateCar: getActualIsolateCar()
+      });
+      
       try {
         if (typeof data?.key === 'string') {
           setDesignOpen(true);
@@ -1936,7 +1994,7 @@ export function TemplatesTabContent(){
                             }
                           }}
                         >
-                          {upscaleBusy ? 'Upscaling...' : 'Upscale'}
+                          {upscaleBusy ? 'Upscaling…' : 'Upscale'}
                         </Button>
                       ) : null}
                       {/* Smooth (60fps) button - available for all users with indigo styling */}
@@ -1996,6 +2054,7 @@ export function TemplatesTabContent(){
                     closeOnDownload={false}
                     onClose={handleDesignerClose}
                     onTryAgain={handleDesignerTryAgain}
+                    onRegenerate={generationParams ? handleDesignerRegenerate : undefined}
                     onSave={saveDesignToGenerations}
                     aspectRatio={typeof activeTemplate?.aspectRatio === 'number' ? Number(activeTemplate.aspectRatio) : undefined}
                     onReplaceBgKey={handleDesignerReplaceBgKey}
@@ -2298,74 +2357,6 @@ export function TemplatesTabContent(){
           ) : (
             <>
               <div className="space-y-4 flex-1 min-h-0 overflow-y-auto pb-4">
-                {(() => {
-                  const tokensInPrompt = new Set(String(activeTemplate?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m)=> m.replace(/^[\[]|[\]]$/g, '')) || []);
-                  const builtin = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
-                  const needBuiltins = ["BRAND","MODEL","COLOR_FINISH","ACCENTS"].filter(k=> tokensInPrompt.has(k));
-                  const customVarDefs = Array.isArray(activeTemplate?.variables) ? (activeTemplate!.variables as Array<{ key?: string; type?: string; label?: string; options?: string[] }>).filter((v)=> tokensInPrompt.has(String(v?.key || '')) && !builtin.has(String(v?.key || ''))) : [];
-                  if (!needBuiltins.length && !customVarDefs.length) return null;
-                  return (
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium">Options</div>
-                      <div className="space-y-2">
-                        {needBuiltins.map((key)=> (
-                          <div key={key} className="space-y-1">
-                            <div className="text-xs text-white/70">{key.replace(/_/g,' ').toLowerCase().replace(/\b\w/g, (c)=> c.toUpperCase())}</div>
-                            <Input value={varState[key] || ''} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder={key} />
-                          </div>
-                        ))}
-                        {customVarDefs.map((v)=> {
-                          const key = String(v?.key || '').trim();
-                          if (!key) return null;
-                          const type = String(v?.type || 'text');
-                          const label = String(v?.label || key);
-                          if (type === 'select' && Array.isArray(v?.options) && v.options.length) {
-                            return (
-                              <div key={key} className="space-y-1">
-                                <div className="text-xs text-white/70">{label}</div>
-                                <Select value={varState[key] || ''} onValueChange={(val)=> setVarState((prev)=> ({ ...prev, [key]: val }))}>
-                                  <SelectTrigger className="h-9"><SelectValue placeholder={`Select ${label.toLowerCase()}`} /></SelectTrigger>
-                                  <SelectContent>
-                                    {v.options.map((opt, i)=> (<SelectItem key={`${key}-${i}`} value={opt}>{opt}</SelectItem>))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            );
-                          }
-                          if (type === 'color') {
-                            return (
-                              <div key={key} className="space-y-1">
-                                <div className="text-xs text-white/70">{label}</div>
-                                <div className="flex items-center gap-2">
-                                  <input type="color" value={varState[key] || '#ffffff'} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} className="h-9 w-12 rounded bg-transparent border border-[color:var(--border)]" />
-                                  <Input className="w-36" value={varState[key] || '#ffffff'} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder="#ffffff" />
-                                </div>
-                              </div>
-                            );
-                          }
-                          if (type === 'color') {
-                            return (
-                              <div key={key} className="space-y-1">
-                                <div className="text-xs text-white/70">{label}</div>
-                                <div className="flex items-center gap-2">
-                                  <input type="color" value={varState[key] || '#ffffff'} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} className="h-9 w-12 rounded bg-transparent border border-[color:var(--border)]" />
-                                  <Input className="w-36" value={varState[key] || '#ffffff'} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder="#ffffff" />
-                                </div>
-                              </div>
-                            );
-                          }
-                          return (
-                            <div key={key} className="space-y-1">
-                              <div className="text-xs text-white/70">{label}</div>
-                              <Input value={varState[key] || ''} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder={label} />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-
                 <div className="space-y-4">
                   {(() => {
                     const allowSrcs = (Array.isArray((activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> })?.allowedImageSources) ? (activeTemplate as { allowedImageSources?: Array<'vehicle'|'user'> }).allowedImageSources! : ['vehicle','user']);
@@ -2675,6 +2666,16 @@ export function TemplatesTabContent(){
                     if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
                     if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
                     if (data?.key) setResultKey(String(data.key));
+                    
+                    // Store generation params for regenerate
+                    setGenerationParams({
+                      templateId: active?.id,
+                      templateSlug: active?.slug,
+                      userImageKeys: pendingKeys || [],
+                      userImageDataUrls: [dataUrl],
+                      variables,
+                      isolateCar: getActualIsolateCar()
+                    });
                   } finally {
                     setBusy(false);
                     setPendingKeys(null);
@@ -2684,6 +2685,73 @@ export function TemplatesTabContent(){
               />
               {/* Sticky bottom generate button */}
               <div className="flex-shrink-0 border-t border-[color:var(--border)]/60 pt-3 mt-auto bg-[var(--popover)] space-y-2">
+                {/* Options/input fields */}
+                {(() => {
+                  const tokensInPrompt = new Set(String(activeTemplate?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m)=> m.replace(/^[\[]|[\]]$/g, '')) || []);
+                  const builtin = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
+                  
+                  // Determine if user is using non-vehicle images
+                  const usingNonVehicleImages = (() => {
+                    // Check if any selected images are from upload or library (not vehicles)
+                    const hasUploadedImages = selectedImageKeys.some(key => uploadedKeys.includes(key));
+                    const hasLibraryImages = selectedImageKeys.some(key => libraryItems.some(item => item.key === key));
+                    return hasUploadedImages || hasLibraryImages || source === 'upload';
+                  })();
+                  
+                  // Only show builtin token inputs when using non-vehicle images
+                  const needBuiltins = usingNonVehicleImages 
+                    ? ["BRAND","MODEL","COLOR_FINISH","ACCENTS"].filter(k=> tokensInPrompt.has(k))
+                    : [];
+                  
+                  const customVarDefs = Array.isArray(activeTemplate?.variables) ? (activeTemplate!.variables as Array<{ key?: string; type?: string; label?: string; options?: string[] }>).filter((v)=> tokensInPrompt.has(String(v?.key || '')) && !builtin.has(String(v?.key || ''))) : [];
+                  if (!needBuiltins.length && !customVarDefs.length) return null;
+                  return (
+                    <div className="space-y-2">
+                      {needBuiltins.map((key)=> (
+                        <div key={key} className="space-y-1">
+                          <div className="text-xs text-white/70">{key.replace(/_/g,' ').toLowerCase().replace(/\b\w/g, (c)=> c.toUpperCase())}</div>
+                          <Input value={varState[key] || ''} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder={key} />
+                        </div>
+                      ))}
+                      {customVarDefs.map((v)=> {
+                        const key = String(v?.key || '').trim();
+                        if (!key) return null;
+                        const type = String(v?.type || 'text');
+                        const label = String(v?.label || key);
+                        if (type === 'select' && Array.isArray(v?.options) && v.options.length) {
+                          return (
+                            <div key={key} className="space-y-1">
+                              <div className="text-xs text-white/70">{label}</div>
+                              <Select value={varState[key] || ''} onValueChange={(val)=> setVarState((prev)=> ({ ...prev, [key]: val }))}>
+                                <SelectTrigger className="h-9"><SelectValue placeholder={`Select ${label.toLowerCase()}`} /></SelectTrigger>
+                                <SelectContent>
+                                  {v.options.map((opt, i)=> (<SelectItem key={`${key}-${i}`} value={opt}>{opt}</SelectItem>))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          );
+                        }
+                        if (type === 'color') {
+                          return (
+                            <div key={key} className="space-y-1">
+                              <div className="text-xs text-white/70">{label}</div>
+                              <div className="flex items-center gap-2">
+                                <input type="color" value={varState[key] || '#ffffff'} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} className="h-9 w-12 rounded bg-transparent border border-[color:var(--border)]" />
+                                <Input className="w-36" value={varState[key] || '#ffffff'} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder="#ffffff" />
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={key} className="space-y-1">
+                            <div className="text-xs text-white/70">{label}</div>
+                            <Input value={varState[key] || ''} onChange={(e)=> setVarState((prev)=> ({ ...prev, [key]: e.target.value }))} placeholder={label} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
                 {(() => {
                   const isolateCarCfg = (activeTemplate as unknown as { isolateCar?: { mode?: 'user_choice' | 'force_on' | 'force_off'; defaultEnabled?: boolean } })?.isolateCar;
                   // Only show toggle if mode is 'user_choice'
@@ -2700,7 +2768,7 @@ export function TemplatesTabContent(){
                 })()}
                 <div className="w-full space-y-2">
                   <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <div className="text-xs text-white/60">Selected {selectedImageKeys.length}/{requiredImages}</div>
                       {/* Show source info inline for selected images */}
                       {selectedImageKeys.length > 0 && (() => {
@@ -2737,6 +2805,17 @@ export function TemplatesTabContent(){
                           </div>
                         );
                       })()}
+                      {/* Deselect all button */}
+                      {selectedImageKeys.length > 0 && (
+                        <button
+                          onClick={() => setSelectedImageKeys([])}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[0.65rem] font-medium text-white/60 hover:text-white/90 hover:bg-white/5 transition-colors"
+                          aria-label="Deselect all images"
+                        >
+                          <X className="w-3 h-3" />
+                          <span>Clear</span>
+                        </button>
+                      )}
                     </div>
                     {selectedImageKeys.length >= requiredImages ? (
                       <span className="text-xs text-white/70 whitespace-nowrap">Costs 100 credits</span>
@@ -2747,9 +2826,58 @@ export function TemplatesTabContent(){
                     For best results, use a high-quality image matching the template&apos;s angle without other vehicles
                   </div>
                 </div>
-                <Button size="lg" onClick={generate} disabled={busy || selectedImageKeys.length < requiredImages} className="w-full text-base">
-                  {selectedImageKeys.length < requiredImages ? (requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`) : 'Generate'}
-                </Button>
+                {(() => {
+                  // Check for missing required fields
+                  const tokensInPrompt = new Set(String(activeTemplate?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m)=> m.replace(/^[\[]|[\]]$/g, '')) || []);
+                  const builtin = new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]);
+                  
+                  // Determine if user is using non-vehicle images
+                  const usingNonVehicleImages = (() => {
+                    const hasUploadedImages = selectedImageKeys.some(key => uploadedKeys.includes(key));
+                    const hasLibraryImages = selectedImageKeys.some(key => libraryItems.some(item => item.key === key));
+                    return hasUploadedImages || hasLibraryImages || source === 'upload';
+                  })();
+                  
+                  // Check which builtin fields are required and missing
+                  const requiredBuiltins = usingNonVehicleImages 
+                    ? ["BRAND","MODEL","COLOR_FINISH","ACCENTS"].filter(k=> tokensInPrompt.has(k))
+                    : [];
+                  
+                  const missingBuiltins = requiredBuiltins.filter(key => !varState[key] || String(varState[key]).trim() === '');
+                  
+                  // Check custom variables
+                  const customVarDefs = Array.isArray(activeTemplate?.variables) 
+                    ? (activeTemplate!.variables as Array<{ key?: string; type?: string; label?: string; options?: string[] }>).filter((v)=> tokensInPrompt.has(String(v?.key || '')) && !builtin.has(String(v?.key || ''))) 
+                    : [];
+                  
+                  const missingCustomVars = customVarDefs.filter(v => {
+                    const key = String(v?.key || '').trim();
+                    if (!key) return false;
+                    const val = varState[key];
+                    // Don't require color fields (they have defaults)
+                    if (v?.type === 'color') return false;
+                    return !val || String(val).trim() === '';
+                  });
+                  
+                  const hasImageSelection = selectedImageKeys.length >= requiredImages;
+                  const hasMissingFields = missingBuiltins.length > 0 || missingCustomVars.length > 0;
+                  
+                  let buttonText = 'Generate';
+                  const isDisabled = busy || !hasImageSelection || hasMissingFields;
+                  
+                  if (!hasImageSelection) {
+                    buttonText = requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`;
+                  } else if (hasMissingFields) {
+                    const missingCount = missingBuiltins.length + missingCustomVars.length;
+                    buttonText = missingCount === 1 ? 'Complete required field' : 'Complete required fields';
+                  }
+                  
+                  return (
+                    <Button size="lg" onClick={generate} disabled={isDisabled} className="w-full text-base">
+                      {buttonText}
+                    </Button>
+                  );
+                })()}
               </div>
             </>
           )}

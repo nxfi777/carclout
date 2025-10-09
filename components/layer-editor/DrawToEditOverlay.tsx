@@ -112,12 +112,14 @@ export default function DrawToEditOverlay() {
         setHistoryIndex(-1);
       }
     };
-    img.onerror = () => {
-      console.error('[DrawToEditOverlay] Failed to load background image');
+    img.onerror = (e) => {
+      console.error('[DrawToEditOverlay] Failed to load background image:', state.backgroundUrl, e);
       // Fallback to default dimensions
       setCanvasDimensions({ width: 1920, height: 1080 });
       setCanvasStyle({ width: '100%', height: '100%', left: '0', top: '0' });
     };
+    // Note: We don't set crossOrigin here because we're only reading dimensions,
+    // not drawing to canvas or reading pixel data. This avoids CORS issues with R2.
     img.src = state.backgroundUrl;
   }, [state.backgroundUrl, annotation, dispatch]);
 
