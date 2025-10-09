@@ -13,6 +13,7 @@ export type LibraryImage = {
   size?: number;
   created?: string;
   lastModified?: string;
+  lastUsed?: string; // Tracks when image was last used in generation
 };
 
 /**
@@ -47,6 +48,7 @@ export type LibraryVideo = {
  * DEFINE FIELD size ON library_image TYPE option<number>;
  * DEFINE FIELD created ON library_image TYPE option<datetime>;
  * DEFINE FIELD lastModified ON library_image TYPE option<datetime>;
+ * DEFINE FIELD lastUsed ON library_image TYPE option<datetime>;
  * DEFINE INDEX unique_key_email ON library_image FIELDS key, email UNIQUE;
  * 
  * Database schema definition for library_video table

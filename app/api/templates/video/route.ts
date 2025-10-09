@@ -32,7 +32,7 @@ const PROVIDER_DURATION_OPTIONS: Record<VideoProvider, ReadonlyArray<'3'|'4'|'5'
 } as const;
 
 const PROVIDER_RESOLUTION_OPTIONS: Record<VideoProvider, ReadonlyArray<VideoResolution>> = {
-  seedance: ['480p','720p','1080p'],
+  seedance: ['720p','1080p'],
   kling2_5: ['720p','1080p'],
   sora2: ['720p','auto'],
   sora2_pro: ['720p','auto'],

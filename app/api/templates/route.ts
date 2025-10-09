@@ -313,7 +313,7 @@ export async function POST(req: Request) {
           } as TemplateDoc['video'];
         }
       } catch {}
-      return { enabled: false, provider: 'sora2', prompt: '', duration: '4', resolution: 'auto', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, cfg_scale: undefined, previewKey: null, allowedDurations: undefined } as TemplateDoc['video'];
+      return { enabled: false, provider: 'seedance', prompt: '', duration: '4', resolution: '720p', aspect_ratio: 'auto', camera_fixed: false, seed: null, fps: 24, cfg_scale: undefined, previewKey: null, allowedDurations: ['4', '8'] } as TemplateDoc['video'];
     })(),
     created_at: createdIso,
     created_by: user.email,

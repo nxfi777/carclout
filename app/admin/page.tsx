@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { confirmToast, promptToast } from "@/components/ui/toast-helpers";
 import { AdminTemplateImages } from "@/components/admin/admin-template-images";
 import { AdminTemplateVideo, type AdminVideoConfig } from "@/components/admin/admin-template-video";
+import { AspectRatioSelector } from "@/components/admin/aspect-ratio-selector";
 import Lottie from "lottie-react";
 import fireAnimation from "@/public/fire.json";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -1076,7 +1077,7 @@ function NewTemplateButton(){
   const [tokenConfigs, setTokenConfigs] = useState<Record<string, { kind: 'input' | 'select' | 'color'; options: string[]; defaultValue?: string }>>({});
   const [selectedThumbAdminIndex, setSelectedThumbAdminIndex] = useState<number | null>(null);
   const [templateFixedAspect, setTemplateFixedAspect] = useState<boolean>(true);
-  const [aspectRatio, setAspectRatio] = useState<number | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<number | null>(0.8); // Default to 4:5
   const [allowVehicle, setAllowVehicle] = useState<boolean>(true);
   const [allowUser, setAllowUser] = useState<boolean>(true);
   const [proOnly, setProOnly] = useState<boolean>(false);
@@ -1125,23 +1126,33 @@ function NewTemplateButton(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thumbnailFile, adminImageFiles]);
 
-  // Derive aspect ratio from first admin image when fixed toggle is on
-  useEffect(()=>{
-    let cancelled=false;
-    (async()=>{
-      if (!templateFixedAspect) { setAspectRatio(null); return; }
-      const f = adminImageFiles[0];
-      if (!f) { setAspectRatio(null); return; }
-      try {
-        const url = URL.createObjectURL(f);
-        const img = new window.Image();
-        await new Promise<void>((resolve, reject)=>{ img.onload = ()=>resolve(); img.onerror=()=>reject(new Error('img')); img.src=url; });
-        if (!cancelled) setAspectRatio(img.naturalWidth && img.naturalHeight ? (img.naturalWidth / img.naturalHeight) : null);
-        try { URL.revokeObjectURL(url); } catch {}
-      } catch { if (!cancelled) setAspectRatio(null); }
-    })();
-    return ()=>{ cancelled=true };
-  }, [templateFixedAspect, adminImageFiles]);
+  // Function to detect aspect ratio from first admin image
+  const detectAspectRatioFromImage = async () => {
+    const f = adminImageFiles[0];
+    if (!f) {
+      toast.error('Please upload an admin image first');
+      return;
+    }
+    try {
+      const url = URL.createObjectURL(f);
+      const img = new window.Image();
+      await new Promise<void>((resolve, reject)=>{ 
+        img.onload = ()=>resolve(); 
+        img.onerror=()=>reject(new Error('Failed to load image')); 
+        img.src=url; 
+      });
+      const ratio = img.naturalWidth && img.naturalHeight ? (img.naturalWidth / img.naturalHeight) : null;
+      if (ratio) {
+        setAspectRatio(ratio);
+        toast.success(`Detected aspect ratio: ${ratio.toFixed(3)}`);
+      } else {
+        toast.error('Could not detect aspect ratio');
+      }
+      try { URL.revokeObjectURL(url); } catch {}
+    } catch {
+      toast.error('Failed to detect aspect ratio from image');
+    }
+  };
 
   // Default image size from first admin image, clamped to 1024..4096 and scaled retaining AR
   useEffect(()=>{
@@ -1305,13 +1316,22 @@ function NewTemplateButton(){
             <Textarea value={prompt} onChange={(e)=>setPrompt(e.target.value)} placeholder="Prompt (use tokens like [BRAND], [MODEL], [COLOR_FINISH], [ACCENTS], [COLOR_FINISH_ACCENTS], [DOMINANT_COLOR_TONE])" rows={6} />
             <div className="flex items-center justify-between gap-2">
               <div className="space-y-1">
-                <div className="text-sm font-medium">Fixed aspect ratio</div>
-                <div className="text-xs text-white/60">If enabled, we use the first admin image to set the aspect ratio. New images must be cropped to fit.</div>
+                <div className="text-sm font-medium">Aspect ratio</div>
+                <div className="text-xs text-white/60">Set the template&apos;s aspect ratio. User images will be cropped to match.</div>
               </div>
-              <div className="flex items-center gap-2">
-                {templateFixedAspect && aspectRatio ? (<div className="text-xs text-white/60">AR: {aspectRatio.toFixed(3)}</div>) : null}
-                <Switch checked={templateFixedAspect} onCheckedChange={(v)=> setTemplateFixedAspect(!!v)} />
+              <AspectRatioSelector 
+                value={aspectRatio} 
+                onChange={setAspectRatio}
+                onDetectFromImage={detectAspectRatioFromImage}
+                canDetect={adminImageFiles.length > 0}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Enforce fixed aspect ratio</div>
+                <div className="text-xs text-white/60">If enabled, users must crop their images to match the aspect ratio.</div>
               </div>
+              <Switch checked={templateFixedAspect} onCheckedChange={(v)=> setTemplateFixedAspect(!!v)} />
             </div>
             {/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug) ? (
               <div className="flex items-center justify-between gap-2">
@@ -2145,7 +2165,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   const builtIn = useMemo(() => new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]), []);
   const [tokenConfigs, setTokenConfigs] = useState<Record<string, { kind: 'input' | 'select' | 'color'; options: string[]; defaultValue?: string }>>({});
   const [editorFixedAspect, setEditorFixedAspect] = useState<boolean>(!!template?.fixedAspectRatio);
-  const [aspectRatio, setAspectRatio] = useState<number | undefined>(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : undefined);
+  const [aspectRatio, setAspectRatio] = useState<number | undefined>(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : 0.8); // Default to 4:5
   const [imageWidth, setImageWidth] = useState<number>(()=>{ try{ const w = Number((template?.imageSize?.width) || 1280); return Math.max(1024, Math.min(4096, Math.round(w))); } catch { return 1280; } });
   const [imageHeight, setImageHeight] = useState<number>(()=>{ try{ const h = Number((template?.imageSize?.height) || 1280); return Math.max(1024, Math.min(4096, Math.round(h))); } catch { return 1280; } });
   const [allowVehicle, setAllowVehicle] = useState<boolean>(() => {
@@ -2290,13 +2310,71 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     try { const res = await fetch('/api/storage/upload', { method:'POST', body: form }); const data = await res.json(); return data?.key || null; } catch { return null; }
   }
 
+  // Function to detect aspect ratio from first admin image
+  const detectAspectRatioFromImage = async () => {
+    // Try new files first, then existing
+    const file = adminNewFiles[0];
+    if (file) {
+      try {
+        const url = URL.createObjectURL(file);
+        const img = new window.Image();
+        await new Promise<void>((resolve, reject)=>{ 
+          img.onload = ()=>resolve(); 
+          img.onerror=()=>reject(new Error('Failed to load image')); 
+          img.src=url; 
+        });
+        const ratio = img.naturalWidth && img.naturalHeight ? (img.naturalWidth / img.naturalHeight) : null;
+        if (ratio) {
+          setAspectRatio(ratio);
+          toast.success(`Detected aspect ratio: ${ratio.toFixed(3)}`);
+        } else {
+          toast.error('Could not detect aspect ratio');
+        }
+        try { URL.revokeObjectURL(url); } catch {}
+      } catch {
+        toast.error('Failed to detect aspect ratio from image');
+      }
+      return;
+    }
+
+    // Try existing images
+    const existingKey = adminExistingKeys[0];
+    if (existingKey) {
+      try {
+        const url = await resolveAdminView(existingKey);
+        if (!url) {
+          toast.error('Could not load admin image');
+          return;
+        }
+        const img = new window.Image();
+        await new Promise<void>((resolve, reject)=>{ 
+          img.onload = ()=>resolve(); 
+          img.onerror=()=>reject(new Error('Failed to load image')); 
+          img.src=url; 
+        });
+        const ratio = img.naturalWidth && img.naturalHeight ? (img.naturalWidth / img.naturalHeight) : null;
+        if (ratio) {
+          setAspectRatio(ratio);
+          toast.success(`Detected aspect ratio: ${ratio.toFixed(3)}`);
+        } else {
+          toast.error('Could not detect aspect ratio');
+        }
+      } catch {
+        toast.error('Failed to detect aspect ratio from image');
+      }
+      return;
+    }
+
+    toast.error('Please upload an admin image first');
+  };
+
   useEffect(()=>{
     setName(String(template?.name || ''));
     setFalModelSlug(String(template?.falModelSlug || 'fal-ai/gemini-25-flash-image/edit'));
     setDescription(String(template?.description || ''));
     setPrompt(String(template?.prompt || ''));
     setEditorFixedAspect(!!template?.fixedAspectRatio);
-    setAspectRatio(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : undefined);
+    setAspectRatio(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : 0.8);
     try { const w = Number((template?.imageSize?.width) || 1280); setImageWidth(Math.max(1024, Math.min(4096, Math.round(w)))); } catch {}
     try { const h = Number((template?.imageSize?.height) || 1280); setImageHeight(Math.max(1024, Math.min(4096, Math.round(h)))); } catch {}
     try {
@@ -2568,13 +2646,22 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       <Textarea value={prompt} onChange={(e)=> setPrompt(e.target.value)} placeholder="Prompt" rows={6} />
       <div className="flex items-center justify-between gap-2">
         <div className="space-y-1">
-          <div className="text-sm font-medium">Fixed aspect ratio</div>
-          <div className="text-xs text-white/60">If enabled, users must crop uploads to the template&apos;s aspect ratio.</div>
+          <div className="text-sm font-medium">Aspect ratio</div>
+          <div className="text-xs text-white/60">Set the template&apos;s aspect ratio. User images will be cropped to match.</div>
         </div>
-        <div className="flex items-center gap-2">
-          {editorFixedAspect && typeof aspectRatio === 'number' ? (<div className="text-xs text-white/60">AR: {Number(aspectRatio).toFixed(3)}</div>) : null}
-          <Switch checked={editorFixedAspect} onCheckedChange={(v)=> setEditorFixedAspect(!!v)} />
+        <AspectRatioSelector 
+          value={aspectRatio ?? null} 
+          onChange={(v) => setAspectRatio(v ?? undefined)}
+          onDetectFromImage={detectAspectRatioFromImage}
+          canDetect={adminNewFiles.length > 0 || adminExistingKeys.length > 0}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="space-y-1">
+          <div className="text-sm font-medium">Enforce fixed aspect ratio</div>
+          <div className="text-xs text-white/60">If enabled, users must crop their images to match the aspect ratio.</div>
         </div>
+        <Switch checked={editorFixedAspect} onCheckedChange={(v)=> setEditorFixedAspect(!!v)} />
       </div>
       {/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug) ? (
         <div className="flex items-center justify-between gap-2">

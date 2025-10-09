@@ -5,7 +5,7 @@ import { getSurreal } from "@/lib/surrealdb";
 import { createHash } from "crypto";
 export const runtime = "nodejs";
 type BundleEntry = { name: string; key: string; thumbKey?: string; videoKey?: string; videoEtag?: string };
-type ListItem = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string; etag?: string; blurhash?: string };
+type ListItem = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string; etag?: string; blurhash?: string; lastUsed?: string };
 
 export async function GET(req: Request) {
   const user = await getSessionUser();
@@ -93,19 +93,25 @@ export async function GET(req: Request) {
         .map(item => item.key!);
 
       const blurhashMap = new Map<string, string>();
+      const lastUsedMap = new Map<string, string>();
       
-      // Fetch blurhashes for images
+      // Fetch blurhashes and lastUsed for images
       if (imageKeys.length > 0) {
         const imageBlurhashRes = await db.query(
-          "SELECT key, blurhash FROM library_image WHERE key IN $keys AND email = $email;",
+          "SELECT key, blurhash, lastUsed FROM library_image WHERE key IN $keys AND email = $email;",
           { keys: imageKeys, email: user.email }
         );
 
         const imageRecords = Array.isArray(imageBlurhashRes) && Array.isArray(imageBlurhashRes[0]) ? imageBlurhashRes[0] : [];
         for (const record of imageRecords) {
-          const r = record as { key?: string; blurhash?: string };
-          if (r.key && r.blurhash) {
-            blurhashMap.set(r.key, r.blurhash);
+          const r = record as { key?: string; blurhash?: string; lastUsed?: string };
+          if (r.key) {
+            if (r.blurhash) {
+              blurhashMap.set(r.key, r.blurhash);
+            }
+            if (r.lastUsed) {
+              lastUsedMap.set(r.key, r.lastUsed);
+            }
           }
         }
       }
@@ -126,12 +132,39 @@ export async function GET(req: Request) {
         }
       }
 
-      // Add blurhash to items
+      // Add blurhash and lastUsed to items
       for (const item of items) {
-        if (item.key && blurhashMap.has(item.key)) {
-          item.blurhash = blurhashMap.get(item.key);
+        if (item.key) {
+          if (blurhashMap.has(item.key)) {
+            item.blurhash = blurhashMap.get(item.key);
+          }
+          if (lastUsedMap.has(item.key)) {
+            item.lastUsed = lastUsedMap.get(item.key);
+          }
         }
       }
+      
+      // Sort library images by lastUsed (most recent first), falling back to lastModified
+      const fileItems = items.filter(it => it.type === 'file');
+      const folderItems = items.filter(it => it.type === 'folder');
+      
+      fileItems.sort((a, b) => {
+        // Prioritize items with lastUsed
+        const aLastUsed = a.lastUsed ? new Date(a.lastUsed).getTime() : 0;
+        const bLastUsed = b.lastUsed ? new Date(b.lastUsed).getTime() : 0;
+        
+        if (aLastUsed !== bLastUsed) {
+          return bLastUsed - aLastUsed; // Most recently used first
+        }
+        
+        // Fall back to lastModified
+        const aTime = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+        const bTime = b.lastModified ? new Date(b.lastModified).getTime() : 0;
+        return bTime - aTime;
+      });
+      
+      // Recombine: folders first, then sorted files
+      items.splice(0, items.length, ...folderItems, ...fileItems);
     } catch (error) {
       console.error("Failed to fetch blurhash data (non-fatal):", error);
       // Continue without blurhash if database fails

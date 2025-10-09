@@ -1597,18 +1597,13 @@ function DashboardShowroomPageInner() {
     try {
       const res = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
-      const files: Array<{ key?: string; type?: string; lastModified?: string; blurhash?: string }> = Array.isArray(data?.items) ? data.items : [];
+      const files: Array<{ key?: string; type?: string; lastModified?: string; blurhash?: string; lastUsed?: string }> = Array.isArray(data?.items) ? data.items : [];
       const imageFiles = files.filter((it) => {
         if (String(it?.type) !== 'file') return false;
         const basename = (it.key || '').split('?')[0]?.split('/').pop() || '';
         return IMAGE_EXTENSIONS.test(basename);
       });
-      // Sort by most recent first
-      imageFiles.sort((a, b) => {
-        const aTime = a.lastModified ? new Date(a.lastModified).getTime() : 0;
-        const bTime = b.lastModified ? new Date(b.lastModified).getTime() : 0;
-        return bTime - aTime;
-      });
+      // API already sorts by lastUsed (most recent usage) then lastModified
       const imageKeys = imageFiles.map((it) => it.key || '').filter(Boolean);
       if (!imageKeys.length) {
         setLibraryItems([]);

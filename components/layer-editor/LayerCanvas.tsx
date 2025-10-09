@@ -384,7 +384,7 @@ export default function LayerCanvas({ className }: { className?: string }) {
         }}
       />
       <ContextMenu>
-        <ContextMenuTrigger asChild>
+        <ContextMenuTrigger asChild disabled={state.tool === 'brush'}>
           <div
             ref={containerRef}
             data-canvas-root

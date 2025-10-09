@@ -31,7 +31,7 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
     return ['3','4','5','6','7','8','9','10','11','12'] as const;
   })();
   const providerResolutions: Record<'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro', Array<'auto'|'480p'|'720p'|'1080p'>> = {
-    seedance: ['480p','720p','1080p'],
+    seedance: ['720p','1080p'],
     kling2_5: ['720p','1080p'],
     sora2: ['720p','auto'],
     sora2_pro: ['720p','auto'],
@@ -76,21 +76,26 @@ export function AdminTemplateVideo({ value, onChange }: { value?: AdminVideoConf
     <div className="rounded border border-[color:var(--border)] p-3 space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium">Video (image-to-video)</div>
-        <Switch checked={!!v.enabled} onCheckedChange={(on)=> onChange({ ...(v||{}), enabled: !!on, provider: (v.provider as AdminVideoConfig['provider']) || 'sora2' })} />
+        <Switch checked={!!v.enabled} onCheckedChange={(on)=> {
+          const provider = (v.provider as AdminVideoConfig['provider']) || 'seedance';
+          const allowedDurations = provider === 'seedance' && !v.allowedDurations ? ['4', '8'] as AdminVideoConfig['allowedDurations'] : v.allowedDurations;
+          onChange({ ...(v||{}), enabled: !!on, provider, allowedDurations });
+        }} />
       </div>
       {v.enabled ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           <div>
             <div className="text-xs text-white/70 mb-1">Provider</div>
-            <Select value={(v.provider||'sora2')} onValueChange={(val)=>{
-              const nextProvider = (val as AdminVideoConfig['provider']) || 'sora2';
-              onChange({ ...(v||{}), provider: nextProvider, resolution: providerResolutions[nextProvider][0] });
+            <Select value={(v.provider||'seedance')} onValueChange={(val)=>{
+              const nextProvider = (val as AdminVideoConfig['provider']) || 'seedance';
+              const allowedDurations = nextProvider === 'seedance' && !v.allowedDurations ? ['4', '8'] as AdminVideoConfig['allowedDurations'] : v.allowedDurations;
+              onChange({ ...(v||{}), provider: nextProvider, resolution: providerResolutions[nextProvider][0], allowedDurations });
             }}>
               <SelectTrigger className="h-9"><SelectValue placeholder="Provider" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="sora2">Sora 2 (Default)</SelectItem>
+                <SelectItem value="seedance">Seedance (Default)</SelectItem>
+                <SelectItem value="sora2">Sora 2</SelectItem>
                 <SelectItem value="sora2_pro">Sora 2 Pro</SelectItem>
-                <SelectItem value="seedance">Seedance</SelectItem>
                 <SelectItem value="kling2_5">Kling 2.5 Turbo Pro</SelectItem>
               </SelectContent>
             </Select>

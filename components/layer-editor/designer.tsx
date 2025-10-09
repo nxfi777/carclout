@@ -561,13 +561,10 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
       if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('This image was already upscaled.'); } catch {} setUpscaling(false); return; }
       if (!res.ok || !data?.key) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.(String((data as { error?: string })?.error || 'Upscale failed')); } catch {} setUpscaling(false); return; }
       
-      // Get the upscaled image URL
-      let upscaledUrl = typeof data?.url === 'string' ? String(data.url) : null;
-      if (!upscaledUrl) {
-        try {
-          upscaledUrl = await getViewUrl(String(data.key));
-        } catch {}
-      }
+      // Use the CORS-enabled proxy URL instead of direct R2 URL
+      // This ensures download and draw-to-edit work properly
+      const upscaledKey = String(data.key);
+      const upscaledUrl = `/api/storage/file?key=${encodeURIComponent(upscaledKey)}`;
       
       // Update the canvas with the upscaled image (enables undo/redo)
       // Note: We don't call onReplaceBgKey here because that would change the bgKey prop

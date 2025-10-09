@@ -726,6 +726,32 @@ export async function POST(req: Request) {
       console.error('Failed to check first template:', err);
     }
     
+    // Track library image usage (fire-and-forget)
+    try {
+      const userImageKeys = body.userImageKeys || [];
+      const libraryImageKeys = userImageKeys.filter(key => 
+        key.includes('/library/') || key.startsWith('library/')
+      );
+      
+      if (libraryImageKeys.length > 0) {
+        const now = new Date().toISOString();
+        // Update lastUsed for each library image used in this generation
+        for (const imageKey of libraryImageKeys) {
+          try {
+            await db.query(
+              "UPDATE library_image SET lastUsed = $lastUsed WHERE key = $key AND email = $email;",
+              { key: imageKey, email: user.email, lastUsed: now }
+            );
+          } catch (updateErr) {
+            console.error(`Failed to update lastUsed for ${imageKey}:`, updateErr);
+          }
+        }
+        console.log(`Updated lastUsed for ${libraryImageKeys.length} library image(s)`);
+      }
+    } catch (err) {
+      console.error('Failed to track library image usage:', err);
+    }
+    
     return NextResponse.json({ key: outKey, url: viewUrl });
   } catch (err) {
     try { console.error("/api/templates/generate error", err); } catch {}

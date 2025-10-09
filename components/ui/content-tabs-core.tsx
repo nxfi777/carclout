@@ -22,7 +22,7 @@ import carLoadAnimation from '@/public/carload.json';
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 import FixedAspectCropper from '@/components/ui/fixed-aspect-cropper';
 import { toast } from 'sonner';
-import { UploadIcon, ChevronRight, SquarePlus, SquareCheckBig, RotateCw, X } from 'lucide-react';
+import { UploadIcon, ChevronRight, SquarePlus, SquareCheckBig, RotateCw, X, Loader2 } from 'lucide-react';
 import { confirmToast } from '@/components/ui/toast-helpers';
 import { TemplateCard } from '@/components/templates/template-card';
 import { DropZone } from '@/components/ui/drop-zone';
@@ -651,6 +651,13 @@ export function TemplatesTabContent(){
   const animPendingBlobRef = useRef<Blob | null>(null);
   const [animHasPending, setAnimHasPending] = useState(false);
   const [isolateCar, setIsolateCar] = useState(true); // Default to force_on
+  
+  // Video upscaling state - track original and upscaled versions
+  const [originalVideoKey, setOriginalVideoKey] = useState<string | null>(null);
+  const [originalVideoUrl, setOriginalVideoUrl] = useState<string | null>(null);
+  const [upscaledVideoKey, setUpscaledVideoKey] = useState<string | null>(null);
+  const [upscaledVideoUrl, setUpscaledVideoUrl] = useState<string | null>(null);
+  const [showingUpscaled, setShowingUpscaled] = useState(false);
 
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -1041,15 +1048,10 @@ export function TemplatesTabContent(){
       setLibraryLoading(true);
       const listRes = await fetch('/api/storage/list?path=' + encodeURIComponent('library'), { cache:'no-store' });
       const obj = await listRes.json().catch(()=>({}));
-      const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string; blurhash?: string }> = Array.isArray(obj?.items) ? obj.items : [];
+      const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string; blurhash?: string; lastUsed?: string }> = Array.isArray(obj?.items) ? obj.items : [];
       const files = arr.filter((it)=> String(it?.type) === 'file');
       const imageFiles = files.filter((it)=> { const s = String(it?.key || it?.name || '').toLowerCase(); return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s); });
-      // Sort by most recent first
-      imageFiles.sort((a, b) => {
-        const aTime = a.lastModified ? new Date(a.lastModified).getTime() : 0;
-        const bTime = b.lastModified ? new Date(b.lastModified).getTime() : 0;
-        return bTime - aTime;
-      });
+      // API already sorts by lastUsed (most recent usage) then lastModified
       const keys = imageFiles.map((it)=> it.key || `library/${String(it?.name || '')}`);
       if (!keys.length) { setLibraryItems([]); return; }
       const urls: Record<string,string> = await getViewUrls(keys);
@@ -1926,35 +1928,60 @@ export function TemplatesTabContent(){
                     <video src={animResultUrl} controls autoPlay loop muted playsInline className="rounded bg-black w-auto max-w-full sm:max-w-[48rem] max-h-[56vh] h-auto object-contain" />
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button className="w-full sm:w-auto" variant="outline" onClick={()=>{ setAnimResultUrl(null); setAnimResultKey(null); }}>Return to designer</Button>
+                    <Button className="w-full sm:w-auto" variant="outline" onClick={()=>{ 
+                      setAnimResultUrl(null); 
+                      setAnimResultKey(null);
+                      // Reset upscaling state
+                      setOriginalVideoKey(null);
+                      setOriginalVideoUrl(null);
+                      setUpscaledVideoKey(null);
+                      setUpscaledVideoUrl(null);
+                      setShowingUpscaled(false);
+                      setUpscaleBusy(false);
+                    }}>Return to designer</Button>
                     <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
                       {/* Upscale button - available for all users with indigo styling */}
-                      {animResultKey && !String(animResultKey).includes('upscaled') && !String(animResultKey).includes('2x') ? (
+                      {animResultKey && !String(animResultKey).includes('upscaled') && !String(animResultKey).includes('2x') && !showingUpscaled && !upscaledVideoKey ? (
                         <Button 
                           size="sm" 
                           variant="outline" 
                           className="h-9 px-4 text-sm border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 flex-1 sm:flex-none min-w-[7rem]"
                           disabled={upscaleBusy}
                           onClick={async()=>{
-                            // Check if upscaled version already exists
+                            // Check if upscaled version already exists in library
                             try {
                               const fileName = String(animResultKey).split('/').pop() || '';
                               const baseName = fileName.replace(/\.[^.]+$/, '');
                               const checkRes = await fetch('/api/storage/list?path=library');
                               const checkData = await checkRes.json().catch(() => ({ items: [] }));
                               const items = Array.isArray(checkData?.items) ? checkData.items : [];
-                              const hasUpscaled = items.some((item: { name?: string }) => 
+                              const upscaledItem = items.find((item: { name?: string; key?: string }) => 
                                 item.name && 
                                 (item.name.includes(`upscaled-${baseName}`) || 
                                  item.name.includes(`${baseName}-upscaled`) ||
                                  (item.name.startsWith('upscaled') && item.name.includes(baseName)))
                               );
                               
-                      if (hasUpscaled) {
-                        setDeleteTarget({ type: 'generated-video', key: String(animResultKey) });
-                        setDeleteDialogOpen(true);
-                        return;
-                      }
+                              if (upscaledItem) {
+                                // Upscaled version already exists, load it
+                                const upscaledKey = (upscaledItem as { key?: string }).key;
+                                if (upscaledKey) {
+                                  const upscaledUrl = await getViewUrl(upscaledKey);
+                                  if (upscaledUrl) {
+                                    // Store both versions
+                                    setOriginalVideoKey(String(animResultKey));
+                                    setOriginalVideoUrl(String(animResultUrl));
+                                    setUpscaledVideoKey(upscaledKey);
+                                    setUpscaledVideoUrl(upscaledUrl);
+                                    // Switch to upscaled view
+                                    setAnimResultKey(upscaledKey);
+                                    setAnimResultUrl(upscaledUrl);
+                                    setShowingUpscaled(true);
+                                    toast.success('Switched to upscaled video');
+                                    return;
+                                  }
+                                }
+                              }
                             } catch (e) {
                               console.error('Error checking for existing upscale:', e);
                             }
@@ -1984,9 +2011,23 @@ export function TemplatesTabContent(){
                                 return;
                               }
                               
-                              // Keep modal open, show success message
-                              toast.success('Video is being upscaled! It will appear in your library soon.');
-                              // Keep upscaleBusy true to show loading state
+                              // Upscaling completed successfully
+                              const upscaledKey = data.key;
+                              const upscaledUrl = data.url;
+                              
+                              // Store both versions
+                              setOriginalVideoKey(String(animResultKey));
+                              setOriginalVideoUrl(String(animResultUrl));
+                              setUpscaledVideoKey(upscaledKey);
+                              setUpscaledVideoUrl(upscaledUrl);
+                              
+                              // Switch to upscaled view
+                              setAnimResultKey(upscaledKey);
+                              setAnimResultUrl(upscaledUrl);
+                              setShowingUpscaled(true);
+                              
+                              toast.success('Video upscaled successfully!');
+                              setUpscaleBusy(false);
                             } catch (e) {
                               console.error('Video upscale error:', e);
                               toast.error('Video upscale failed');
@@ -1994,9 +2035,35 @@ export function TemplatesTabContent(){
                             }
                           }}
                         >
+                          {upscaleBusy && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                           {upscaleBusy ? 'Upscaling…' : 'Upscale'}
                         </Button>
                       ) : null}
+                      {/* Toggle button - switch between original and upscaled */}
+                      {originalVideoKey && upscaledVideoKey && (
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="h-9 px-4 text-sm border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 flex-1 sm:flex-none min-w-[7rem]"
+                          onClick={()=>{
+                            if (showingUpscaled) {
+                              // Switch back to original
+                              setAnimResultKey(originalVideoKey);
+                              setAnimResultUrl(originalVideoUrl);
+                              setShowingUpscaled(false);
+                              toast.success('Switched to original video');
+                            } else {
+                              // Switch to upscaled
+                              setAnimResultKey(upscaledVideoKey);
+                              setAnimResultUrl(upscaledVideoUrl);
+                              setShowingUpscaled(true);
+                              toast.success('Switched to upscaled video');
+                            }
+                          }}
+                        >
+                          {showingUpscaled ? 'View Original' : 'View Upscaled'}
+                        </Button>
+                      )}
                       {/* Smooth (60fps) button - available for all users with indigo styling */}
                       {/*
                       {animResultKey && (String(animResultKey).includes('upscaled') || String(animResultKey).includes('2x')) && !String(animResultKey).includes('60fps') && !String(animResultKey).includes('interpolated') ? (
@@ -2021,7 +2088,15 @@ export function TemplatesTabContent(){
                           const normalized = folder || String(animResultKey || '').replace(/\/[^/]+$/, '/');
                           if (!normalized) return;
                           await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key: normalized, isFolder: true }) });
-                          setAnimResultUrl(null); setAnimResultKey(null);
+                          setAnimResultUrl(null); 
+                          setAnimResultKey(null);
+                          // Reset upscaling state
+                          setOriginalVideoKey(null);
+                          setOriginalVideoUrl(null);
+                          setUpscaledVideoKey(null);
+                          setUpscaledVideoUrl(null);
+                          setShowingUpscaled(false);
+                          setUpscaleBusy(false);
                           toast.success('Deleted');
                         } catch { toast.error('Delete failed'); }
                       }}>Delete</Button>
