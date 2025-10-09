@@ -45,7 +45,7 @@ This means:
 
 ## Setup
 
-Run the database migration:
+### 1. Run the database migration:
 
 ```sql
 -- In SurrealDB
@@ -56,6 +56,21 @@ Or use the provided migration file:
 ```bash
 # Apply migration from scripts/add-library-image-lastused.surql
 ```
+
+### 2. Verify the migration was applied:
+
+```bash
+bun run scripts/verify-library-lastused-field.ts
+```
+
+## Troubleshooting
+
+If images aren't moving to the top after being used:
+
+1. **Check migration**: Run the verification script above
+2. **Check server logs**: Look for "Updated lastUsed for X library image(s)" in console
+3. **Check key format**: Server logs will show the full key being updated
+4. **Refresh library**: The library may be cached - try refreshing the page
 
 ## Benefits
 

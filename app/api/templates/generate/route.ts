@@ -736,12 +736,16 @@ export async function POST(req: Request) {
       if (libraryImageKeys.length > 0) {
         const now = new Date().toISOString();
         // Update lastUsed for each library image used in this generation
+        // Keys sent from frontend are relative (e.g., "library/image.jpg")
+        // but database stores full keys (e.g., "users/{userId}/library/image.jpg")
         for (const imageKey of libraryImageKeys) {
           try {
-            await db.query(
+            const fullKey = imageKey.startsWith('users/') ? imageKey : `${userRoot}/${imageKey}`;
+            const result = await db.query(
               "UPDATE library_image SET lastUsed = $lastUsed WHERE key = $key AND email = $email;",
-              { key: imageKey, email: user.email, lastUsed: now }
+              { key: fullKey, email: user.email, lastUsed: now }
             );
+            console.log(`Updated lastUsed for ${fullKey}:`, result);
           } catch (updateErr) {
             console.error(`Failed to update lastUsed for ${imageKey}:`, updateErr);
           }
