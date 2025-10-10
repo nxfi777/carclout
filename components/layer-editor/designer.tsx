@@ -30,7 +30,7 @@ type IsolateCutoutConfig = {
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey: _onReplaceBgKey, onTryAgain, onRegenerate, showAnimate, onAnimate, animateCredits, projectState, sourceImageKey, closeOnDownload }: {
+function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey: _onReplaceBgKey, onTryAgain, onRegenerate, showAnimate, onAnimate, animateCredits: _animateCredits, projectState, sourceImageKey, closeOnDownload }: {
   bgKey: string;
   bgBlurhash?: string | null; // Optional blurhash for smooth loading
   rembg?: RembgConfig;
@@ -657,7 +657,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
       section: "desktop-only",
     });
     return list;
-  }, [onTryAgain, onRegenerate, showAnimate, onAnimate, animateCredits, downloading, saving, upscaling, isCuttingOut, hasCutout, isolateCutout, downloadComposite, downloadProject, upscaleBackground, cutoutCar, exportCompositeBlob, bgKey, bgUrl]);
+  }, [onTryAgain, onRegenerate, showAnimate, onAnimate, downloading, saving, upscaling, isCuttingOut, hasCutout, isolateCutout, downloadComposite, downloadProject, upscaleBackground, cutoutCar, exportCompositeBlob, bgKey, bgUrl]);
 
   if (busy) {
     return (

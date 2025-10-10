@@ -37,12 +37,11 @@ function sanitizeModelNames(message: string | undefined): string | undefined {
 import { NextResponse } from "next/server";
 import { getSessionUser, sanitizeUserId } from "@/lib/user";
 import { getSurreal } from "@/lib/surrealdb";
-import { createViewUrl, ensureFolder, r2, bucket } from "@/lib/r2";
-import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { r2, bucket } from "@/lib/r2";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { fal } from "@fal-ai/client";
 import { RecordId } from "surrealdb";
-import { GENERATION_CREDITS_PER_IMAGE, chargeCreditsOnce, getUserRecordIdByEmail } from "@/lib/credits";
-import { validateStorageSpace } from "@/lib/storage";
+import { GENERATION_CREDITS_PER_IMAGE } from "@/lib/credits";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
@@ -225,7 +224,7 @@ export async function POST(req: Request) {
         
         // Get image statistics to determine if preprocessing is needed
         // NOTE: Disable auto-rotation to prevent Sharp from rotating images based on EXIF data
-        const imageStats = await sharp(buffer, { rotate: false }).stats();
+        const imageStats = await sharp(buffer, { autoOrient: false }).stats();
         
         // Calculate average brightness across all channels (0-255 scale)
         const avgBrightness = imageStats.channels.reduce((sum: number, ch: { mean: number }) => sum + ch.mean, 0) / imageStats.channels.length;
@@ -248,7 +247,7 @@ export async function POST(req: Request) {
           
           console.log(`[Image Preprocessing] ${context} - Dark image detected, applying ${brightnessFactor.toFixed(2)}x brightness, ${saturationFactor.toFixed(2)}x saturation`);
           
-          const result = await sharp(buffer, { rotate: false })
+          const result = await sharp(buffer, { autoOrient: false })
             .modulate({
               brightness: brightnessFactor,        // Adaptive brightness increase
               saturation: saturationFactor,        // Intelligent saturation boost
@@ -267,7 +266,7 @@ export async function POST(req: Request) {
         // Check if needs saturation boost
         const saturationFactor = currentSaturation < 15 ? 1.05 : 1.0;
         
-        const result = await sharp(buffer, { rotate: false })
+        const result = await sharp(buffer, { autoOrient: false })
           .modulate({
             saturation: saturationFactor,        // Subtle vibrancy only if desaturated
           })
@@ -412,8 +411,8 @@ export async function POST(req: Request) {
 
           // Use sharp to get dimensions and composite on black background
           const sharp = (await import('sharp')).default;
-          const originalMeta = await sharp(Buffer.from(originalBuffer), { rotate: false }).metadata();
-          const isolatedMeta = await sharp(Buffer.from(isolatedBuffer), { rotate: false }).metadata();
+          const originalMeta = await sharp(Buffer.from(originalBuffer), { autoOrient: false }).metadata();
+          const isolatedMeta = await sharp(Buffer.from(isolatedBuffer), { autoOrient: false }).metadata();
           
           // Use the isolated image dimensions (BiRefNet may resize)
           const width = isolatedMeta.width || originalMeta.width || 1024;
@@ -430,7 +429,7 @@ export async function POST(req: Request) {
           
           if (maskBuffer && shouldCropToAspect && template?.aspectRatio) {
             try {
-              const maskSharp = sharp(Buffer.from(maskBuffer), { rotate: false });
+              const maskSharp = sharp(Buffer.from(maskBuffer), { autoOrient: false });
               const { data, info } = await maskSharp.raw().toBuffer({ resolveWithObject: true });
               
               console.log('[isolateCar] Mask dimensions:', { width: info.width, height: info.height, channels: info.channels });
@@ -475,7 +474,7 @@ export async function POST(req: Request) {
                 });
                 
                 // Extract the car region with padding
-                const carRegionBuffer = await sharp(Buffer.from(isolatedBuffer), { rotate: false })
+                const carRegionBuffer = await sharp(Buffer.from(isolatedBuffer), { autoOrient: false })
                   .extract({ left: carLeft, top: carTop, width: carWidth, height: carHeight })
                   .toBuffer();
                 
@@ -606,7 +605,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Prompt is required for generation" }, { status: 400 });
     }
 
-    let result: any;
+    let _result: any;
     try {
       // Do not charge upfront. We'll charge once the generation successfully completes and is persisted.
       function clampImageSize(w?: number, h?: number): { width: number; height: number } | null {
@@ -647,7 +646,7 @@ export async function POST(req: Request) {
       try { console.log("[FAL ASYNC INPUT]", JSON.stringify({ model: modelSlug, input: falInput }, null, 2)); } catch {}
       
       // Submit to async queue instead of synchronous subscribe
-      const queueResult = await fal.queue.submit(modelSlug, { input: falInput as any });
+      const queueResult = await fal.queue.submit(modelSlug, { input: falInput as any }) as { requestId?: string; request_id?: string };
       const requestId = queueResult?.requestId || queueResult?.request_id;
       
       if (!requestId) {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Dock, { type DockItemData } from '@/components/ui/Dock';
-import { Home, MessagesSquare, Wrench, Play, LayoutTemplate, Music2, Folder, Megaphone, ChartBarIncreasing } from 'lucide-react';
+import { Home, Wrench, Play, LayoutTemplate, Music2, Folder, Megaphone, ChartBarIncreasing } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 export default function HeaderDock() {

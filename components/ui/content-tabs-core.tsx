@@ -32,6 +32,7 @@ import CreditDepletionDrawer from '@/components/credit-depletion-drawer';
 import { useCreditDepletion } from '@/lib/use-credit-depletion';
 import { useAsyncVideoGeneration } from '@/lib/use-async-video-generation';
 import { useAsyncImageGeneration } from '@/lib/use-async-image-generation';
+import { estimateVideoCredits, estimateVideoUpscaleCredits } from '@/lib/credits-client';
 
 type DeleteTarget =
   | { type: 'library'; key: string; name: string }
@@ -624,7 +625,7 @@ export function TemplatesTabContent(){
   const [uploadedPreviews, setUploadedPreviews] = useState<Record<string, string>>({});
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, File>>({});
   const [busy, setBusy] = useState(false);
-  const [manualBusy, setManualBusy] = useState(false); // For non-async operations
+  const [_manualBusy, _setManualBusy] = useState(false); // For non-async operations
   // const [dominantTone, setDominantTone] = useState<string>("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultKey, setResultKey] = useState<string | null>(null);
@@ -1534,7 +1535,6 @@ export function TemplatesTabContent(){
     if (!animConfirmOpen || !animDuration) return;
     
     try {
-      const { estimateVideoCredits } = require('@/lib/credits-client');
       const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro' } | null | undefined;
       const duration = Number(animDuration);
       const resolution = (v?.resolution || (v?.provider === 'sora2' || v?.provider === 'sora2_pro' ? '720p' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
@@ -1718,7 +1718,7 @@ export function TemplatesTabContent(){
     });
   }
 
-  async function autoCropAndGenerateFromUrl(safeUrl: string, targetAspect: number) {
+  async function _autoCropAndGenerateFromUrl(safeUrl: string, targetAspect: number) {
     // Fetch image and crop minimally to exact aspect ratio, then finalize
     const img = await new Promise<HTMLImageElement | null>((resolve)=>{ try { const el = new Image(); el.onload=()=> resolve(el); el.onerror=()=> resolve(null); el.src = safeUrl; } catch { resolve(null); } });
     if (!img) return;
@@ -1787,17 +1787,17 @@ export function TemplatesTabContent(){
 
       // Aspect ratio enforcement based on active template
       // Always check aspect ratio client-side to show cropper BEFORE generation (including isolate mask)
-      const willIsolateCar = getActualIsolateCar();
+      const _willIsolateCar = getActualIsolateCar();
       
       const t = activeTemplate;
       if (t?.fixedAspectRatio && typeof t?.aspectRatio === 'number' && selectedFullKey) {
         try {
           // For temp keys, use the object URL directly
-          let url: string | null = null;
+          let _url: string | null = null;
           if (selectedFullKey.startsWith('temp-')) {
-            url = uploadedPreviews[selectedFullKey] || null;
+            _url = uploadedPreviews[selectedFullKey] || null;
           } else {
-            url = await getViewUrl(selectedFullKey);
+            _url = await getViewUrl(selectedFullKey);
           }
         } catch {}
       }
@@ -2114,8 +2114,6 @@ export function TemplatesTabContent(){
                               const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : v?.provider === 'sora2_pro' ? 'sora2_pro' : 'seedance';
                               const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
                               const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
-                              // Import is async, so we'll calculate using the same function inline
-                              const { estimateVideoCredits } = require('@/lib/credits-client');
                               const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
                               return (
                                 <div className="text-xs text-purple-400/70 text-center px-2">
@@ -2238,7 +2236,6 @@ export function TemplatesTabContent(){
                               const heights: Record<string, number> = { 'auto': 1080, '480p': 480, '720p': 720, '1080p': 1080 };
                               const height = heights[resolution] || 1080;
                               const width = Math.round(height * (16 / 9)); // Assume 16:9 aspect for estimate
-                              const { estimateVideoUpscaleCredits } = require('@/lib/credits-client');
                               const credits = estimateVideoUpscaleCredits(duration, width, height, fps, 2);
                               return (
                                 <div className="text-xs text-indigo-400/70 text-center px-2">
@@ -2336,7 +2333,6 @@ export function TemplatesTabContent(){
                       try {
                         const v = activeTemplate?.video as { enabled?: boolean; duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro' } | null | undefined;
                         if (!v || !v.enabled) return undefined;
-                        const { estimateVideoCredits } = require('@/lib/credits-client');
                         const duration = Number(v?.duration || 5);
                         const resolution = (v?.resolution || (v?.provider === 'sora2' || v?.provider === 'sora2_pro' ? '720p' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
                         const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : v?.provider === 'sora2_pro' ? 'sora2_pro' : 'seedance';

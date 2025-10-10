@@ -917,7 +917,9 @@ function DashboardShowroomPageInner() {
           // Clear the unread count for this email immediately
           setUnreadByEmail(prev => {
             const next = { ...prev };
-            delete next[activeDm.email];
+            if (activeDm?.email) {
+              delete next[activeDm.email];
+            }
             return next;
           });
           
@@ -2049,7 +2051,7 @@ function DashboardShowroomPageInner() {
                           try { await fetch('/api/chat/dm/hidden', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherEmail: u.email }) }); } catch {}
                         }
                       }}
-                      onContextMenu={(e)=>{
+                      onContextMenu={(_e)=>{
                         // Allow right-click to open context menu naturally
                       }}
                       className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 cursor-pointer ${showroomView==='showroom' && activeChatType==='dm' && activeDm?.email===u.email? 'bg-white/10' : 'hover:bg-white/5'}`}

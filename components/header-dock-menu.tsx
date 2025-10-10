@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Menu, Home, Play, LayoutTemplate, Music2, MessagesSquare, Folder, Megaphone, Wrench } from 'lucide-react';
+import { Menu, Home, Play, LayoutTemplate, Music2, Folder, Megaphone, Wrench } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 type DockItem = {

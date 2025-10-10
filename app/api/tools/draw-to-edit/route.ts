@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/user";
-import { adjustCredits } from "@/lib/credits";
 import { getSurreal } from "@/lib/surrealdb";
-import { r2 } from "@/lib/r2";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { sanitizeUserId } from "@/lib/user";
 import { fal } from "@fal-ai/client";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
-const bucket = process.env.R2_BUCKET || "";
+const _bucket = process.env.R2_BUCKET || "";
 
 type DrawToEditRequest = {
   prompt: string;
@@ -71,7 +67,7 @@ async function detectCarOverlap(
   }
 }
 
-async function stitchImages(
+async function _stitchImages(
   originalImageDataUrl: string,
   editedRegionDataUrl: string,
   boundingBox: { x: number; y: number; width: number; height: number }
@@ -170,7 +166,7 @@ export async function POST(req: Request) {
     });
 
     // Submit to async queue
-    let queueResult: any;
+    let queueResult: { requestId?: string; request_id?: string } | undefined;
     try {
       queueResult = await fal.queue.submit("fal-ai/gemini-25-flash-image/edit", {
         input: {

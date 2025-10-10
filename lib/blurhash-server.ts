@@ -21,7 +21,7 @@ export async function generateBlurHash(
 ): Promise<string> {
   try {
     // Resize image to small size for fast processing (32x32)
-    const { data, info } = await sharp(imageBuffer, { rotate: false })
+    const { data, info } = await sharp(imageBuffer, { autoOrient: false })
       .resize(32, 32, { fit: 'inside' })
       .ensureAlpha()
       .raw()
@@ -84,7 +84,7 @@ export async function generateBlurHashFromFile(
   componentY = 3
 ): Promise<string> {
   try {
-    const { data, info } = await sharp(filePath, { rotate: false })
+    const { data, info } = await sharp(filePath, { autoOrient: false })
       .resize(32, 32, { fit: 'inside' })
       .ensureAlpha()
       .raw()

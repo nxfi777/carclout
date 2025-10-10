@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { fal } from "@fal-ai/client";
-import { getSessionUser, sanitizeUserId } from "@/lib/user";
-import { createViewUrl, ensureFolder, r2, bucket } from "@/lib/r2";
-import { chargeCreditsOnce } from "@/lib/credits";
-import { PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { generateBlurHash } from "@/lib/blurhash-server";
+import { getSessionUser } from "@/lib/user";
+import { createViewUrl } from "@/lib/r2";
 import { getSurreal } from "@/lib/surrealdb";
-import type { LibraryImage } from "@/lib/library-image";
-import sharp from "sharp";
 
 fal.config({ credentials: process.env.FAL_KEY || "" });
 
@@ -73,7 +68,7 @@ export async function POST(req: Request) {
     }
 
     // Submit to async queue
-    let queueResult: any;
+    let queueResult: { requestId?: string; request_id?: string } | undefined;
     try {
       queueResult = await fal.queue.submit("fal-ai/clarity-upscaler", { input });
     } catch (err) {

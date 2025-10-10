@@ -211,7 +211,7 @@ export async function GET(req: Request) {
         return NextResponse.json({ status: 'failed', error: 'Failed to download output' });
       }
 
-      let outputBlob = await outputResponse.blob();
+      const outputBlob = await outputResponse.blob();
       let outputBuffer = Buffer.from(await outputBlob.arrayBuffer());
 
       // Handle draw-to-edit stitching
@@ -226,7 +226,8 @@ export async function GET(req: Request) {
             const editedDataUrl = `data:image/png;base64,${outputBuffer.toString('base64')}`;
             
             // Stitch the edited region back onto the original image
-            outputBuffer = await stitchImages(originalImageDataUrl, editedDataUrl, boundingBox);
+            const stitchedBuffer = await stitchImages(originalImageDataUrl, editedDataUrl, boundingBox);
+            outputBuffer = Buffer.from(stitchedBuffer);
             console.log(`[TOOL JOB ${jobId}] Stitching complete`);
           } catch (stitchErr) {
             console.error(`[TOOL JOB ${jobId}] Stitching failed:`, stitchErr);

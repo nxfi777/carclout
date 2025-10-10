@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     try {
       blurhash = await generateBlurHash(imageBuffer, 4, 3);
       // Get image dimensions
-      const metadata = await sharp(imageBuffer, { rotate: false }).metadata();
+      const metadata = await sharp(imageBuffer, { autoOrient: false }).metadata();
       width = metadata.width;
       height = metadata.height;
     } catch (error) {

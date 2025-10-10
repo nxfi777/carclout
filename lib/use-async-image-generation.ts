@@ -41,7 +41,7 @@ export function useAsyncImageGeneration() {
         body: JSON.stringify(options)
       });
       
-      let out: any = {};
+      let out: { jobId?: string; requiresCropping?: boolean; error?: string } = {};
       try {
         const text = await resp.text();
         console.log('[IMAGE] Response status:', resp.status, 'body length:', text.length);
