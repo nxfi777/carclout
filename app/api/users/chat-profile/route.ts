@@ -81,4 +81,45 @@ export async function GET(req: Request) {
   }
 }
 
+// POST endpoint for bulk profile fetching (more scalable than query params)
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const emails = Array.isArray(body.emails) ? body.emails : [];
+    const uniq = Array.from(new Set(emails.map((e: unknown) => String(e || "").toLowerCase()).filter((s: string)=> s && /@/.test(s)))).slice(0, 200);
+    if (!uniq.length) return NextResponse.json({ profiles: {} });
+    
+    const db = await getSurreal();
+    const res = await db.query(
+      "SELECT email, displayName, name, image, vehicles, carPhotos, chatProfilePhotos, bio FROM user WHERE email IN $emails LIMIT 10000;",
+      { emails: uniq }
+    );
+    const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as Array<Record<string, unknown>>) : [];
+    const out: Record<string, { name?: string; image?: string; vehicles?: VehicleDb[]; photos?: string[]; bio?: string }> = {};
+    
+    for (const rowRaw of rows) {
+      const em: string | undefined = typeof (rowRaw as { email?: unknown })?.email === 'string' ? (rowRaw as { email: string }).email.toLowerCase() : undefined;
+      if (!em) continue;
+      const displayName: string | undefined = typeof (rowRaw as { displayName?: unknown })?.displayName === 'string' ? (rowRaw as { displayName: string }).displayName : undefined;
+      const name: string | undefined = typeof rowRaw?.name === 'string' ? (rowRaw.name as string) : undefined;
+      const image: string | undefined = typeof rowRaw?.image === 'string' ? (rowRaw.image as string) : undefined;
+      const vehicles: VehicleDb[] = Array.isArray((rowRaw as { vehicles?: unknown })?.vehicles) ? (rowRaw as { vehicles?: unknown }).vehicles as VehicleDb[] : [];
+      const vehiclePhotosFlat: string[] = Array.isArray((rowRaw as { vehicles?: unknown })?.vehicles)
+        ? ((rowRaw as { vehicles?: unknown }).vehicles as Array<{ photos?: unknown }>).flatMap(v => Array.isArray(v?.photos) ? (v.photos as unknown[]).filter((x)=> typeof x === 'string') as string[] : [])
+        : [];
+      const carPhotos: string[] = vehiclePhotosFlat.length
+        ? vehiclePhotosFlat
+        : (Array.isArray((rowRaw as { carPhotos?: unknown })?.carPhotos) ? ((rowRaw as { carPhotos?: unknown }).carPhotos as unknown[]).filter((x: unknown) => typeof x === "string") as string[] : []);
+      const chatProfilePhotosRaw: string[] = Array.isArray((rowRaw as { chatProfilePhotos?: unknown })?.chatProfilePhotos) ? ((rowRaw as { chatProfilePhotos?: unknown }).chatProfilePhotos as unknown[]).filter((x: unknown) => typeof x === "string") as string[] : [];
+      const chatPhotos: string[] = (chatProfilePhotosRaw.length ? chatProfilePhotosRaw : carPhotos).slice(0, 6);
+      const bio: string | undefined = typeof rowRaw?.bio === 'string' ? rowRaw.bio : undefined;
+      out[em] = { name: (displayName && displayName.trim()) ? displayName : name, image, vehicles, photos: chatPhotos, bio };
+    }
+    return NextResponse.json({ profiles: out });
+  } catch (err) {
+    console.error("[chat-profile POST]", err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}
+
 

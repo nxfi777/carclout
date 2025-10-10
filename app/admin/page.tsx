@@ -770,7 +770,6 @@ function UserCreditsSearch(){
                       <SelectContent>
                         <SelectItem value="none">None</SelectItem>
                         <SelectItem value="minimum">Minimum</SelectItem>
-                        <SelectItem value="pro">Pro</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -1076,8 +1075,7 @@ function NewTemplateButton(){
   const builtIn = useMemo(() => new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]), []);
   const [tokenConfigs, setTokenConfigs] = useState<Record<string, { kind: 'input' | 'select' | 'color'; options: string[]; defaultValue?: string }>>({});
   const [selectedThumbAdminIndex, setSelectedThumbAdminIndex] = useState<number | null>(null);
-  const [templateFixedAspect, setTemplateFixedAspect] = useState<boolean>(true);
-  const [aspectRatio, setAspectRatio] = useState<number | null>(0.8); // Default to 4:5
+  const [aspectRatio, setAspectRatio] = useState<number | null>(0.8); // Default to 4:5 (null = freeform)
   const [allowVehicle, setAllowVehicle] = useState<boolean>(true);
   const [allowUser, setAllowUser] = useState<boolean>(true);
   const [proOnly, setProOnly] = useState<boolean>(false);
@@ -1268,8 +1266,8 @@ function NewTemplateButton(){
         falModelSlug,
         thumbnailKey: thumbnailKey || undefined,
         adminImageKeys,
-        fixedAspectRatio: templateFixedAspect,
-        aspectRatio: templateFixedAspect ? aspectRatio || undefined : undefined,
+        fixedAspectRatio: aspectRatio !== null,
+        aspectRatio: aspectRatio !== null ? aspectRatio || undefined : undefined,
         variables: unknownVarDefs,
         allowedImageSources,
         maxUploadImages: ((): number | undefined => {
@@ -1317,7 +1315,7 @@ function NewTemplateButton(){
             <div className="flex items-center justify-between gap-2">
               <div className="space-y-1">
                 <div className="text-sm font-medium">Aspect ratio</div>
-                <div className="text-xs text-white/60">Set the template&apos;s aspect ratio. User images will be cropped to match.</div>
+                <div className="text-xs text-white/60">Set to enforce a specific aspect ratio, or clear for freeform (any aspect).</div>
               </div>
               <AspectRatioSelector 
                 value={aspectRatio} 
@@ -1325,13 +1323,6 @@ function NewTemplateButton(){
                 onDetectFromImage={detectAspectRatioFromImage}
                 canDetect={adminImageFiles.length > 0}
               />
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">Enforce fixed aspect ratio</div>
-                <div className="text-xs text-white/60">If enabled, users must crop their images to match the aspect ratio.</div>
-              </div>
-              <Switch checked={templateFixedAspect} onCheckedChange={(v)=> setTemplateFixedAspect(!!v)} />
             </div>
             {/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug) ? (
               <div className="flex items-center justify-between gap-2">
@@ -1750,9 +1741,6 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [activeUrl, setActiveUrl] = useState<string | null>(null);
   const [upscaleBusy, setUpscaleBusy] = useState<boolean>(false);
-  const [cropOpen, setCropOpen] = useState(false);
-  const [cropUrl, setCropUrl] = useState<string | null>(null);
-  const [pendingKeys, setPendingKeys] = useState<string[] | null>(null);
   const [masking, setMasking] = useState<boolean>(false);
   // Designer state
   const [designing, setDesigning] = useState<boolean>(false);
@@ -1885,25 +1873,6 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
       const rel = m ? m[1] : k.replace(/^users\//,'');
       userImageKeys.push(rel.replace(/^\/+/,''));
     }
-    // Aspect ratio enforcement
-    if (template?.fixedAspectRatio && typeof template?.aspectRatio === 'number' && selectedFullKey) {
-      try {
-        const url = await getUrlForKey(selectedFullKey);
-        if (url) {
-          const dims = await readImageDims(url);
-          if (dims && dims.w > 0 && dims.h > 0) {
-            const ar = dims.w / dims.h;
-            if (ratioMismatch(ar, Number(template.aspectRatio))) {
-              setPendingKeys([]);
-              // Use same-origin proxy for cropping to avoid CORS/tainted canvas
-              setCropUrl(`/api/storage/file?key=${encodeURIComponent(selectedFullKey)}`);
-              setCropOpen(true);
-              return; // wait for crop flow
-            }
-          }
-        }
-      } catch {}
-    }
     // Proceed without cropping
     const variables: Record<string,string> = {};
     const tokensInPrompt = new Set(String(template?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m:string)=> m.replace(/^[\[]|[\]]$/g,'')) || []);
@@ -1921,32 +1890,6 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
       const payload: GeneratePayload = { templateId: template?.id, templateSlug: template?.slug, userImageKeys, variables };
       const res = await fetch('/api/templates/generate',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); let data: { url?: string; key?: string; error?: string } = {}; try { data = await res.json(); } catch { data = {}; } if (!res.ok) { toast.error(data?.error || 'Generation failed'); return; } if (data?.url) setResultUrl(String(data.url)); if (data?.key) setResultKey(String(data.key)); if (data?.url) setActiveUrl(String(data.url)); if (data?.key) setActiveKey(String(data.key)); setUpscales([]);
     } finally { setBusy(false); }
-  }
-
-  function blobToDataUrl(blob: Blob): Promise<string> { return new Promise((resolve)=>{ const fr = new FileReader(); fr.onloadend = ()=> resolve(String(fr.result||'')); fr.readAsDataURL(blob); }); }
-
-  async function onCroppedBlob(blob: Blob){
-    setCropOpen(false);
-    const dataUrl = await blobToDataUrl(blob);
-    const variables: Record<string,string> = {};
-    const tokensInPrompt = new Set(String(template?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m:string)=> m.replace(/^[\[]|[\]]$/g,'')) || []);
-    if (source !== 'vehicle') {
-      const builtinNeeded = ['BRAND','MODEL','COLOR_FINISH','ACCENTS'].filter((k)=> tokensInPrompt.has(k));
-      const missing: string[] = [];
-      for (const k of builtinNeeded){ const val = varState[k] || ''; if (val) variables[k]=val; else missing.push(k); }
-      if (builtinNeeded.length && missing.length){ toast.error(`Please fill: ${missing.join(', ')}`); setBusy(false); setPendingKeys(null); setCropUrl(null); return; }
-    }
-    const vars = Array.isArray(template?.variables)? (template.variables as TemplateVariableDef[]) : [];
-    for (const v of vars){ const key = String(v?.key||'').trim(); if (!key || ['BRAND','MODEL','COLOR_FINISH','ACCENTS','COLOR_FINISH_ACCENTS'].includes(key)) continue; if (!tokensInPrompt.has(key)) continue; const val = varState[key] || ''; if (val) variables[key]=val; }
-    setBusy(true);
-    try {
-      const payload: GeneratePayload = { templateId: template?.id, templateSlug: template?.slug, userImageKeys: pendingKeys || [], userImageDataUrls: [dataUrl], variables };
-      const res = await fetch('/api/templates/generate',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); let data: { url?: string; key?: string; error?: string } = {}; try { data = await res.json(); } catch { data = {}; } if (!res.ok) { toast.error(data?.error || 'Generation failed'); return; } if (data?.url) setResultUrl(String(data.url)); if (data?.key) setResultKey(String(data.key));
-    } finally {
-      setBusy(false);
-      setPendingKeys(null);
-      setCropUrl(null);
-    }
   }
 
   async function openDesigner(){
@@ -2143,14 +2086,6 @@ function AdminTestTemplate({ template }: { template: TemplateDisplay }){
       <div><Button className="w-full" onClick={generate} disabled={busy}>Generate</Button></div>
         </>
       )}
-      <FixedAspectCropper
-        open={cropOpen}
-        imageUrl={cropUrl}
-        aspectRatio={typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : 1}
-        title="Crop image to match template"
-        onCancel={()=>{ setCropOpen(false); setCropUrl(null); setPendingKeys(null); }}
-        onCropped={onCroppedBlob}
-      />
     </div>
   );
 }
@@ -2164,8 +2099,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
   const [busy, setBusy] = useState(false);
   const builtIn = useMemo(() => new Set(["BRAND","BRAND_CAPS","MODEL","COLOR_FINISH","ACCENTS","COLOR_FINISH_ACCENTS"]), []);
   const [tokenConfigs, setTokenConfigs] = useState<Record<string, { kind: 'input' | 'select' | 'color'; options: string[]; defaultValue?: string }>>({});
-  const [editorFixedAspect, setEditorFixedAspect] = useState<boolean>(!!template?.fixedAspectRatio);
-  const [aspectRatio, setAspectRatio] = useState<number | undefined>(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : 0.8); // Default to 4:5
+  const [aspectRatio, setAspectRatio] = useState<number | null>(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : 0.8); // Default to 4:5 (null = freeform)
   const [imageWidth, setImageWidth] = useState<number>(()=>{ try{ const w = Number((template?.imageSize?.width) || 1280); return Math.max(1024, Math.min(4096, Math.round(w))); } catch { return 1280; } });
   const [imageHeight, setImageHeight] = useState<number>(()=>{ try{ const h = Number((template?.imageSize?.height) || 1280); return Math.max(1024, Math.min(4096, Math.round(h))); } catch { return 1280; } });
   const [allowVehicle, setAllowVehicle] = useState<boolean>(() => {
@@ -2373,8 +2307,7 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
     setFalModelSlug(String(template?.falModelSlug || 'fal-ai/gemini-25-flash-image/edit'));
     setDescription(String(template?.description || ''));
     setPrompt(String(template?.prompt || ''));
-    setEditorFixedAspect(!!template?.fixedAspectRatio);
-    setAspectRatio(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : 0.8);
+    setAspectRatio(typeof template?.aspectRatio === 'number' ? Number(template.aspectRatio) : null);
     try { const w = Number((template?.imageSize?.width) || 1280); setImageWidth(Math.max(1024, Math.min(4096, Math.round(w)))); } catch {}
     try { const h = Number((template?.imageSize?.height) || 1280); setImageHeight(Math.max(1024, Math.min(4096, Math.round(h)))); } catch {}
     try {
@@ -2544,8 +2477,8 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
         falModelSlug: falModelSlug || undefined,
         variables: unknownVarDefs,
         imageSize: { width: imageWidth, height: imageHeight },
-        fixedAspectRatio: editorFixedAspect,
-        aspectRatio: editorFixedAspect ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined,
+        fixedAspectRatio: aspectRatio !== null,
+        aspectRatio: aspectRatio !== null ? (typeof aspectRatio === 'number' ? Number(aspectRatio) : undefined) : undefined,
         allowedImageSources,
         proOnly: !!proOnly,
         status,
@@ -2647,21 +2580,14 @@ function AdminEditTemplate({ template, onSaved }: { template: TemplateDisplay; o
       <div className="flex items-center justify-between gap-2">
         <div className="space-y-1">
           <div className="text-sm font-medium">Aspect ratio</div>
-          <div className="text-xs text-white/60">Set the template&apos;s aspect ratio. User images will be cropped to match.</div>
+          <div className="text-xs text-white/60">Set to enforce a specific aspect ratio, or clear for freeform (any aspect).</div>
         </div>
         <AspectRatioSelector 
           value={aspectRatio ?? null} 
-          onChange={(v) => setAspectRatio(v ?? undefined)}
+          onChange={(v) => setAspectRatio(v ?? null)}
           onDetectFromImage={detectAspectRatioFromImage}
           canDetect={adminNewFiles.length > 0 || adminExistingKeys.length > 0}
         />
-      </div>
-      <div className="flex items-center justify-between gap-2">
-        <div className="space-y-1">
-          <div className="text-sm font-medium">Enforce fixed aspect ratio</div>
-          <div className="text-xs text-white/60">If enabled, users must crop their images to match the aspect ratio.</div>
-        </div>
-        <Switch checked={editorFixedAspect} onCheckedChange={(v)=> setEditorFixedAspect(!!v)} />
       </div>
       {/bytedance\/seedream\/v4\/edit$/i.test(falModelSlug) ? (
         <div className="flex items-center justify-between gap-2">

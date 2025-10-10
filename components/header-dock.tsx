@@ -7,7 +7,9 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 export default function HeaderDock() {
   const [mounted, setMounted] = useState(false);
+  
   useEffect(() => { setMounted(true); }, []);
+  
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -27,7 +29,7 @@ export default function HeaderDock() {
         { icon: <Play size={16} />, label: 'Hooks', href: '/dashboard/hooks', onClick: () => router.push('/dashboard/hooks') },
         { icon: <LayoutTemplate size={16} />, label: 'Templates', href: '/dashboard/templates', onClick: () => router.push('/dashboard/templates') },
         { icon: <Music2 size={16} />, label: 'Suggestions', href: '/dashboard/suggestions', onClick: () => router.push('/dashboard/suggestions') },
-        { icon: <MessagesSquare size={16} />, label: 'Showroom', href: '/dashboard/showroom', onClick: () => router.push('/dashboard/showroom') },
+        // { icon: <MessagesSquare size={16} />, label: 'Showroom', href: '/dashboard/showroom', onClick: () => router.push('/dashboard/showroom'), badge: unreadDmCount },
         { icon: <Folder size={16} />, label: 'Workspace', href: '/dashboard/workspace', onClick: () => router.push('/dashboard/workspace') },
       ];
       return arr;

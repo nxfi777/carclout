@@ -13,15 +13,14 @@ export async function POST(req: Request) {
 	const { targetEmail, plan } = await req.json().catch(()=>({} as Record<string, unknown>));
 	
 	// Validate plan value (legacy aliases normalize to canonical plan ids)
-	const validPlans = ["minimum", "pro", "ultra", null] as const;
+	const validPlans = ["minimum", null] as const;
 	const normalizedPlan = typeof plan === "string" ? plan.trim().toLowerCase() : plan;
 	const allowedPlan = normalizedPlan === null || validPlans.includes(normalizedPlan as (typeof validPlans)[number])
 		? normalizedPlan
 		: normalizedPlan === "basic" || normalizedPlan === "base" ? "minimum"
-		: normalizedPlan === "premium" ? "pro"
 		: normalizedPlan;
 	if (!targetEmail || (allowedPlan !== null && !validPlans.includes(allowedPlan as (typeof validPlans)[number]))) {
-		return NextResponse.json({ error: "targetEmail and valid plan required (minimum, pro, ultra, or null)" }, { status: 400 });
+		return NextResponse.json({ error: "targetEmail and valid plan required (minimum or null)" }, { status: 400 });
 	}
 	
 	try {

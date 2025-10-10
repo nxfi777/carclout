@@ -24,7 +24,6 @@ import { PiArrowBendRightUp, PiTextHFill } from "react-icons/pi";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { SHOW_IMAGE_TOOL } from "@/components/layer-editor/config";
-import ElectricBorder from "@/components/electric-border";
 
 const FONT_FAMILIES = [
   "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
@@ -1667,10 +1666,64 @@ function DesignerActionButton({ action }: { action: import("@/components/layer-e
   );
 
   if (action.electric) {
+    const color = "#8b5cf6"; // indigo/purple
+    const thickness = 2;
+    
     return (
-      <ElectricBorder color="#8b5cf6" speed={1} chaos={0.6} thickness={2} className="rounded-md">
-        {content}
-      </ElectricBorder>
+      <div className="relative isolate overflow-visible z-0 rounded-md">
+        <div className="absolute inset-0 pointer-events-none rounded-[inherit] z-[2]">
+          <div className="absolute inset-0 rounded-[inherit]">
+            {/* Main stroke */}
+            <div 
+              className="absolute inset-0 box-border rounded-[inherit]"
+              style={{
+                borderWidth: thickness,
+                borderStyle: "solid",
+                borderColor: color,
+              }}
+            />
+            {/* Clipped glows */}
+            <div className="absolute inset-0 overflow-hidden rounded-[inherit]">
+              {/* Glow 1 */}
+              <div 
+                className="absolute inset-0 box-border rounded-[inherit]"
+                style={{
+                  borderWidth: thickness,
+                  borderStyle: "solid",
+                  borderColor: `rgba(139, 92, 246, 0.6)`,
+                  filter: `blur(${0.5 + thickness * 0.25}px)`,
+                  opacity: 0.5,
+                }}
+              />
+              {/* Glow 2 */}
+              <div 
+                className="absolute inset-0 box-border rounded-[inherit]"
+                style={{
+                  borderWidth: thickness,
+                  borderStyle: "solid",
+                  borderColor: color,
+                  filter: `blur(${2 + thickness * 0.5}px)`,
+                  opacity: 0.5,
+                }}
+              />
+              {/* Background glow */}
+              <div 
+                className="absolute inset-0 rounded-[inherit]"
+                style={{
+                  transform: "scale(1.08)",
+                  filter: "blur(32px)",
+                  opacity: 0.3,
+                  zIndex: -1,
+                  background: `linear-gradient(-30deg, rgba(139, 92, 246, 0.8), transparent, ${color})`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="relative h-full rounded-[inherit] z-[1]">
+          {content}
+        </div>
+      </div>
     );
   }
 

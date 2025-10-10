@@ -20,10 +20,8 @@ import { Switch } from '@/components/ui/switch';
 import dynamic from 'next/dynamic';
 import carLoadAnimation from '@/public/carload.json';
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
-import FixedAspectCropper from '@/components/ui/fixed-aspect-cropper';
 import { toast } from 'sonner';
 import { UploadIcon, ChevronRight, SquarePlus, SquareCheckBig, RotateCw, X, Loader2 } from 'lucide-react';
-import { confirmToast } from '@/components/ui/toast-helpers';
 import { TemplateCard } from '@/components/templates/template-card';
 import { DropZone } from '@/components/ui/drop-zone';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
@@ -33,6 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import CreditDepletionDrawer from '@/components/credit-depletion-drawer';
 import { useCreditDepletion } from '@/lib/use-credit-depletion';
 import { useAsyncVideoGeneration } from '@/lib/use-async-video-generation';
+import { useAsyncImageGeneration } from '@/lib/use-async-image-generation';
 
 type DeleteTarget =
   | { type: 'library'; key: string; name: string }
@@ -625,6 +624,7 @@ export function TemplatesTabContent(){
   const [uploadedPreviews, setUploadedPreviews] = useState<Record<string, string>>({});
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, File>>({});
   const [busy, setBusy] = useState(false);
+  const [manualBusy, setManualBusy] = useState(false); // For non-async operations
   // const [dominantTone, setDominantTone] = useState<string>("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultKey, setResultKey] = useState<string | null>(null);
@@ -634,9 +634,6 @@ export function TemplatesTabContent(){
   const [activeUrl, setActiveUrl] = useState<string | null>(null);
   const [upscaleBusy, setUpscaleBusy] = useState<boolean>(false);
   const [_interpolateBusy, _setInterpolateBusy] = useState<boolean>(false);
-  const [cropOpen, setCropOpen] = useState(false);
-  const [cropUrl, setCropUrl] = useState<string | null>(null);
-  const [pendingKeys, setPendingKeys] = useState<string[] | null>(null);
   // Video animation modal state
   const [animConfirmOpen, setAnimConfirmOpen] = useState(false);
   const [animBusy, setAnimBusy] = useState(false);
@@ -658,6 +655,16 @@ export function TemplatesTabContent(){
   const [upscaledVideoKey, setUpscaledVideoKey] = useState<string | null>(null);
   const [upscaledVideoUrl, setUpscaledVideoUrl] = useState<string | null>(null);
   const [showingUpscaled, setShowingUpscaled] = useState(false);
+  const [canUpscaleVideo, setCanUpscaleVideo] = useState(true); // Track if video can be upscaled
+
+  // Video generation params for regenerate
+  const [videoGenerationParams, setVideoGenerationParams] = useState<{
+    templateId?: string;
+    templateSlug?: string;
+    startBlob?: Blob;
+    duration?: string;
+    variables?: Record<string, string>;
+  } | null>(null);
 
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -677,6 +684,7 @@ export function TemplatesTabContent(){
   // Credit depletion drawer hook
   const creditDepletion = useCreditDepletion();
   const videoGeneration = useAsyncVideoGeneration();
+  const imageGeneration = useAsyncImageGeneration();
 
   // Helper function to get deselect message based on where images are selected from
   const getDeselectMessage = useCallback(() => {
@@ -728,13 +736,18 @@ export function TemplatesTabContent(){
         setSelectedImageKeys((prev) => prev.filter((key) => key !== targetKey));
         toast.success('Deleted');
       } else if (deleteTarget.type === 'generated-video') {
-        const folder = targetKey.replace(/\/[^\\/]+$/, '/').replace(/\/[^/]+$/, '/').replace(/\/+/g, '/').replace(/\/$/, '/');
-        const normalized = folder || targetKey.replace(/\/[^/]+$/, '/');
-        if (normalized) {
-          await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key: normalized, isFolder: true }) });
-        }
+        // Videos are stored as single files, not in folders - just delete the file
+        await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key: targetKey, isFolder: false }) });
         setAnimResultUrl(null);
         setAnimResultKey(null);
+        // Reset upscaling state
+        setOriginalVideoKey(null);
+        setOriginalVideoUrl(null);
+        setCanUpscaleVideo(true);
+        setUpscaledVideoKey(null);
+        setUpscaledVideoUrl(null);
+        setShowingUpscaled(false);
+        setUpscaleBusy(false);
         toast.success('Deleted');
       } else if (deleteTarget.type === 'generated-image') {
         await fetch('/api/tools/generations/image', { method: 'DELETE', body: JSON.stringify({ key: targetKey }) });
@@ -776,9 +789,6 @@ export function TemplatesTabContent(){
       setActiveKey(null);
       setActiveUrl(null);
       setUpscaleBusy(false);
-      setCropOpen(false);
-      setCropUrl(null);
-      setPendingKeys(null);
       setBusy(false);
       // Ensure fresh start: clear any previously selected images
       setSelectedImageKeys([]);
@@ -791,6 +801,7 @@ export function TemplatesTabContent(){
       setAnimResultUrl(null);
       setAnimResultKey(null);
       setAnimLoading(false);
+      setCanUpscaleVideo(true);
       // Clear generation params
       setGenerationParams(null);
     } catch {}
@@ -899,6 +910,25 @@ export function TemplatesTabContent(){
                   fps: ((): number | undefined => { const n = Number((v as { fps?: unknown })?.fps); return Number.isFinite(n) && n>0 ? Math.round(n) : undefined; })(),
                   provider: (v as { provider?: unknown })?.provider as 'seedance'|'kling2_5'|'sora2'|'sora2_pro' | undefined,
                   allowedDurations: Array.isArray((v as { allowedDurations?: unknown })?.allowedDurations) ? ((v as { allowedDurations?: unknown })?.allowedDurations as Array<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>) : undefined,
+                };
+              }
+              return null;
+            })(),
+            isolateCar: (()=> {
+              const ic = (t as { isolateCar?: unknown })?.isolateCar as Record<string, unknown> | undefined;
+              if (ic && typeof ic === 'object') {
+                return {
+                  mode: (ic.mode === 'user_choice' || ic.mode === 'force_on' || ic.mode === 'force_off') ? ic.mode as 'user_choice' | 'force_on' | 'force_off' : undefined,
+                  defaultEnabled: typeof ic.defaultEnabled === 'boolean' ? ic.defaultEnabled : undefined,
+                };
+              }
+              return null;
+            })(),
+            designerCutout: (()=> {
+              const dc = (t as { designerCutout?: unknown })?.designerCutout as Record<string, unknown> | undefined;
+              if (dc && typeof dc === 'object') {
+                return {
+                  mode: (dc.mode === 'user_choice' || dc.mode === 'force_on' || dc.mode === 'force_off') ? dc.mode as 'user_choice' | 'force_on' | 'force_off' : undefined,
                 };
               }
               return null;
@@ -1399,36 +1429,29 @@ export function TemplatesTabContent(){
     if (!generationParams) return;
     
     try {
-      setBusy(true);
-      const res = await fetch('/api/templates/generate', { 
-        method:'POST', 
-        headers:{'Content-Type':'application/json'}, 
-        body: JSON.stringify(generationParams) 
+      // Use async generation hook with polling
+      await imageGeneration.generate(generationParams, {
+        onComplete: (result) => {
+          setResultUrl(result.url);
+          setResultKey(result.key);
+          setActiveUrl(result.url);
+          setActiveKey(result.key);
+          // Notify designer to reload the background image
+          handleDesignerReplaceBgKey(result.key, result.url);
+          setUpscales([]);
+          toast.success('Regenerated successfully');
+        },
+        onError: (error) => {
+          console.error('Regenerate error:', error);
+        },
+        onInsufficientCredits: () => {
+          creditDepletion.checkAndTrigger(0, 100);
+        }
       });
-      let d: unknown = {};
-      try { d = await res.json(); } catch { d = {}; }
-      const data = d as Record<string, unknown>;
-      if (!res.ok) { 
-        toast.error(String(data?.error || 'Regeneration failed')); 
-        return; 
-      }
-      if (typeof data?.url === 'string') setResultUrl(String(data.url));
-      if (typeof data?.key === 'string') setResultKey(String(data.key));
-      if (typeof data?.url === 'string') setActiveUrl(String(data.url));
-      if (typeof data?.key === 'string') {
-        setActiveKey(String(data.key));
-        // Notify designer to reload the background image
-        handleDesignerReplaceBgKey(String(data.key), String(data.url));
-      }
-      setUpscales([]);
-      toast.success('Regenerated successfully');
     } catch (err) {
       console.error('Regenerate error:', err);
-      toast.error('Regeneration failed');
-    } finally {
-      setBusy(false);
     }
-  }, [generationParams, handleDesignerReplaceBgKey]);
+  }, [generationParams, handleDesignerReplaceBgKey, imageGeneration, creditDepletion]);
 
   const handleDesignerAnimate = useCallback(async (getBlob: () => Promise<Blob | null>) => {
     try {
@@ -1442,10 +1465,55 @@ export function TemplatesTabContent(){
       }
       */
       setAnimConfirmOpen(true);
-      setAnimCredits(undefined as unknown as number);
       setAnimResultUrl(null);
       setAnimResultKey(null);
       setAnimHasPending(false); // Start as false while preparing
+      setCanUpscaleVideo(true);
+      
+      // Calculate initial credits based on template video settings
+      try {
+        const { estimateVideoCredits } = await import('@/lib/credits-client');
+        const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro'; allowedDurations?: Array<string> } | null | undefined;
+        
+        // Determine default duration (minimum available)
+        const PROVIDER_DURATION_OPTIONS: Record<'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro', ReadonlyArray<'3'|'4'|'5'|'6'|'7'|'8'|'9'|'10'|'11'|'12'>> = {
+          seedance: ['3','4','5','6','7','8','9','10','11','12'],
+          kling2_5: ['5','10'],
+          sora2: ['4','8','12'],
+          sora2_pro: ['4','8','12'],
+        } as const;
+        const resolvedProvider: 'seedance' | 'kling2_5' | 'sora2' | 'sora2_pro' = (() => {
+          const raw = String(v?.provider || '').toLowerCase();
+          if (raw === 'kling2_5') return 'kling2_5';
+          if (raw === 'sora2_pro') return 'sora2_pro';
+          if (raw === 'sora2') return 'sora2';
+          return 'seedance';
+        })();
+        const availableDurations = (() => {
+          const allowed = Array.isArray(v?.allowedDurations) && v.allowedDurations.length
+            ? v.allowedDurations
+            : PROVIDER_DURATION_OPTIONS[resolvedProvider];
+          const unique = Array.from(new Set(allowed.map((d) => String(d))));
+          const filtered = unique.filter((d) => (PROVIDER_DURATION_OPTIONS[resolvedProvider] as ReadonlyArray<string>).includes(d));
+          return filtered;
+        })();
+        const defaultDuration = (() => {
+          const sortedDurations = [...availableDurations].sort((a, b) => Number(a) - Number(b));
+          return String(sortedDurations[0] || availableDurations[0] || '4');
+        })();
+        
+        setAnimDuration(defaultDuration);
+        
+        const duration = Number(defaultDuration || v?.duration || 5);
+        const resolution = (v?.resolution || (v?.provider === 'sora2' || v?.provider === 'sora2_pro' ? '720p' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
+        const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : v?.provider === 'sora2_pro' ? 'sora2_pro' : 'seedance';
+        const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
+        const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+        const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
+        setAnimCredits(credits);
+      } catch { 
+        setAnimCredits(undefined); 
+      }
       
       // Prepare blob asynchronously without blocking
       getBlob().then((blob) => {
@@ -1459,7 +1527,26 @@ export function TemplatesTabContent(){
         setAnimConfirmOpen(false);
       });
     } catch {}
-  }, []);
+  }, [activeTemplate?.video]);
+
+  // Recalculate credits when duration changes
+  useEffect(() => {
+    if (!animConfirmOpen || !animDuration) return;
+    
+    try {
+      const { estimateVideoCredits } = require('@/lib/credits-client');
+      const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro' } | null | undefined;
+      const duration = Number(animDuration);
+      const resolution = (v?.resolution || (v?.provider === 'sora2' || v?.provider === 'sora2_pro' ? '720p' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
+      const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : v?.provider === 'sora2_pro' ? 'sora2_pro' : 'seedance';
+      const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
+      const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+      const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
+      setAnimCredits(credits);
+    } catch {
+      setAnimCredits(undefined);
+    }
+  }, [animDuration, animConfirmOpen, activeTemplate?.video]);
 
   useEffect(()=>{
     const srcs: Array<'vehicle'|'user'> = Array.isArray(activeTemplate?.allowedImageSources) ? (activeTemplate!.allowedImageSources as Array<'vehicle'|'user'>) : ['vehicle','user'];
@@ -1604,15 +1691,31 @@ export function TemplatesTabContent(){
       const val = varState[key] || '';
       if (val) variables[key] = val;
     }
-    const payload = { templateId: active?.id, templateSlug: active?.slug, userImageDataUrls: [dataUrl], variables, isolateCar: getActualIsolateCar() } as Record<string, unknown>;
-    const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    let data: Record<string, unknown> = {}; try { data = await res.json(); } catch { data = {}; }
-    if (!res.ok) { toast.error(String((data as { error?: string }).error || 'Generation failed')); return; }
-    if (sess !== sessionRef.current) { return; }
-    if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
-    if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
-    if (data?.key) setResultKey(String(data.key));
-    try { if (typeof (data as { key?: string })?.key === 'string') setDesignOpen(true); } catch {}
+    const payload = { 
+      templateId: active?.id, 
+      templateSlug: active?.slug, 
+      userImageDataUrls: [dataUrl], 
+      variables, 
+      isolateCar: getActualIsolateCar() 
+    };
+    
+    // Use async generation hook with polling
+    await imageGeneration.generate(payload, {
+      onComplete: (result) => {
+        if (sess !== sessionRef.current) return;
+        setResultUrl(result.url);
+        setResultKey(result.key);
+        try { 
+          if (result.key) setDesignOpen(true); 
+        } catch {}
+      },
+      onError: (error) => {
+        console.error('[TEMPLATE] Finalize error:', error);
+      },
+      onInsufficientCredits: () => {
+        creditDepletion.checkAndTrigger(0, 100);
+      }
+    });
   }
 
   async function autoCropAndGenerateFromUrl(safeUrl: string, targetAspect: number) {
@@ -1683,11 +1786,11 @@ export function TemplatesTabContent(){
       });
 
       // Aspect ratio enforcement based on active template
-      // Skip if isolate mask is on - the backend will handle cropping based on BiRefNet bounding box
+      // Always check aspect ratio client-side to show cropper BEFORE generation (including isolate mask)
       const willIsolateCar = getActualIsolateCar();
       
       const t = activeTemplate;
-      if (t?.fixedAspectRatio && typeof t?.aspectRatio === 'number' && selectedFullKey && !willIsolateCar) {
+      if (t?.fixedAspectRatio && typeof t?.aspectRatio === 'number' && selectedFullKey) {
         try {
           // For temp keys, use the object URL directly
           let url: string | null = null;
@@ -1695,35 +1798,6 @@ export function TemplatesTabContent(){
             url = uploadedPreviews[selectedFullKey] || null;
           } else {
             url = await getViewUrl(selectedFullKey);
-          }
-          if (url) {
-            const dims = await new Promise<{ w: number; h: number } | null>((resolve)=>{ try{ const img = new Image(); img.onload=()=> resolve({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height }); img.onerror=()=> resolve(null); img.src=url; } catch { resolve(null); } });
-            if (dims) {
-              const ar = dims.w / dims.h;
-              const tolerance = 0.05;
-              const targetAR = Number(t.aspectRatio);
-              if (Math.abs(ar / targetAR - 1) <= tolerance) {
-                // Auto-crop minimally and continue without popup
-                setBusy(true);
-                try { 
-                  // Use object URL for temp keys, storage URL for real keys
-                  const cropUrl = selectedFullKey.startsWith('temp-') 
-                    ? url 
-                    : `/api/storage/file?key=${encodeURIComponent(selectedFullKey)}`;
-                  await autoCropAndGenerateFromUrl(cropUrl, targetAR); 
-                } finally { setBusy(false); }
-                return;
-              } else {
-                setPendingKeys([]);
-                // Use object URL for temp keys, storage URL for real keys
-                const cropUrl = selectedFullKey.startsWith('temp-') 
-                  ? url 
-                  : `/api/storage/file?key=${encodeURIComponent(selectedFullKey)}`;
-                setCropUrl(cropUrl);
-                setCropOpen(true);
-                return; // wait for crop flow
-              }
-            }
           }
         } catch {}
       }
@@ -1771,8 +1845,7 @@ export function TemplatesTabContent(){
           variables[key] = '#ffffff';
         }
       }
-      // Now we actually start generating: show busy UI
-      setBusy(true);
+      // Now we actually start generating with async hook
       const payload = { 
         templateId: active.id, 
         templateSlug: active.slug, 
@@ -1781,35 +1854,37 @@ export function TemplatesTabContent(){
         variables, 
         isolateCar: getActualIsolateCar() 
       };
-      const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-      let d: unknown = {};
-      try { d = await res.json(); } catch { d = {}; }
-      const data = d as Record<string, unknown>;
-      if (!res.ok) { toast.error(String(data?.error || 'Generation failed')); return; }
-      if (sess !== sessionRef.current) { return; }
-      if (typeof data?.url === 'string') setResultUrl(String(data.url));
-      if (typeof data?.key === 'string') setResultKey(String(data.key));
-      if (typeof data?.url === 'string') setActiveUrl(String(data.url));
-      if (typeof data?.key === 'string') setActiveKey(String(data.key));
       
       // Store generation params for regenerate
-      setGenerationParams({
-        templateId: active.id,
-        templateSlug: active.slug,
-        userImageKeys,
-        ...(userImageDataUrls.length > 0 && { userImageDataUrls }),
-        variables,
-        isolateCar: getActualIsolateCar()
-      });
+      setGenerationParams(payload);
       
-      try {
-        if (typeof data?.key === 'string') {
-          setDesignOpen(true);
+      // Use async generation hook with polling
+      await imageGeneration.generate(payload, {
+        onComplete: (result) => {
+          if (sess !== sessionRef.current) return;
+          
+          setResultUrl(result.url);
+          setResultKey(result.key);
+          setActiveUrl(result.url);
+          setActiveKey(result.key);
+          setUpscales([]);
+          
+          try {
+            if (result.key) {
+              setDesignOpen(true);
+            }
+          } catch {}
+        },
+        onError: (error) => {
+          // Error toast already shown by hook
+          console.error('[TEMPLATE] Generation error:', error);
+        },
+        onInsufficientCredits: () => {
+          creditDepletion.checkAndTrigger(0, 100);
         }
-      } catch {}
-      setUpscales([]);
-    } finally {
-      setBusy(false);
+      });
+    } catch (err) {
+      console.error('[TEMPLATE] Generate error:', err);
     }
   }
 
@@ -1874,14 +1949,9 @@ export function TemplatesTabContent(){
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center justify-between">
               <span>{designOpen ? 'Designer' : (active?.name || 'Template')}</span>
-              {(!designOpen && !busy && !resultUrl) ? (
-                <span className="hidden lg:inline mx-auto absolute left-1/2 -translate-x-1/2 text-xs text-white/70 max-w-[50%] text-center pointer-events-none">
-                  For best results, use a car photo that matches this template&apos;s orientation
-                </span>
-              ) : null}
             </DialogTitle>
           </DialogHeader>
-          {busy ? (
+          {(busy || imageGeneration.isGenerating) ? (
             <div className="p-6 sm:p-10 min-h-[12rem] grid place-items-center">
               <div className="flex flex-col items-center gap-3">
                 <div className="w-[14rem] h-[8rem] sm:w-[17.5rem] sm:h-[10.5rem]">
@@ -1934,20 +2004,139 @@ export function TemplatesTabContent(){
                       // Reset upscaling state
                       setOriginalVideoKey(null);
                       setOriginalVideoUrl(null);
+                      setCanUpscaleVideo(true);
                       setUpscaledVideoKey(null);
                       setUpscaledVideoUrl(null);
                       setShowingUpscaled(false);
                       setUpscaleBusy(false);
                     }}>Return to designer</Button>
                     <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto">
+                      {/* Regenerate button */}
+                      {videoGenerationParams && (
+                        <div className="flex flex-col gap-1 flex-1 sm:flex-none">
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="h-9 px-4 text-sm border-purple-500/50 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 flex-1 sm:flex-none min-w-[7rem]"
+                            disabled={animLoading}
+                            onClick={async()=>{
+                            if (!videoGenerationParams) return;
+                            setAnimLoading(true);
+                            // Clear current results
+                            setAnimResultUrl(null);
+                            setAnimResultKey(null);
+                            setOriginalVideoKey(null);
+                            setOriginalVideoUrl(null);
+                            setUpscaledVideoKey(null);
+                            setCanUpscaleVideo(true);
+                            setUpscaledVideoUrl(null);
+                            setShowingUpscaled(false);
+                            
+                            try {
+                              // Check credits before video generation
+                              const { estimateVideoCredits } = await import('@/lib/credits-client');
+                              const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro' } | null | undefined;
+                              const duration = Number(v?.duration || 5);
+                              const resolution = (v?.resolution || (v?.provider === 'sora2' || v?.provider === 'sora2_pro' ? '720p' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
+                              const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : v?.provider === 'sora2_pro' ? 'sora2_pro' : 'seedance';
+                              const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
+                              const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+                              const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
+                              
+                              const bal = await getCredits();
+                              const insufficientCredits = creditDepletion.checkAndTrigger(bal, credits);
+                              if (insufficientCredits) {
+                                setAnimLoading(false);
+                                return;
+                              }
+                              
+                              // Regenerate video with stored params
+                              await videoGeneration.generate(
+                                {
+                                  templateId: videoGenerationParams.templateId,
+                                  templateSlug: videoGenerationParams.templateSlug,
+                                  startImage: videoGenerationParams.startBlob!,
+                                  duration: videoGenerationParams.duration,
+                                  variables: videoGenerationParams.variables
+                                },
+                                {
+                                  onComplete: async (result) => {
+                                    setAnimResultUrl(result.url);
+                                    setAnimResultKey(result.key);
+                                    setAnimLoading(false);
+                                    
+                                    // Check if video can be upscaled by fetching metadata
+                                    try {
+                                      const metaRes = await fetch(`/api/storage/list?path=library`);
+                                      const metaData = await metaRes.json().catch(() => ({ items: [] }));
+                                      const videoItem = Array.isArray(metaData?.items) 
+                                        ? metaData.items.find((it: { key?: string; width?: number; height?: number }) => it.key === result.key)
+                                        : null;
+                                      
+                                      if (videoItem && videoItem.width && videoItem.height) {
+                                        const largerDim = Math.max(videoItem.width, videoItem.height);
+                                        const smallerDim = Math.min(videoItem.width, videoItem.height);
+                                        // Can't upscale if already at or above max resolution (1080p smaller, 1920p larger)
+                                        setCanUpscaleVideo(!(smallerDim >= 1080 || largerDim >= 1920));
+                                      } else {
+                                        setCanUpscaleVideo(true); // Default to allowing upscale if metadata not found
+                                      }
+                                    } catch {
+                                      setCanUpscaleVideo(true); // Default to allowing upscale on error
+                                    }
+                                  },
+                                  onInsufficientCredits: async () => {
+                                    const bal = await getCredits();
+                                    creditDepletion.checkAndTrigger(bal, credits);
+                                    setAnimLoading(false);
+                                  },
+                                  onError: () => {
+                                    setAnimLoading(false);
+                                  }
+                                }
+                              );
+                            } catch (e) {
+                              console.error('Regenerate error:', e);
+                              toast.error('Regeneration failed');
+                              setAnimLoading(false);
+                            }
+                          }}
+                          >
+                            {animLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                            {animLoading ? 'Regenerating…' : 'Regenerate'}
+                          </Button>
+                          {(() => {
+                            try {
+                              const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro' } | null | undefined;
+                              if (!v) return null;
+                              const duration = Number(v?.duration || 5);
+                              const resolution = (v?.resolution || (v?.provider === 'sora2' || v?.provider === 'sora2_pro' ? '720p' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
+                              const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : v?.provider === 'sora2_pro' ? 'sora2_pro' : 'seedance';
+                              const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
+                              const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+                              // Import is async, so we'll calculate using the same function inline
+                              const { estimateVideoCredits } = require('@/lib/credits-client');
+                              const credits = estimateVideoCredits(resolution, duration, fps, aspect, provider);
+                              return (
+                                <div className="text-xs text-purple-400/70 text-center px-2">
+                                  ~{credits.toLocaleString()} credits
+                                </div>
+                              );
+                            } catch {
+                              return null;
+                            }
+                          })()}
+                        </div>
+                      )}
                       {/* Upscale button - available for all users with indigo styling */}
-                      {animResultKey && !String(animResultKey).includes('upscaled') && !String(animResultKey).includes('2x') && !showingUpscaled && !upscaledVideoKey ? (
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="h-9 px-4 text-sm border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 flex-1 sm:flex-none min-w-[7rem]"
-                          disabled={upscaleBusy}
-                          onClick={async()=>{
+                      {animResultKey && !String(animResultKey).includes('upscaled') && !String(animResultKey).includes('2x') && !showingUpscaled && !upscaledVideoKey && canUpscaleVideo ? (
+                        <div className="flex flex-col gap-1 flex-1 sm:flex-none">
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="h-9 px-4 text-sm border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 flex-1 sm:flex-none min-w-[7rem]"
+                            disabled={upscaleBusy}
+                            onClick={async()=>{
                             // Check if upscaled version already exists in library
                             try {
                               const fileName = String(animResultKey).split('/').pop() || '';
@@ -2034,10 +2223,33 @@ export function TemplatesTabContent(){
                               setUpscaleBusy(false);
                             }
                           }}
-                        >
-                          {upscaleBusy && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                          {upscaleBusy ? 'Upscaling…' : 'Upscale'}
-                        </Button>
+                          >
+                            {upscaleBusy && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                            {upscaleBusy ? 'Upscaling…' : 'Upscale'}
+                          </Button>
+                          {(() => {
+                            try {
+                              const v = activeTemplate?.video as { duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro' } | null | undefined;
+                              if (!v) return null;
+                              const duration = Number(v?.duration || 5);
+                              const resolution = (v?.resolution || (v?.provider === 'sora2' || v?.provider === 'sora2_pro' ? '720p' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
+                              const fps = Number(v?.fps || 30);
+                              // Get dimensions based on resolution for upscale calculation
+                              const heights: Record<string, number> = { 'auto': 1080, '480p': 480, '720p': 720, '1080p': 1080 };
+                              const height = heights[resolution] || 1080;
+                              const width = Math.round(height * (16 / 9)); // Assume 16:9 aspect for estimate
+                              const { estimateVideoUpscaleCredits } = require('@/lib/credits-client');
+                              const credits = estimateVideoUpscaleCredits(duration, width, height, fps, 2);
+                              return (
+                                <div className="text-xs text-indigo-400/70 text-center px-2">
+                                  ~{credits.toLocaleString()} credits
+                                </div>
+                              );
+                            } catch {
+                              return null;
+                            }
+                          })()}
+                        </div>
                       ) : null}
                       {/* Toggle button - switch between original and upscaled */}
                       {originalVideoKey && upscaledVideoKey && (
@@ -2080,25 +2292,10 @@ export function TemplatesTabContent(){
                         </Button>
                       ) : null}
                       */}
-                      <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={async()=>{
-                        const ok = await confirmToast({ title: 'Delete video?', message: 'This will delete it from your workspace library.' });
-                        if (!ok) return;
-                        try {
-                          const folder = String(animResultKey || '').replace(/\/[^\\/]+$/, '/').replace(/\/[^/]+$/, '/').replace(/\/+/g,'/').replace(/\/$/, '/');
-                          const normalized = folder || String(animResultKey || '').replace(/\/[^/]+$/, '/');
-                          if (!normalized) return;
-                          await fetch('/api/storage/delete', { method: 'POST', body: JSON.stringify({ key: normalized, isFolder: true }) });
-                          setAnimResultUrl(null); 
-                          setAnimResultKey(null);
-                          // Reset upscaling state
-                          setOriginalVideoKey(null);
-                          setOriginalVideoUrl(null);
-                          setUpscaledVideoKey(null);
-                          setUpscaledVideoUrl(null);
-                          setShowingUpscaled(false);
-                          setUpscaleBusy(false);
-                          toast.success('Deleted');
-                        } catch { toast.error('Delete failed'); }
+                      <Button size="sm" variant="outline" className="h-9 px-4 text-sm border-[color:var(--border)] bg-[color:var(--popover)]/70" onClick={()=>{
+                        if (!animResultKey) return;
+                        setDeleteTarget({ type: 'generated-video', key: animResultKey });
+                        setDeleteDialogOpen(true);
                       }}>Delete</Button>
                       <Button className="flex-1 sm:flex-none min-w-[9rem]" onClick={()=>{
                         try {
@@ -2135,6 +2332,21 @@ export function TemplatesTabContent(){
                     onReplaceBgKey={handleDesignerReplaceBgKey}
                     showAnimate={!!(activeTemplate?.video && (activeTemplate.video as { enabled?: boolean } | null | undefined)?.enabled)}
                     onAnimate={handleDesignerAnimate}
+                    animateCredits={(() => {
+                      try {
+                        const v = activeTemplate?.video as { enabled?: boolean; duration?: string|number; resolution?: 'auto'|'480p'|'720p'|'1080p'; fps?: number; aspect_ratio?: '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto'; provider?: 'seedance'|'kling2_5'|'sora2'|'sora2_pro' } | null | undefined;
+                        if (!v || !v.enabled) return undefined;
+                        const { estimateVideoCredits } = require('@/lib/credits-client');
+                        const duration = Number(v?.duration || 5);
+                        const resolution = (v?.resolution || (v?.provider === 'sora2' || v?.provider === 'sora2_pro' ? '720p' : '1080p')) as 'auto'|'480p'|'720p'|'1080p';
+                        const provider = v?.provider === 'kling2_5' ? 'kling2_5' : v?.provider === 'sora2' ? 'sora2' : v?.provider === 'sora2_pro' ? 'sora2_pro' : 'seedance';
+                        const fps = provider === 'kling2_5' ? 24 : Number(v?.fps || 24);
+                        const aspect = (v?.aspect_ratio || 'auto') as '21:9'|'16:9'|'4:3'|'1:1'|'3:4'|'9:16'|'auto';
+                        return estimateVideoCredits(resolution, duration, fps, aspect, provider);
+                      } catch {
+                        return undefined;
+                      }
+                    })()}
                   />
                   {/* Animate confirm modal */}
                   <Dialog open={animConfirmOpen} onOpenChange={(o)=>{
@@ -2191,7 +2403,6 @@ export function TemplatesTabContent(){
                             const sortedDurations = [...availableDurations].sort((a, b) => Number(a) - Number(b));
                             return String(sortedDurations[0] || availableDurations[0] || '4');
                           })();
-                          if (!animDuration && defaultDuration) setAnimDuration(defaultDuration);
                           
                           const videoPromptTokens = (() => {
                             if (!v?.prompt) return [];
@@ -2282,6 +2493,15 @@ export function TemplatesTabContent(){
                             // Merge varState with animVariables for video generation
                             const allVariables = { ...varState, ...animVariables };
                             
+                            // Store params for regenerate
+                            setVideoGenerationParams({
+                              templateId: active?.id,
+                              templateSlug: active?.slug,
+                              startBlob,
+                              duration: animDuration,
+                              variables: allVariables
+                            });
+                            
                             // Use shared async video generation hook
                             await videoGeneration.generate(
                               {
@@ -2296,6 +2516,26 @@ export function TemplatesTabContent(){
                                   setAnimResultUrl(result.url);
                                   setAnimResultKey(result.key);
                                   setAnimLoading(false);
+                                  
+                                  // Check if video can be upscaled by fetching metadata
+                                  try {
+                                    const metaRes = await fetch(`/api/storage/list?path=library`);
+                                    const metaData = await metaRes.json().catch(() => ({ items: [] }));
+                                    const videoItem = Array.isArray(metaData?.items) 
+                                      ? metaData.items.find((it: { key?: string; width?: number; height?: number }) => it.key === result.key)
+                                      : null;
+                                    
+                                    if (videoItem && videoItem.width && videoItem.height) {
+                                      const largerDim = Math.max(videoItem.width, videoItem.height);
+                                      const smallerDim = Math.min(videoItem.width, videoItem.height);
+                                      // Can't upscale if already at or above max resolution (1080p smaller, 1920p larger)
+                                      setCanUpscaleVideo(!(smallerDim >= 1080 || largerDim >= 1920));
+                                    } else {
+                                      setCanUpscaleVideo(true); // Default to allowing upscale if metadata not found
+                                    }
+                                  } catch {
+                                    setCanUpscaleVideo(true); // Default to allowing upscale on error
+                                  }
                                 },
                                 onInsufficientCredits: async () => {
                                   const bal = await getCredits();
@@ -2687,77 +2927,6 @@ export function TemplatesTabContent(){
                   })()}
                 </div>
               </div>
-              <FixedAspectCropper
-                open={cropOpen}
-                imageUrl={cropUrl}
-                aspectRatio={typeof (activeTemplate as { aspectRatio?: number })?.aspectRatio === 'number' ? Number((activeTemplate as { aspectRatio?: number }).aspectRatio) : 1}
-                title={`Crop image to match template`}
-                onCancel={()=>{ setCropOpen(false); setCropUrl(null); setPendingKeys(null); }}
-                onCropped={async(blob)=>{
-                  setCropOpen(false);
-                  setBusy(true);
-                  try {
-                    const fr = new FileReader();
-                    const dataUrl: string = await new Promise((resolve)=>{ fr.onloadend=()=> resolve(String(fr.result||'')); fr.readAsDataURL(blob); });
-                    const variables: Record<string, string> = {};
-                    const v = findVehicleForSelected();
-                    if (v) {
-                      const brand = v.make || '';
-                      const model = v.model || '';
-                      const cf = (v as unknown as { colorFinish?: string })?.colorFinish ? String((v as unknown as { colorFinish?: string }).colorFinish) : '';
-                      const acc = (v as unknown as { accents?: string })?.accents ? String((v as unknown as { accents?: string }).accents) : '';
-                      const combo = acc ? `${cf} with ${acc}` : cf;
-                      if (brand) variables.BRAND = brand;
-                      if (model) variables.MODEL = model;
-                      if (cf) variables.COLOR_FINISH = cf;
-                      if (acc) variables.ACCENTS = acc;
-                      if (combo) variables.COLOR_FINISH_ACCENTS = combo;
-                    }
-                    if (source !== 'vehicle') {
-                      const tokensInPrompt = new Set(String(activeTemplate?.prompt || '').match(/\[([A-Z0-9_]+)\]/g)?.map((m)=> m.replace(/^[\[]|[\]]$/g, '')) || []);
-                      const builtinNeeded = ["BRAND","MODEL","COLOR_FINISH","ACCENTS"].filter(k=> tokensInPrompt.has(k));
-                      const missing: string[] = [];
-                      for (const key of builtinNeeded) {
-                        const val = varState[key] || '';
-                        if (val) variables[key] = val; else missing.push(key);
-                      }
-                      if (builtinNeeded.length && missing.length) {
-                        toast.error(`Please fill: ${missing.join(', ')}`);
-                        setBusy(false);
-                        return;
-                      }
-                    }
-                    const varDefs = Array.isArray(activeTemplate?.variables) ? (activeTemplate?.variables as Array<Record<string, unknown>>) : [];
-                    for (const vDef of varDefs) {
-                      const key = String(vDef?.key || '').trim();
-                      if (!key) continue;
-                      const val = varState[key] || '';
-                      if (val) variables[key] = val;
-                    }
-                    const payload = { templateId: active?.id, templateSlug: active?.slug, userImageKeys: pendingKeys || [], userImageDataUrls: [dataUrl], variables, isolateCar: getActualIsolateCar() } as Record<string, unknown>;
-                    const res = await fetch('/api/templates/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-                    let data: Record<string, unknown> = {}; try { data = await res.json(); } catch { data = {}; }
-                    if (!res.ok) { toast.error(String((data as { error?: string }).error || 'Generation failed')); return; }
-                    if ((data as { url?: string }).url) setResultUrl(String((data as { url?: string }).url));
-                    if ((data as { key?: string }).key) setResultKey(String((data as { key?: string }).key));
-                    if (data?.key) setResultKey(String(data.key));
-                    
-                    // Store generation params for regenerate
-                    setGenerationParams({
-                      templateId: active?.id,
-                      templateSlug: active?.slug,
-                      userImageKeys: pendingKeys || [],
-                      userImageDataUrls: [dataUrl],
-                      variables,
-                      isolateCar: getActualIsolateCar()
-                    });
-                  } finally {
-                    setBusy(false);
-                    setPendingKeys(null);
-                    setCropUrl(null);
-                  }
-                }}
-              />
               {/* Sticky bottom generate button */}
               <div className="flex-shrink-0 border-t border-[color:var(--border)]/60 pt-3 mt-auto bg-[var(--popover)] space-y-2">
                 {/* Options/input fields */}
@@ -2897,8 +3066,8 @@ export function TemplatesTabContent(){
                     ) : null}
                   </div>
                   {/* Helpful tip */}
-                  <div className="text-center text-[0.7rem] text-white/40 leading-relaxed px-2">
-                    For best results, use a high-quality image matching the template&apos;s angle without other vehicles
+                  <div className="text-center text-[0.75rem] text-indigo-400 font-medium leading-relaxed px-2" style={{ textShadow: '0 0 0.5em rgba(129, 140, 248, 0.5), 0 0 1em rgba(129, 140, 248, 0.3)' }}>
+                    Match the template angle. One car only. Clear photo.
                   </div>
                 </div>
                 {(() => {
@@ -2938,7 +3107,7 @@ export function TemplatesTabContent(){
                   const hasMissingFields = missingBuiltins.length > 0 || missingCustomVars.length > 0;
                   
                   let buttonText = 'Generate';
-                  const isDisabled = busy || !hasImageSelection || hasMissingFields;
+                  const isDisabled = busy || imageGeneration.isGenerating || !hasImageSelection || hasMissingFields;
                   
                   if (!hasImageSelection) {
                     buttonText = requiredImages === 1 ? 'Select an image' : `Select ${requiredImages}`;

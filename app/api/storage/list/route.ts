@@ -5,7 +5,7 @@ import { getSurreal } from "@/lib/surrealdb";
 import { createHash } from "crypto";
 export const runtime = "nodejs";
 type BundleEntry = { name: string; key: string; thumbKey?: string; videoKey?: string; videoEtag?: string };
-type ListItem = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string; etag?: string; blurhash?: string; lastUsed?: string };
+type ListItem = { type: "folder" | "file"; name: string; key?: string; size?: number; lastModified?: string; etag?: string; blurhash?: string; lastUsed?: string; width?: number; height?: number };
 
 export async function GET(req: Request) {
   const user = await getSessionUser();
@@ -94,6 +94,7 @@ export async function GET(req: Request) {
 
       const blurhashMap = new Map<string, string>();
       const lastUsedMap = new Map<string, string>();
+      const dimensionsMap = new Map<string, { width?: number; height?: number }>();
       
       // Fetch blurhashes and lastUsed for images
       if (imageKeys.length > 0) {
@@ -116,23 +117,28 @@ export async function GET(req: Request) {
         }
       }
       
-      // Fetch blurhashes for videos
+      // Fetch blurhashes and dimensions for videos
       if (videoKeys.length > 0) {
         const videoBlurhashRes = await db.query(
-          "SELECT key, blurhash FROM library_video WHERE key IN $keys AND email = $email;",
+          "SELECT key, blurhash, width, height FROM library_video WHERE key IN $keys AND email = $email;",
           { keys: videoKeys, email: user.email }
         );
 
         const videoRecords = Array.isArray(videoBlurhashRes) && Array.isArray(videoBlurhashRes[0]) ? videoBlurhashRes[0] : [];
         for (const record of videoRecords) {
-          const r = record as { key?: string; blurhash?: string };
-          if (r.key && r.blurhash) {
-            blurhashMap.set(r.key, r.blurhash);
+          const r = record as { key?: string; blurhash?: string; width?: number; height?: number };
+          if (r.key) {
+            if (r.blurhash) {
+              blurhashMap.set(r.key, r.blurhash);
+            }
+            if (r.width && r.height) {
+              dimensionsMap.set(r.key, { width: r.width, height: r.height });
+            }
           }
         }
       }
 
-      // Add blurhash and lastUsed to items
+      // Add blurhash, lastUsed, and dimensions to items
       for (const item of items) {
         if (item.key) {
           if (blurhashMap.has(item.key)) {
@@ -140,6 +146,13 @@ export async function GET(req: Request) {
           }
           if (lastUsedMap.has(item.key)) {
             item.lastUsed = lastUsedMap.get(item.key);
+          }
+          if (dimensionsMap.has(item.key)) {
+            const dims = dimensionsMap.get(item.key);
+            if (dims) {
+              item.width = dims.width;
+              item.height = dims.height;
+            }
           }
         }
       }

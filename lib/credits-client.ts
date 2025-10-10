@@ -103,4 +103,31 @@ export function estimateVideoCredits(
   return Math.max(1, credits);
 }
 
+// Credit cost calculation for video upscale (mirrors server-side logic)
+// Using same profit margin as sora video gen (not pro): 1000 credits per 4s 720p video (costs $0.40)
+// Profit margin: 1000 credits / $0.40 = 2500 credits per dollar of cost
+// fal.ai pricing: $0.015 per megapixel
+// Calculate based on INPUT megapixels (not output)
+export function estimateVideoUpscaleCredits(
+  durationSeconds: number, 
+  width: number, 
+  height: number, 
+  fps: number = 30,
+  _upscaleFactor: number = 2
+): number {
+  const CREDITS_PER_DOLLAR_UPSCALE = 2500; // Same margin as sora (not pro)
+  const COST_PER_MEGAPIXEL = 0.015; // fal.ai pricing
+  
+  // Calculate total INPUT megapixels
+  const totalFrames = durationSeconds * fps;
+  const megapixelsPerFrame = (width * height) / 1_000_000;
+  const totalMegapixels = totalFrames * megapixelsPerFrame;
+  
+  // Calculate cost and convert to credits
+  const cost = totalMegapixels * COST_PER_MEGAPIXEL;
+  const credits = Math.ceil(cost * CREDITS_PER_DOLLAR_UPSCALE);
+  
+  return Math.max(100, credits); // Minimum 100 credits
+}
+
 

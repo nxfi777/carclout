@@ -169,95 +169,67 @@ export async function POST(req: Request) {
       imageFalUrl: imageFalUrl.substring(0, 50)
     });
 
-    // Call Gemini 2.5 via FAL - using single image
-    const result = await fal.subscribe("fal-ai/gemini-25-flash-image/edit", {
-      input: {
-        prompt,
-        image_urls: [imageFalUrl], // Single image without mask
-      },
-      logs: true,
-    });
-
-    console.log('[draw-to-edit] Gemini result:', JSON.stringify(result, null, 2));
-
-    // Gemini returns images array, not a single image
-    const editedImageUrl = result.data?.images?.[0]?.url;
-    if (!editedImageUrl) {
-      console.error('[draw-to-edit] No image in result:', JSON.stringify(result));
-      throw new Error('No image returned from Gemini');
+    // Submit to async queue
+    let queueResult: any;
+    try {
+      queueResult = await fal.queue.submit("fal-ai/gemini-25-flash-image/edit", {
+        input: {
+          prompt,
+          image_urls: [imageFalUrl],
+        },
+      });
+    } catch (err) {
+      console.error("Draw-to-edit queue error:", err);
+      return NextResponse.json({ error: "Draw-to-edit failed to start" }, { status: 502 });
     }
 
-    // Fetch the edited image
-    const editedResponse = await fetch(editedImageUrl);
-    if (!editedResponse.ok) {
-      throw new Error('Failed to fetch edited image');
+    const requestId = queueResult?.requestId || queueResult?.request_id;
+    if (!requestId) {
+      return NextResponse.json({ error: 'Failed to queue draw-to-edit operation' }, { status: 502 });
     }
-    
-    const editedArrayBuffer = await editedResponse.arrayBuffer();
-    const editedBuffer = Buffer.from(editedArrayBuffer);
-    
-    // Convert to data URL for stitching
-    const editedDataUrl = `data:image/png;base64,${editedBuffer.toString('base64')}`;
 
-    // Stitch the edited region back onto the original image
-    const stitchedDataUrl = await stitchImages(originalImageDataUrl, editedDataUrl, boundingBox);
+    console.log(`[DRAW-TO-EDIT JOB] Queued job ${requestId} for user ${user.email}`);
 
-    // Save the stitched result to R2 library folder
-    const timestamp = Date.now();
-    const userId = sanitizeUserId(user.email);
-    const key = `users/${userId}/library/draw-to-edit-${timestamp}.png`;
-    
-    const stitchedBuffer = await dataUrlToBuffer(stitchedDataUrl);
-    
-    await r2.send(new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: stitchedBuffer,
-      ContentType: 'image/png',
-    }));
-
-    // Generate signed URL
-    const resultUrl = `/api/storage/file?key=${encodeURIComponent(key)}`;
-
-    // Deduct credits
-    await adjustCredits(user.email, -totalCost, "draw_to_edit", null);
-
-    // If car overlap, trigger re-cutting (optional - could be done client-side)
-    let newCarMaskUrl: string | null = null;
-    if (hasCarOverlap && carMaskUrl) {
-      try {
-        // Call rembg to re-cut the car from the new image
-        const rembgResponse = await fetch(`${req.headers.get('origin') || 'http://localhost:3000'}/api/tools/rembg`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Cookie': req.headers.get('cookie') || '',
-          },
-          body: JSON.stringify({
-            r2_key: key,
-            model: 'General Use (Heavy)',
-            operating_resolution: '2048x2048',
-            output_format: 'png',
-            refine_foreground: true,
-            output_mask: false,
-          }),
-        });
-
-        if (rembgResponse.ok) {
-          const rembgResult = await rembgResponse.json();
-          newCarMaskUrl = rembgResult?.image?.url || null;
+    // Store job metadata in database
+    try {
+      await db.query(`
+        CREATE tool_job CONTENT {
+          email: $email,
+          fal_request_id: $fal_request_id,
+          fal_model: $fal_model,
+          tool_type: $tool_type,
+          status: $status,
+          credits: $credits,
+          params: $params,
+          created_at: time::now(),
+          updated_at: time::now()
+        };
+      `, {
+        email: user.email,
+        fal_request_id: requestId,
+        fal_model: 'fal-ai/gemini-25-flash-image/edit',
+        tool_type: 'draw_to_edit',
+        status: 'pending',
+        credits: totalCost,
+        params: {
+          prompt,
+          boundingBox,
+          originalImageDataUrl,
+          carMaskUrl: carMaskUrl || null,
+          hasCarOverlap,
         }
-      } catch (error) {
-        console.error('Failed to re-cut car:', error);
-        // Don't fail the whole request if re-cutting fails
-      }
+      });
+    } catch (dbErr) {
+      console.error('Failed to store draw-to-edit job in database:', dbErr);
+      // Job is queued on fal.ai, so we continue despite DB error
     }
 
-    return NextResponse.json({
-      resultUrl,
-      newCarMaskUrl,
-      creditsUsed: totalCost,
-      hasCarOverlap,
+    // Return job ID immediately - client will poll for status
+    return NextResponse.json({ 
+      jobId: requestId,
+      status: 'pending',
+      credits: totalCost,
+      message: 'Draw-to-edit operation started. Check status at /api/tools/status'
     });
 
   } catch (error) {

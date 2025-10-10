@@ -33,6 +33,7 @@ import { BlurhashImage } from "@/components/ui/blurhash-image";
 import { uploadFilesToChat } from "@/lib/r2-upload";
 import { ChatNotifications } from "@/components/chat-notifications";
 import { HighlightMentions } from "@/lib/mention-highlighter";
+import { ShowroomPasswordGate } from "@/components/showroom-password-gate";
 
 type ChatMessage = {
   id?: string
@@ -220,6 +221,7 @@ function DashboardShowroomPageInner() {
   const [forgeTab] = useState<"workspace" | "content">("workspace");
   const [presence, setPresence] = useState<PresenceEntry[]>([]);
   const [dmConversations, setDmConversations] = useState<{ email: string; name?: string; image?: string | null }[]>([]);
+  const [unreadByEmail, setUnreadByEmail] = useState<Record<string, number>>({});
   const [me, setMe] = useState<{ email?: string | null; role?: string | null; plan?: string | null; name?: string | null } | null>(null);
   const meEmail = me?.email ?? null;
   const [muted] = useState<{ active: boolean; reason?: string } | null>(null);
@@ -249,6 +251,59 @@ function DashboardShowroomPageInner() {
   const isWindowFocusedRef = useRef(true);
   const lastStreakCheckRef = useRef<number>(0);
   const streakNotificationsShownRef = useRef<Set<string>>(new Set());
+  
+  // Profile lazy loading with batching
+  const profileBatchQueueRef = useRef<Set<string>>(new Set());
+  const profileBatchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [, forceProfileUpdate] = useState({});
+  
+  const requestProfile = useCallback((email: string) => {
+    if (!email) return;
+    const normalizedEmail = email.toLowerCase();
+    
+    // Check if already in cache
+    try {
+      if (typeof window !== 'undefined' && window.carcloutProfileCache?.[normalizedEmail]) {
+        return;
+      }
+    } catch {}
+    
+    // Add to batch queue
+    profileBatchQueueRef.current.add(normalizedEmail);
+    
+    // Clear existing timer and set new one
+    if (profileBatchTimerRef.current) {
+      clearTimeout(profileBatchTimerRef.current);
+    }
+    
+    profileBatchTimerRef.current = setTimeout(() => {
+      const emailsToFetch = Array.from(profileBatchQueueRef.current);
+      profileBatchQueueRef.current.clear();
+      
+      if (emailsToFetch.length > 0) {
+        // Batch fetch profiles
+        fetch('/api/users/chat-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emails: emailsToFetch }),
+          cache: 'no-store'
+        })
+          .then(r => r.json())
+          .then(data => {
+            const profs = (data?.profiles || {}) as Record<string, unknown>;
+            try {
+              if (typeof window !== 'undefined') {
+                window.carcloutProfileCache = { ...(window.carcloutProfileCache || {}), ...profs };
+              }
+              // Force re-render to show newly loaded profiles
+              forceProfileUpdate({});
+            } catch {}
+          })
+          .catch(() => {});
+      }
+    }, 100); // Batch requests within 100ms window
+  }, []);
+  
   // Helper: on mobile, close channels sidebar after navigating
   const closeChannelsIfMobile = () => {
     try {
@@ -256,6 +311,39 @@ function DashboardShowroomPageInner() {
     } catch {}
   };
 
+  // Cleanup batch timer on unmount
+  useEffect(() => {
+    return () => {
+      if (profileBatchTimerRef.current) {
+        clearTimeout(profileBatchTimerRef.current);
+      }
+    };
+  }, []);
+  
+  // Request profiles for visible users when presence or conversations change
+  useEffect(() => {
+    // Request profiles for online users
+    for (const user of presence) {
+      if (user.email) {
+        requestProfile(user.email);
+      }
+    }
+    
+    // Request profiles for DM conversations
+    for (const conv of dmConversations) {
+      if (conv.email) {
+        requestProfile(conv.email);
+      }
+    }
+    
+    // Request profiles for visible messages
+    for (const msg of messages.slice(0, 50)) { // Only first 50 visible messages
+      if (msg.userEmail) {
+        requestProfile(msg.userEmail);
+      }
+    }
+  }, [presence, dmConversations, messages, requestProfile]);
+  
   // Load muted chats from localStorage
   useEffect(() => {
     try {
@@ -633,7 +721,7 @@ function DashboardShowroomPageInner() {
     async function init() {
       try {
         // parallelize initial fetches
-        const [meRes, channelsRes, messagesRes, presenceRes, convRes, blocksRes, dmTtlRes] = await Promise.allSettled([
+        const [meRes, channelsRes, messagesRes, presenceRes, convRes, blocksRes, dmTtlRes, unreadRes] = await Promise.allSettled([
           fetch('/api/me', { cache: 'no-store' }).then(r=>r.json()),
           fetch('/api/chat/channels').then(r=>r.json()),
           fetch(`/api/chat/messages?channel=general`).then(r=>r.json()),
@@ -641,6 +729,7 @@ function DashboardShowroomPageInner() {
           fetch('/api/chat/dm/conversations', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({conversations:[]})),
           fetch('/api/blocks', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({blocked:[]})),
           fetch('/api/chat/dm/settings', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({ ttlSeconds: 86400 })),
+          fetch('/api/chat/dm/unread-by-conversation', { cache: 'no-store' }).then(r=>r.json()).catch(()=>({unreadByEmail:{}})),
         ]);
         if (mounted && meRes.status === 'fulfilled') setMe({ email: meRes.value?.email, role: meRes.value?.role, plan: meRes.value?.plan, name: meRes.value?.name });
         if (mounted && channelsRes.status === 'fulfilled') setChannels((channelsRes.value.channels || []).map((x: { slug: string; name?: string; requiredReadRole?: ChannelPerms['requiredReadRole']; requiredRole?: ChannelPerms['requiredReadRole']; requiredReadPlan?: ChannelPerms['requiredReadPlan']; locked?: boolean; locked_until?: string | null })=> ({ slug: String(x.slug), name: x.name, requiredReadRole: x.requiredReadRole || x.requiredRole, requiredReadPlan: x.requiredReadPlan, locked: !!x.locked, locked_until: x.locked_until || null })));
@@ -666,39 +755,9 @@ function DashboardShowroomPageInner() {
           const v = Number(dmTtlRes.value?.ttlSeconds);
           if (Number.isFinite(v)) setDmTtlSeconds(Math.max(0, Math.floor(v)));
         }
-        // Prefetch chat profiles in bulk to avoid many single requests later
-        try {
-          const emails: string[] = [];
-          if (presenceRes.status === 'fulfilled') {
-            for (const u of (presenceRes.value.users || [])) {
-              const e = String(u?.email || '').toLowerCase();
-              if (e && !emails.includes(e)) emails.push(e);
-            }
-          }
-          if (messagesRes.status === 'fulfilled') {
-            for (const m of (messagesRes.value.messages || [])) {
-              const e = String(m?.userEmail || '').toLowerCase();
-              if (e && !emails.includes(e)) emails.push(e);
-            }
-          }
-          if (convRes.status === 'fulfilled') {
-            for (const c of (convRes.value.conversations || [])) {
-              const e = String(c?.email || '').toLowerCase();
-              if (e && !emails.includes(e)) emails.push(e);
-            }
-          }
-          const uniq = emails.filter(Boolean).slice(0, 200);
-          if (uniq.length) {
-            const qs = uniq.map((e)=> `emails=${encodeURIComponent(e)}`).join('&');
-            const bulk = await fetch(`/api/users/chat-profile?${qs}`, { cache: 'no-store' }).then(r=>r.json()).catch(()=>({ profiles: {} }));
-            const profs = (bulk?.profiles || {}) as Record<string, unknown>;
-            try {
-              if (typeof window !== 'undefined') {
-                window.carcloutProfileCache = { ...(window.carcloutProfileCache || {}), ...profs };
-              }
-            } catch {}
-          }
-        } catch {}
+        if (mounted && unreadRes.status === 'fulfilled') {
+          setUnreadByEmail(unreadRes.value?.unreadByEmail || {});
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -813,6 +872,85 @@ function DashboardShowroomPageInner() {
       window.removeEventListener('dm-hidden-changed', onDmHiddenChanged as EventListener);
     };
   }, [active, me?.email]);
+
+  // Function to refresh unread counts
+  const refreshUnreadCounts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/chat/dm/unread-by-conversation', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadByEmail(data.unreadByEmail || {});
+      }
+    } catch (error) {
+      console.error('Failed to refresh unread counts:', error);
+    }
+  }, []);
+
+  // Mark DM notifications as read when viewing a DM conversation
+  useEffect(() => {
+    if (activeChatType !== 'dm' || !activeDm?.email || !me?.email) return;
+    
+    async function markDmNotificationsRead() {
+      try {
+        // Get the dmKey for this conversation
+        const emails = [me?.email, activeDm?.email].sort((a, b) => (a || '').localeCompare(b || ''));
+        const dmKey = emails.join('|');
+        
+        // Fetch notifications for this DM
+        const res = await fetch('/api/chat/notifications');
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        const dmNotifications = (data.notifications || []).filter(
+          (n: { dmKey?: string }) => n.dmKey === dmKey
+        );
+        
+        if (dmNotifications.length > 0) {
+          const ids = dmNotifications.map((n: { id: string }) => n.id);
+          // Mark them as read
+          await fetch('/api/chat/notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+          });
+          
+          // Clear the unread count for this email immediately
+          setUnreadByEmail(prev => {
+            const next = { ...prev };
+            delete next[activeDm.email];
+            return next;
+          });
+          
+          // Dispatch event to refresh the badge in header
+          window.dispatchEvent(new CustomEvent('dm-notifications-read'));
+        }
+      } catch (error) {
+        console.error('Failed to mark DM notifications as read:', error);
+      }
+    }
+    
+    markDmNotificationsRead();
+  }, [activeChatType, activeDm?.email, me?.email]);
+
+  // Poll for unread counts every 30 seconds
+  useEffect(() => {
+    if (!me?.email) return;
+    
+    const interval = setInterval(() => {
+      refreshUnreadCounts();
+    }, 30000);
+    
+    // Listen for events to refresh immediately
+    const handleRefresh = () => {
+      refreshUnreadCounts();
+    };
+    window.addEventListener('dm-notifications-read', handleRefresh);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('dm-notifications-read', handleRefresh);
+    };
+  }, [me?.email, refreshUnreadCounts]);
 
   // Presence polling (heartbeat handled globally by PresenceController)
   useEffect(() => {
@@ -1870,25 +2008,62 @@ function DashboardShowroomPageInner() {
                     <div
                       role="button"
                       tabIndex={0}
-                      onClick={(e)=>{
+                      onClick={async (e)=>{
                         e.preventDefault();
                         e.stopPropagation();
-                        const ev = new MouseEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY });
-                        try { (e.currentTarget as HTMLElement).dispatchEvent(ev); } catch {}
+                        // Open the DM conversation
+                        setActiveChatType('dm');
+                        setActiveDm({ email: u.email, name: u.name, image: u.image ?? null });
+                        setShowroomView('showroom');
+                        router.push('/dashboard/showroom');
+                        closeChannelsIfMobile();
+                        setChatLoading(true);
+                        const messagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(u.email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                        setMessages((messagesResponse.messages||[]).map((mm)=>({
+                          ...mm,
+                          status: 'sent',
+                          userEmail: typeof mm.userEmail === 'string' ? mm.userEmail : undefined,
+                        })));
+                        setChatLoading(false);
+                        // Unhide if previously hidden
+                        try { await fetch('/api/chat/dm/hidden', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherEmail: u.email }) }); } catch {}
                       }}
-                      onKeyDown={(e)=>{
+                      onKeyDown={async (e)=>{
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          try { (e.currentTarget as HTMLElement).click(); } catch {}
+                          // Open the DM conversation
+                          setActiveChatType('dm');
+                          setActiveDm({ email: u.email, name: u.name, image: u.image ?? null });
+                          setShowroomView('showroom');
+                          router.push('/dashboard/showroom');
+                          closeChannelsIfMobile();
+                          setChatLoading(true);
+                          const messagesResponse = await fetch(`/api/chat/dm/messages?user=${encodeURIComponent(u.email)}`).then(r=>r.json()) as { messages?: { id?: string; text: string; userName: string; userEmail?: string | null; created_at?: string; attachments?: string[] }[] };
+                          setMessages((messagesResponse.messages||[]).map((mm)=>({
+                            ...mm,
+                            status: 'sent',
+                            userEmail: typeof mm.userEmail === 'string' ? mm.userEmail : undefined,
+                          })));
+                          setChatLoading(false);
+                          // Unhide if previously hidden
+                          try { await fetch('/api/chat/dm/hidden', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherEmail: u.email }) }); } catch {}
                         }
                       }}
-                      className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 ${showroomView==='showroom' && activeChatType==='dm' && activeDm?.email===u.email? 'bg-white/10' : 'hover:bg-white/5'}`}
+                      onContextMenu={(e)=>{
+                        // Allow right-click to open context menu naturally
+                      }}
+                      className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 cursor-pointer ${showroomView==='showroom' && activeChatType==='dm' && activeDm?.email===u.email? 'bg-white/10' : 'hover:bg-white/5'}`}
                     >
                       <Avatar className="size-5">
                         <AvatarImage src={u.image || undefined} alt={u.name || u.email} loading="lazy" decoding="async" />
                         <AvatarFallback className="bg-[color:var(--primary)]/15 text-[color:var(--primary)]"><CarFront className="size-3" /></AvatarFallback>
                       </Avatar>
                         <span className={`truncate ${isAdm ? 'text-[#ef4444]' : (isUltra ? 'text-[#8b5cf6]' : (isPro ? 'text-[#ff6a00]' : ''))}`}>{u.name || u.email}</span>
+                        {unreadByEmail[u.email] && unreadByEmail[u.email] > 0 ? (
+                          <span className="inline-flex items-center justify-center w-5 h-5 text-[0.65rem] font-semibold text-white bg-indigo-500 rounded-full">
+                            {unreadByEmail[u.email]}
+                          </span>
+                        ) : null}
                         {isMuted && <BellOff className="h-3 w-3 text-white/40" />}
                         {isAdm ? (
                           <span className="ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(239,68,68,0.12)] text-[#ef4444] border border-[#ef4444]/30">Admin</span>
@@ -3302,8 +3477,10 @@ function UserContextMenu({ meEmail, email, name, activeChannel, blocked, onBlock
 
 export default function DashboardShowroomPage() {
   return (
-    <Suspense fallback={<div className="w-full h-full" />}> 
-      <DashboardShowroomPageInner />
-    </Suspense>
+    <ShowroomPasswordGate>
+      <Suspense fallback={<div className="w-full h-full" />}> 
+        <DashboardShowroomPageInner />
+      </Suspense>
+    </ShowroomPasswordGate>
   );
 }

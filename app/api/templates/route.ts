@@ -37,6 +37,10 @@ type TemplateDoc = {
     mode: 'user_choice' | 'force_on' | 'force_off'; // How to handle background removal
     defaultEnabled?: boolean; // Default state when mode is 'user_choice'
   } | null;
+  // Designer cutout config
+  designerCutout?: {
+    mode: 'user_choice' | 'force_on' | 'force_off'; // How to handle cutout in designer
+  } | null;
   designerDefaults?: {
     headline?: string | null;
   } | null;
@@ -90,7 +94,7 @@ export async function GET(req: Request) {
   const statusFilter = isAdmin ? '' : `WHERE (status = 'public' OR status IS NONE)`;
   const res = await db.query(`SELECT * FROM template ${statusFilter} ORDER BY created_at DESC LIMIT ${limit};`);
   const rows = Array.isArray(res) && Array.isArray(res[0]) ? (res[0] as TemplateDoc[]) : [];
-
+  
   // Map to string ids first for easier joins
   const base = rows.map((t) => ({ ...t, id: toIdString((t as { id?: unknown })?.id) }));
 
@@ -339,6 +343,8 @@ export async function POST(req: Request) {
     variables = $variables,
     categories = $categories,
     rembg = $rembg,
+    isolateCar = $isolateCar,
+    designerCutout = $designerCutout,
     video = $video,
     created_by = $created_by,
     created_at = d"${createdIso}";`;
@@ -402,10 +408,13 @@ export async function PATCH(req: Request) {
     'categories',
     'designerDefaults',
     'rembg',
+    'isolateCar',
+    'designerCutout',
     'video',
   ];
   const sets: string[] = [];
   const params: Record<string, unknown> = {};
+  console.log('[PATCH] Body keys:', Object.keys(body));
   for (const f of fields) {
     if (Object.prototype.hasOwnProperty.call(body, f)) {
       if (f === 'rembg') {
@@ -451,6 +460,8 @@ export async function PATCH(req: Request) {
 
   if (!sets.length) return NextResponse.json({ error: "No fields to update" }, { status: 400 });
 
+  console.log('[PATCH] Sets:', sets);
+  
   const db = await getSurreal();
   let result: TemplateDoc | null = null;
 

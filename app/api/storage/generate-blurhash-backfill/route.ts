@@ -8,6 +8,7 @@ import { generateVideoBlurHash } from "@/lib/video-blurhash-server";
 import type { LibraryImage, LibraryVideo } from "@/lib/library-image";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic"; // Ensure route is never cached
 
 /**
  * Generate blurhash for an existing image or video in storage
@@ -17,6 +18,7 @@ export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
     if (!user?.email) {
+      console.warn("[blurhash-backfill] Unauthorized request - no user session");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

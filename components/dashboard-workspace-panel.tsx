@@ -41,7 +41,6 @@ import { ChevronLeft, List as ListIcon, LayoutGrid, MoreHorizontal, RefreshCcw, 
 import dynamic from "next/dynamic";
 import carLoadAnimation from "@/public/carload.json";
 import { getViewUrl, getViewUrls } from "@/lib/view-url-client";
-import ElectricBorder from "@/components/electric-border";
 import CreditDepletionDrawer from "@/components/credit-depletion-drawer";
 import { useCreditDepletion } from "@/lib/use-credit-depletion";
 import { useAsyncVideoGeneration } from "@/lib/use-async-video-generation";
@@ -1370,8 +1369,13 @@ function requestDelete(it: Item) {
             );
             console.log(`[blurhash-backfill] Success: ${item.key}`);
           }
+        } else if (response.status === 401) {
+          // Session not ready yet - abort backfill entirely
+          console.log(`[blurhash-backfill] Skipped - not authenticated yet`);
+          aborted = true;
+          return;
         } else if (response.status !== 400) {
-          // Only log non-400 errors (400 is expected for non-library files)
+          // Only log non-400/401 errors (400 is expected for non-library files, 401 means session not ready)
           console.warn(`[blurhash-backfill] Failed for ${item.key}:`, response.status);
         }
       } catch (error) {
@@ -1390,8 +1394,8 @@ function requestDelete(it: Item) {
       }
     };
 
-    // Start processing after a short delay
-    const timeoutId = setTimeout(processNext, 1000);
+    // Start processing after a delay to ensure session is ready
+    const timeoutId = setTimeout(processNext, 2000);
 
     return () => {
       aborted = true;
@@ -1976,9 +1980,10 @@ function requestDelete(it: Item) {
                               if (it.type === 'folder') { navigate(path ? `${path}/${it.name}` : it.name); return; }
                               const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
                               const isImage = /(\.png|\.jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(it.name);
+                              const isVideo = /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name);
                               const url = await getViewUrl(key, scope);
                               if (!url) return;
-                              if (isImage) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
+                              if (isImage || isVideo) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
                             }}>Open</ContextMenuItem>
                             {it.type==='file' ? (
                               <ContextMenuItem onSelect={()=>{
@@ -2018,6 +2023,7 @@ function requestDelete(it: Item) {
                                     // Hide if already at or above max resolution
                                     if (smallerDim >= 1080 || largerDim >= 1920) return null;
                                   }
+                                  // Note: If dimensions are missing (0), we show the button and let the API reject it
 
                                   return (
                                     <ContextMenuItem
@@ -2101,7 +2107,8 @@ function requestDelete(it: Item) {
                                   const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
                                   const url = await getViewUrl(key, scope);
                                   if (!url) return;
-                                  if (isImage) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
+                                const isVideo = /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name);
+                                if (isImage || isVideo) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
                                 }}
                               >
                                 {!(it as ItemWithTag).isUpscaling ? (
@@ -2142,9 +2149,10 @@ function requestDelete(it: Item) {
                                 if (it.type === 'folder') { navigate(path ? `${path}/${it.name}` : it.name); return; }
                                 const key = it.key || `${path ? `${path}/` : ''}${it.name}`;
                                 const isImage = /(\.png|\.jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(it.name);
+                                const isVideo = /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name);
                                 const url = await getViewUrl(key, scope);
                                 if (!url) return;
-                                if (isImage) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
+                                if (isImage || isVideo) setPreview({ url, name: it.name, key }); else window.open(url, '_blank', 'noopener,noreferrer');
                               }}>Open</ContextMenuItem>
                               {it.type==='file' ? (
                                 <ContextMenuItem onSelect={()=>{
@@ -2234,8 +2242,12 @@ function requestDelete(it: Item) {
               <button className="text-xs px-2 py-1 rounded hover:bg-white/10" onClick={()=>setPreview(null)}>Close</button>
             </div>
             <div className="grid place-items-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {/\.(mp4|mov|webm|avi|mkv)$/i.test(preview.name) ? (
+                <video src={(previewVariants[activePreviewVariantIndex]?.url || preview.url)} controls className="max-w-full max-h-[70vh] rounded" playsInline />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
               <img src={(previewVariants[activePreviewVariantIndex]?.url || preview.url)} alt={preview.name} className="max-w-full max-h-[70vh] rounded" />
+              )}
             </div>
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -2255,16 +2267,154 @@ function requestDelete(it: Item) {
                 ) : null}
               </div>
               <div className="grid w-full gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
-                <ElectricBorder color="#6366f1" speed={1} chaos={0.6} thickness={2} className="w-full sm:w-auto rounded-md">
+                {(() => {
+                  const isVideo = /\.(mp4|mov|webm|avi|mkv)$/i.test(preview.name);
+                  const isImage = /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(preview.name);
+                  
+                  // Find the current item to check dimensions for videos
+                  const currentItem = items.find(it => it.name === preview.name);
+                  
+                  // For videos, hide upscale if at max resolution or already upscaled
+                  if (isVideo) {
+                    if (preview.name.includes('upscaled') || preview.name.includes('2x')) {
+                      return null; // Hide upscale button
+                    }
+                    if (currentItem?.width && currentItem?.height) {
+                      const largerDim = Math.max(currentItem.width, currentItem.height);
+                      const smallerDim = Math.min(currentItem.width, currentItem.height);
+                      if (smallerDim >= 1080 || largerDim >= 1920) {
+                        return null; // Hide upscale button for max resolution videos
+                      }
+                    }
+                    // Note: If dimensions are missing, we show the button and let the API reject it
+                    // Show upscale button for videos that can be upscaled
+                    return (
+                      <div className="relative isolate overflow-visible z-0 rounded-md w-full sm:w-auto">
+                        <div className="absolute inset-0 pointer-events-none rounded-[inherit] z-[2]">
+                          <div className="absolute inset-0 rounded-[inherit]">
+                            {/* Main stroke */}
+                            <div 
+                              className="absolute inset-0 box-border rounded-[inherit]"
+                              style={{
+                                borderWidth: 2,
+                                borderStyle: "solid",
+                                borderColor: "#8b5cf6",
+                              }}
+                            />
+                            {/* Clipped glows */}
+                            <div className="absolute inset-0 overflow-hidden rounded-[inherit]">
+                              <div 
+                                className="absolute inset-0 box-border rounded-[inherit]"
+                                style={{
+                                  borderWidth: 2,
+                                  borderStyle: "solid",
+                                  borderColor: "rgba(139, 92, 246, 0.6)",
+                                  filter: "blur(0.75px)",
+                                  opacity: 0.5,
+                                }}
+                              />
+                              <div 
+                                className="absolute inset-0 box-border rounded-[inherit]"
+                                style={{
+                                  borderWidth: 2,
+                                  borderStyle: "solid",
+                                  borderColor: "#8b5cf6",
+                                  filter: "blur(3px)",
+                                  opacity: 0.5,
+                                }}
+                              />
+                              <div 
+                                className="absolute inset-0 rounded-[inherit]"
+                                style={{
+                                  transform: "scale(1.08)",
+                                  filter: "blur(32px)",
+                                  opacity: 0.3,
+                                  zIndex: -1,
+                                  background: "linear-gradient(-30deg, rgba(139, 92, 246, 0.8), transparent, #8b5cf6)",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="relative h-full rounded-[inherit] z-[1]">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full sm:w-auto"
+                            disabled={videoUpscaleBusy}
+                            onClick={async()=>{
+                              if (!preview?.key) return;
+                              const bal = await getCredits();
+                              const insufficientCredits = creditDepletion.checkAndTrigger(bal, 100);
+                              if (insufficientCredits) return;
+                              await doVideoUpscale(preview.key);
+                            }}
+                          >
+                            {videoUpscaleBusy ? 'Upscaling…' : 'Upscale'}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  // For images, show upscale button
+                  if (isImage) {
+                    return (
+                      <div className="relative isolate overflow-visible z-0 rounded-md w-full sm:w-auto">
+                        <div className="absolute inset-0 pointer-events-none rounded-[inherit] z-[2]">
+                          <div className="absolute inset-0 rounded-[inherit]">
+                            {/* Main stroke */}
+                            <div 
+                              className="absolute inset-0 box-border rounded-[inherit]"
+                              style={{
+                                borderWidth: 2,
+                                borderStyle: "solid",
+                                borderColor: "#8b5cf6",
+                              }}
+                            />
+                            {/* Clipped glows */}
+                            <div className="absolute inset-0 overflow-hidden rounded-[inherit]">
+                              <div 
+                                className="absolute inset-0 box-border rounded-[inherit]"
+                                style={{
+                                  borderWidth: 2,
+                                  borderStyle: "solid",
+                                  borderColor: "rgba(139, 92, 246, 0.6)",
+                                  filter: "blur(0.75px)",
+                                  opacity: 0.5,
+                                }}
+                              />
+                              <div 
+                                className="absolute inset-0 box-border rounded-[inherit]"
+                                style={{
+                                  borderWidth: 2,
+                                  borderStyle: "solid",
+                                  borderColor: "#8b5cf6",
+                                  filter: "blur(3px)",
+                                  opacity: 0.5,
+                                }}
+                              />
+                              <div 
+                                className="absolute inset-0 rounded-[inherit]"
+                                style={{
+                                  transform: "scale(1.08)",
+                                  filter: "blur(32px)",
+                                  opacity: 0.3,
+                                  zIndex: -1,
+                                  background: "linear-gradient(-30deg, rgba(139, 92, 246, 0.8), transparent, #8b5cf6)",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="relative h-full rounded-[inherit] z-[1]">
                   <Button
                     type="button"
                     variant="outline"
                     className="w-full sm:w-auto"
                     disabled={upscaleBusy}
                     onClick={async()=>{
-                      // All users now have upscale access
                       if (!preview?.key) return;
-                      // Check credits before attempting upscale
                       const bal = await getCredits();
                       const insufficientCredits = creditDepletion.checkAndTrigger(bal, 20);
                       if (insufficientCredits) return;
@@ -2273,7 +2423,14 @@ function requestDelete(it: Item) {
                   >
                     {upscaleBusy ? 'Upscaling…' : 'Upscale'}
                   </Button>
-                </ElectricBorder>
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  return null;
+                })()}
+                {/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(preview.name) ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -2282,6 +2439,7 @@ function requestDelete(it: Item) {
                 >
                   Open in Designer
                 </Button>
+                ) : null}
                 <Button
                   size="sm"
                   variant="outline"
@@ -2293,11 +2451,11 @@ function requestDelete(it: Item) {
                   const a = document.createElement('a');
                   if (key) {
                     a.href = `/api/storage/file?key=${encodeURIComponent(key)}${scopeParam}&download=1`;
-                    a.download = (key.split('/').pop() || preview.name || `image-${Date.now()}`);
+                    a.download = (key.split('/').pop() || preview.name || `file-${Date.now()}`);
                   } else {
                     // Fallback to direct URL if no key (should not happen for workspace files)
                     a.href = (active?.url || preview.url);
-                    a.download = preview.name || `image-${Date.now()}`;
+                    a.download = preview.name || `file-${Date.now()}`;
                   }
                   document.body.appendChild(a);
                   a.click();

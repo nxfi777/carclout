@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -12,6 +12,7 @@ type DockItem = {
   label: React.ReactNode;
   href?: string;
   onClick: () => void;
+  badge?: number;
 };
 
 export default function HeaderDockMenu() {
@@ -37,7 +38,7 @@ export default function HeaderDockMenu() {
         { icon: <Play size={16} />, label: 'Hooks', href: '/dashboard/hooks', onClick: () => router.push('/dashboard/hooks') },
         { icon: <LayoutTemplate size={16} />, label: 'Templates', href: '/dashboard/templates', onClick: () => router.push('/dashboard/templates') },
         { icon: <Music2 size={16} />, label: 'Suggestions', href: '/dashboard/suggestions', onClick: () => router.push('/dashboard/suggestions') },
-        { icon: <MessagesSquare size={16} />, label: 'Showroom', href: '/dashboard/showroom', onClick: () => router.push('/dashboard/showroom') },
+        // { icon: <MessagesSquare size={16} />, label: 'Showroom', href: '/dashboard/showroom', onClick: () => router.push('/dashboard/showroom'), badge: unreadDmCount },
         { icon: <Folder size={16} />, label: 'Workspace', href: '/dashboard/workspace', onClick: () => router.push('/dashboard/workspace') },
       ];
       return arr;
@@ -89,7 +90,14 @@ export default function HeaderDockMenu() {
             className="px-2 py-2 justify-between cursor-pointer"
             onSelect={(e)=>{ e.preventDefault(); try { setOpen(false); if (typeof item.onClick === 'function') { item.onClick(); } else if (item.href) { window.location.assign(item.href); } } catch {} }}
           >
-            <span className="text-sm mr-3 grow text-right">{item.label}</span>
+            <span className="text-sm mr-3 grow text-right flex items-center justify-end gap-2">
+              {item.label}
+              {item.badge && item.badge > 0 ? (
+                <span className="inline-flex items-center justify-center w-5 h-5 text-[0.65rem] font-semibold text-white bg-indigo-500 rounded-full">
+                  {item.badge}
+                </span>
+              ) : null}
+            </span>
             <div className="size-9 rounded-md border border-[color:var(--border)] bg-[color:var(--card)] shadow-sm flex items-center justify-center">
               {item.icon}
             </div>

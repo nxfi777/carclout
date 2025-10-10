@@ -30,7 +30,7 @@ type IsolateCutoutConfig = {
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
-function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey: _onReplaceBgKey, onTryAgain, onRegenerate, showAnimate, onAnimate, projectState, sourceImageKey, closeOnDownload }: {
+function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, onSave, saveLabel, aspectRatio, onReplaceBgKey: _onReplaceBgKey, onTryAgain, onRegenerate, showAnimate, onAnimate, animateCredits, projectState, sourceImageKey, closeOnDownload }: {
   bgKey: string;
   bgBlurhash?: string | null; // Optional blurhash for smooth loading
   rembg?: RembgConfig;
@@ -44,6 +44,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
   onRegenerate?: () => void | Promise<void>;
   showAnimate?: boolean;
   onAnimate?: (getBlob: () => Promise<Blob | null>) => Promise<void> | void;
+  animateCredits?: number; // Optional credit cost to display for animate button
   projectState?: import("@/lib/layer-export").DesignerProjectState | null;
   sourceImageKey?: string | null; // Original source image (for templates), used as backgroundKey when saving
   closeOnDownload?: boolean; // If true, close designer after download completes
@@ -656,7 +657,7 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
       section: "desktop-only",
     });
     return list;
-  }, [onTryAgain, onRegenerate, showAnimate, onAnimate, downloading, saving, upscaling, isCuttingOut, hasCutout, isolateCutout, downloadComposite, downloadProject, upscaleBackground, cutoutCar, exportCompositeBlob, bgKey, bgUrl]);
+  }, [onTryAgain, onRegenerate, showAnimate, onAnimate, animateCredits, downloading, saving, upscaling, isCuttingOut, hasCutout, isolateCutout, downloadComposite, downloadProject, upscaleBackground, cutoutCar, exportCompositeBlob, bgKey, bgUrl]);
 
   if (busy) {
     return (

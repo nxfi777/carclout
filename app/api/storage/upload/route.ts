@@ -116,7 +116,7 @@ export async function POST(req: Request) {
     if (isTemplateAsset && isConvertibleImage) {
       try {
         console.log(`Converting template asset to webp: ${fileName}`);
-        buffer = await sharp(buffer)
+        buffer = await sharp(buffer, { rotate: false })
           .webp({ quality: 90 })
           .toBuffer() as Buffer;
         // Update key to use .webp extension
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
       try {
         blurhash = await generateBlurHash(buffer, 4, 3);
         // Get image dimensions
-        const metadata = await sharp(buffer).metadata();
+        const metadata = await sharp(buffer, { rotate: false }).metadata();
         width = metadata.width;
         height = metadata.height;
       } catch (error) {

@@ -72,135 +72,65 @@ export async function POST(req: Request) {
       _creditsCost = 1;
     }
 
-    let result: unknown;
+    // Submit to async queue
+    let queueResult: any;
     try {
-      result = await fal.subscribe("fal-ai/clarity-upscaler", {
-        input,
-        logs: true,
-        onQueueUpdate: (update: unknown) => {
-          try {
-            if (update && typeof update === "object" && (update as Record<string, unknown>).status === "IN_PROGRESS") {
-              const logs = (update as Record<string, unknown>).logs;
-              if (Array.isArray(logs)) {
-                logs
-                  .map((l: unknown) => {
-                    if (l && typeof l === "object" && (l as Record<string, unknown>).message) return String((l as Record<string, unknown>).message);
-                    return null;
-                  })
-                  .filter((m: string | null): m is string => !!m)
-                  .forEach((m) => console.log(`[UPSCALE] ${m}`));
-              }
-            }
-          } catch {}
-        },
-      });
-    } catch {
-      return NextResponse.json({ error: "Upscale failed" }, { status: 502 });
+      queueResult = await fal.queue.submit("fal-ai/clarity-upscaler", { input });
+    } catch (err) {
+      console.error("Upscale queue error:", err);
+      return NextResponse.json({ error: "Upscale failed to start" }, { status: 502 });
     }
 
-    // Extract output image URL
-    let outUrl: string | null = null;
-    if (result && typeof result === "object" && (result as Record<string, unknown>).data) {
-      const dataObj = (result as Record<string, unknown>).data as Record<string, unknown>;
-      if (dataObj) {
-        const imageObj = (dataObj.image && typeof dataObj.image === "object") ? (dataObj.image as Record<string, unknown>) : null;
-        if (imageObj && typeof imageObj.url === "string") outUrl = imageObj.url;
-        if (!outUrl && typeof dataObj.url === "string") outUrl = dataObj.url as string;
-      }
-    }
-    if (!outUrl) return NextResponse.json({ error: "Upscaler did not return an image" }, { status: 502 });
-
-    // Persist to user workspace under /library
-    const userRoot = `users/${sanitizeUserId(user.email)}`;
-    const prefix = `${userRoot}/library/`;
-    await ensureFolder(prefix);
-
-    const fileRes = await fetch(outUrl);
-    if (!fileRes.ok) return NextResponse.json({ error: "Failed to fetch upscaled image" }, { status: 502 });
-    const buf = new Uint8Array(await fileRes.arrayBuffer());
-    const ct = fileRes.headers.get("content-type") || "image/png";
-    const ext = ct.includes("png") ? "png" : (ct.includes("webp") ? "webp" : "jpg");
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const base = (r2_key ? (r2_key.split("/").pop() || "image") : "image").replace(/\.[^.]+$/, "");
-    const factor = input.upscale_factor;
-    const fileName = `${ts}-${base}-upscaled-${factor}x.${ext}`;
-    const outKey = `${prefix}${fileName}`;
-    // Try to infer image dimensions from headers if present (fallback to flat minimum if unknown)
-    let width = 0, height = 0;
-    try {
-      const w = Number(fileRes.headers.get("x-image-width") || 0);
-      const h = Number(fileRes.headers.get("x-image-height") || 0);
-      if (w && h) { width = w; height = h; }
-    } catch {}
-    // Enforce final 4K dimension limit defensively (in case provider ever overshoots)
-    if (width && height) {
-      if (width > MAX_W + 1 || height > MAX_H + 1) {
-        return NextResponse.json({ error: "UPSCALE_DIM_OVERFLOW", message: "Upscaled image exceeds the 4K limit." }, { status: 400 });
-      }
+    const requestId = queueResult?.requestId || queueResult?.request_id;
+    if (!requestId) {
+      return NextResponse.json({ error: 'Failed to queue upscale operation' }, { status: 502 });
     }
 
-    // Determine final charge and charge idempotently after success
+    console.log(`[UPSCALE JOB] Queued job ${requestId} for user ${user.email}`);
+
+    // Store job metadata in database
+    const db = await getSurreal();
     const finalCost = 1; // flat 1 credit per call
+    
     try {
-      await chargeCreditsOnce(user.email, finalCost, "upscale", outKey);
-    } catch {
-      // If charging fails, roll back the stored artifact
-      try { await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: outKey })); } catch {}
-      return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
-    }
-    await r2.send(new PutObjectCommand({ Bucket: bucket, Key: outKey, Body: buf, ContentType: ct }));
-
-    // Generate and store blurhash for upscaled image
-    try {
-      const buffer = Buffer.from(buf);
-      const blurhash = await generateBlurHash(buffer, 4, 3);
-      const metadata = await sharp(buffer).metadata();
-      
-      const db = await getSurreal();
-      const libraryImageData: Omit<LibraryImage, 'id'> = {
-        key: outKey,
+      await db.query(`
+        CREATE tool_job CONTENT {
+          email: $email,
+          fal_request_id: $fal_request_id,
+          fal_model: $fal_model,
+          tool_type: $tool_type,
+          status: $status,
+          credits: $credits,
+          params: $params,
+          created_at: time::now(),
+          updated_at: time::now()
+        };
+      `, {
         email: user.email,
-        blurhash,
-        width: metadata.width || width,
-        height: metadata.height || height,
-        size: buf.length,
-        created: new Date().toISOString(),
-        lastModified: new Date().toISOString(),
-      };
-      
-      // Check if record exists, update or create
-      const existing = await db.query(
-        "SELECT id FROM library_image WHERE key = $key AND email = $email LIMIT 1;",
-        { key: outKey, email: user.email }
-      );
-      
-      const existingId = Array.isArray(existing) && Array.isArray(existing[0]) && existing[0][0]
-        ? (existing[0][0] as { id?: string }).id
-        : null;
-
-      if (existingId) {
-        await db.query(
-          "UPDATE $id SET blurhash = $blurhash, width = $width, height = $height, size = $size, lastModified = $lastModified;",
-          { 
-            id: existingId,
-            blurhash: libraryImageData.blurhash,
-            width: libraryImageData.width,
-            height: libraryImageData.height,
-            size: libraryImageData.size,
-            lastModified: libraryImageData.lastModified
-          }
-        );
-      } else {
-        await db.create('library_image', libraryImageData);
-      }
-      
-      console.log(`Stored library image metadata for upscaled image ${outKey}`);
-    } catch (error) {
-      console.error('Failed to store upscaled image metadata (non-fatal):', error);
+        fal_request_id: requestId,
+        fal_model: 'fal-ai/clarity-upscaler',
+        tool_type: 'upscale',
+        status: 'pending',
+        credits: finalCost,
+        params: {
+          r2_key,
+          upscale_factor: input.upscale_factor,
+          original_width: body.original_width,
+          original_height: body.original_height,
+        }
+      });
+    } catch (dbErr) {
+      console.error('Failed to store upscale job in database:', dbErr);
+      // Job is queued on fal.ai, so we continue despite DB error
     }
 
-    const { url } = await createViewUrl(outKey);
-    return NextResponse.json({ key: outKey, url, credits_charged: finalCost });
+    // Return job ID immediately - client will poll for status
+    return NextResponse.json({ 
+      jobId: requestId,
+      status: 'pending',
+      credits: finalCost,
+      message: 'Upscale operation started. Check status at /api/tools/status'
+    });
   } catch (err) {
     try { console.error("/api/tools/upscale error", err); } catch {}
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

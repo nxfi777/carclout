@@ -224,7 +224,8 @@ export async function POST(req: Request) {
         const sharp = (await import('sharp')).default;
         
         // Get image statistics to determine if preprocessing is needed
-        const imageStats = await sharp(buffer).stats();
+        // NOTE: Disable auto-rotation to prevent Sharp from rotating images based on EXIF data
+        const imageStats = await sharp(buffer, { rotate: false }).stats();
         
         // Calculate average brightness across all channels (0-255 scale)
         const avgBrightness = imageStats.channels.reduce((sum: number, ch: { mean: number }) => sum + ch.mean, 0) / imageStats.channels.length;
@@ -247,7 +248,7 @@ export async function POST(req: Request) {
           
           console.log(`[Image Preprocessing] ${context} - Dark image detected, applying ${brightnessFactor.toFixed(2)}x brightness, ${saturationFactor.toFixed(2)}x saturation`);
           
-          const result = await sharp(buffer)
+          const result = await sharp(buffer, { rotate: false })
             .modulate({
               brightness: brightnessFactor,        // Adaptive brightness increase
               saturation: saturationFactor,        // Intelligent saturation boost
@@ -266,7 +267,7 @@ export async function POST(req: Request) {
         // Check if needs saturation boost
         const saturationFactor = currentSaturation < 15 ? 1.05 : 1.0;
         
-        const result = await sharp(buffer)
+        const result = await sharp(buffer, { rotate: false })
           .modulate({
             saturation: saturationFactor,        // Subtle vibrancy only if desaturated
           })
@@ -339,6 +340,8 @@ export async function POST(req: Request) {
       } catch {}
     }
 
+    // Note: Aspect ratio matching is now handled automatically in the isolate mask process
+
     // Apply isolateCar: remove background and composite on black backdrop (ONLY for user images)
     let processedUserImageUrls = userImageUrls;
     console.log('[isolateCar] Check:', { 
@@ -409,8 +412,8 @@ export async function POST(req: Request) {
 
           // Use sharp to get dimensions and composite on black background
           const sharp = (await import('sharp')).default;
-          const originalMeta = await sharp(Buffer.from(originalBuffer)).metadata();
-          const isolatedMeta = await sharp(Buffer.from(isolatedBuffer)).metadata();
+          const originalMeta = await sharp(Buffer.from(originalBuffer), { rotate: false }).metadata();
+          const isolatedMeta = await sharp(Buffer.from(isolatedBuffer), { rotate: false }).metadata();
           
           // Use the isolated image dimensions (BiRefNet may resize)
           const width = isolatedMeta.width || originalMeta.width || 1024;
@@ -422,15 +425,12 @@ export async function POST(req: Request) {
             using: { width, height }
           });
 
-          let finalWidth = width;
-          let finalHeight = height;
-          let cropX = 0;
-          let cropY = 0;
-
-          // If we have a mask and need to crop to aspect ratio, calculate bounding box
+          // Auto-crop and scale to fit target aspect ratio
+          let processedIsolatedBuffer: Buffer;
+          
           if (maskBuffer && shouldCropToAspect && template?.aspectRatio) {
             try {
-              const maskSharp = sharp(Buffer.from(maskBuffer));
+              const maskSharp = sharp(Buffer.from(maskBuffer), { rotate: false });
               const { data, info } = await maskSharp.raw().toBuffer({ resolveWithObject: true });
               
               console.log('[isolateCar] Mask dimensions:', { width: info.width, height: info.height, channels: info.channels });
@@ -455,93 +455,127 @@ export async function POST(req: Request) {
               }
               
               if (maxX > minX && maxY > minY) {
+                // Add padding around the bounding box (10% on each side)
                 const bboxWidth = maxX - minX;
                 const bboxHeight = maxY - minY;
-                const bboxCenterX = minX + bboxWidth / 2;
-                const bboxCenterY = minY + bboxHeight / 2;
+                const paddingX = Math.round(bboxWidth * 0.1);
+                const paddingY = Math.round(bboxHeight * 0.1);
                 
+                const carLeft = Math.max(0, minX - paddingX);
+                const carTop = Math.max(0, minY - paddingY);
+                const carRight = Math.min(width, maxX + paddingX);
+                const carBottom = Math.min(height, maxY + paddingY);
+                const carWidth = carRight - carLeft;
+                const carHeight = carBottom - carTop;
+                
+                console.log('[isolateCar] Car bounding box with padding:', {
+                  bbox: { minX, minY, maxX, maxY },
+                  padding: { x: paddingX, y: paddingY },
+                  carRegion: { left: carLeft, top: carTop, width: carWidth, height: carHeight }
+                });
+                
+                // Extract the car region with padding
+                const carRegionBuffer = await sharp(Buffer.from(isolatedBuffer), { rotate: false })
+                  .extract({ left: carLeft, top: carTop, width: carWidth, height: carHeight })
+                  .toBuffer();
+                
+                // Calculate target canvas dimensions based on original image size
                 const targetAspect = template.aspectRatio;
-                
-                // Calculate crop dimensions that fit the aspect ratio
-                // We want to crop from the center of the bounding box
-                let cropWidth: number;
-                let cropHeight: number;
+                let canvasWidth: number;
+                let canvasHeight: number;
                 
                 if (width / height > targetAspect) {
-                  // Image is wider than target aspect ratio - constrain by height
-                  cropHeight = height;
-                  cropWidth = Math.round(cropHeight * targetAspect);
-                  // Ensure width doesn't exceed image width
-                  if (cropWidth > width) {
-                    cropWidth = width;
-                    cropHeight = Math.round(cropWidth / targetAspect);
-                  }
+                  // Original is wider - use height as base
+                  canvasHeight = height;
+                  canvasWidth = Math.round(canvasHeight * targetAspect);
                 } else {
-                  // Image is taller than target aspect ratio - constrain by width
-                  cropWidth = width;
-                  cropHeight = Math.round(cropWidth / targetAspect);
-                  // Ensure height doesn't exceed image height
-                  if (cropHeight > height) {
-                    cropHeight = height;
-                    cropWidth = Math.round(cropHeight * targetAspect);
-                  }
+                  // Original is taller - use width as base
+                  canvasWidth = width;
+                  canvasHeight = Math.round(canvasWidth / targetAspect);
                 }
                 
-                // Center the crop on the bounding box center
-                cropX = Math.round(bboxCenterX - cropWidth / 2);
-                cropY = Math.round(bboxCenterY - cropHeight / 2);
+                // Calculate scaled car dimensions to fit within canvas (with 90% fill factor for padding)
+                const carAspect = carWidth / carHeight;
+                let scaledCarWidth: number;
+                let scaledCarHeight: number;
                 
-                // Clamp to image bounds
-                cropX = Math.max(0, Math.min(width - cropWidth, cropX));
-                cropY = Math.max(0, Math.min(height - cropHeight, cropY));
+                if (carAspect > targetAspect) {
+                  // Car is wider - fit to canvas width
+                  scaledCarWidth = Math.round(canvasWidth * 0.9);
+                  scaledCarHeight = Math.round(scaledCarWidth / carAspect);
+                } else {
+                  // Car is taller - fit to canvas height
+                  scaledCarHeight = Math.round(canvasHeight * 0.9);
+                  scaledCarWidth = Math.round(scaledCarHeight * carAspect);
+                }
                 
-                finalWidth = cropWidth;
-                finalHeight = cropHeight;
+                // Resize the car region
+                const scaledCarBuffer = await sharp(carRegionBuffer)
+                  .resize(scaledCarWidth, scaledCarHeight, { fit: 'contain' })
+                  .toBuffer();
                 
-                console.log('[isolateCar] Calculated crop from bounding box:', {
+                // Calculate centered position
+                const offsetX = Math.round((canvasWidth - scaledCarWidth) / 2);
+                const offsetY = Math.round((canvasHeight - scaledCarHeight) / 2);
+                
+                console.log('[isolateCar] Scale-to-fit calculation:', {
                   originalImage: { width, height },
-                  bbox: { minX, minY, maxX, maxY, centerX: bboxCenterX, centerY: bboxCenterY },
-                  crop: { x: cropX, y: cropY, width: finalWidth, height: finalHeight },
-                  targetAspect,
-                  isValid: cropX >= 0 && cropY >= 0 && (cropX + finalWidth) <= width && (cropY + finalHeight) <= height
+                  canvas: { width: canvasWidth, height: canvasHeight, aspect: targetAspect },
+                  car: { width: carWidth, height: carHeight, aspect: carAspect },
+                  scaledCar: { width: scaledCarWidth, height: scaledCarHeight },
+                  offset: { x: offsetX, y: offsetY }
                 });
+                
+                // Create black canvas and composite scaled car in center
+                processedIsolatedBuffer = await sharp({
+                  create: {
+                    width: canvasWidth,
+                    height: canvasHeight,
+                    channels: 4,
+                    background: { r: 0, g: 0, b: 0, alpha: 1 }
+                  }
+                })
+                  .composite([{
+                    input: scaledCarBuffer,
+                    left: offsetX,
+                    top: offsetY
+                  }])
+                  .webp()
+                  .toBuffer();
+                  
+                console.log('[isolateCar] Successfully created scaled and centered car on black canvas');
+              } else {
+                console.warn('[isolateCar] Could not find valid bounding box, using original isolated image');
+                processedIsolatedBuffer = Buffer.from(isolatedBuffer);
               }
             } catch (err) {
-              console.warn('[isolateCar] Failed to calculate bounding box, using full image:', err);
+              console.warn('[isolateCar] Failed to scale and center car, using original isolated image:', err);
+              processedIsolatedBuffer = Buffer.from(isolatedBuffer);
             }
-          }
-
-          // First, crop the isolated image if needed
-          let processedIsolatedBuffer: Buffer;
-          if (finalWidth !== width || finalHeight !== height) {
-            processedIsolatedBuffer = Buffer.from(
-              await sharp(Buffer.from(isolatedBuffer))
-                .extract({ left: cropX, top: cropY, width: finalWidth, height: finalHeight })
-                .toBuffer()
-            );
           } else {
-            processedIsolatedBuffer = Buffer.from(isolatedBuffer);
+            // No auto-crop needed, just composite on black background
+            const originalWidth = isolatedMeta.width || 1024;
+            const originalHeight = isolatedMeta.height || 1024;
+            
+            processedIsolatedBuffer = await sharp({
+              create: {
+                width: originalWidth,
+                height: originalHeight,
+                channels: 4,
+                background: { r: 0, g: 0, b: 0, alpha: 1 }
+              }
+            })
+            .composite([{
+              input: Buffer.from(isolatedBuffer),
+              top: 0,
+              left: 0
+            }])
+            .webp({ quality: 95 })
+            .toBuffer();
           }
 
-          // Create black background matching final dimensions and composite the isolated car
-          const composited = await sharp({
-            create: {
-              width: finalWidth,
-              height: finalHeight,
-              channels: 4,
-              background: { r: 0, g: 0, b: 0, alpha: 1 }
-            }
-          })
-          .composite([{
-            input: processedIsolatedBuffer,
-            top: 0,
-            left: 0
-          }])
-          .webp({ quality: 95 })
-          .toBuffer();
-
-          // Upload composited image to FAL
-          const compositedUrl = await uploadToFal(new Uint8Array(composited), 'image/webp');
+          // Upload processed image to FAL
+          const compositedUrl = await uploadToFal(new Uint8Array(processedIsolatedBuffer), 'image/webp');
           if (compositedUrl) {
             processedUrls.push(compositedUrl);
             console.log('[isolateCar] Successfully processed image');
@@ -610,23 +644,67 @@ export async function POST(req: Request) {
         output_format: 'jpeg', // Gemini supports jpeg/png, default to jpeg for bandwidth savings
         ...(isSeedream && desiredSize ? { image_size: desiredSize } : {}) 
       } as const;
-      try { console.log("[FAL INPUT]", JSON.stringify({ model: modelSlug, input: falInput }, null, 2)); } catch {}
-      result = await fal.subscribe(modelSlug, {
-        input: falInput as any,
-        logs: true,
-        onQueueUpdate: (update: any) => {
-          try {
-            if (update?.status === 'IN_PROGRESS') {
-              (update.logs || []).map((l: any) => l?.message).filter(Boolean).forEach((m: string) => console.log(`[FAL LOG] ${m}`));
-            }
-          } catch {}
-        },
+      try { console.log("[FAL ASYNC INPUT]", JSON.stringify({ model: modelSlug, input: falInput }, null, 2)); } catch {}
+      
+      // Submit to async queue instead of synchronous subscribe
+      const queueResult = await fal.queue.submit(modelSlug, { input: falInput as any });
+      const requestId = queueResult?.requestId || queueResult?.request_id;
+      
+      if (!requestId) {
+        return NextResponse.json({ error: 'Failed to queue image generation' }, { status: 502 });
+      }
+
+      console.log(`[IMAGE JOB] Queued job ${requestId} for user ${user.email}`);
+
+      // Store job metadata in database
+      const templateIdStr = template?.id instanceof RecordId ? template.id.toString() : String(template?.id || body.templateId || body.templateSlug);
+      
+      try {
+        await db.query(`
+          CREATE image_job CONTENT {
+            email: $email,
+            fal_request_id: $fal_request_id,
+            fal_model: $fal_model,
+            template_id: $template_id,
+            status: $status,
+            prompt: $prompt,
+            image_size: $image_size,
+            user_image_keys: $user_image_keys,
+            variables: $variables,
+            credits: $credits,
+            created_at: time::now(),
+            updated_at: time::now()
+          };
+        `, {
+          email: user.email,
+          fal_request_id: requestId,
+          fal_model: modelSlug,
+          template_id: templateIdStr,
+          status: 'pending',
+          prompt: finalPrompt,
+          image_size: desiredSize,
+          user_image_keys: body.userImageKeys || [],
+          variables: body.variables || {},
+          credits: GENERATION_CREDITS_PER_IMAGE
+        });
+      } catch (dbErr) {
+        console.error('Failed to store image job in database:', dbErr);
+        // Job is queued on fal.ai, so we continue despite DB error
+      }
+
+      // Return job ID immediately - client will poll for status
+      return NextResponse.json({ 
+        jobId: requestId,
+        status: 'pending',
+        credits: GENERATION_CREDITS_PER_IMAGE,
+        message: 'Image generation started. Check status at /api/templates/generate/status'
       });
+      
     } catch (e: unknown) {
       try {
         const errObj = e as { message?: unknown; status?: unknown; body?: unknown };
         const safe = typeof errObj?.body === 'object' ? { message: String(errObj?.message || ''), status: errObj?.status, body: errObj?.body } : (errObj?.message || errObj);
-        console.error("FAL subscribe error", safe);
+        console.error("FAL queue error", safe);
       } catch {}
       const err = e as { status?: unknown; message?: unknown; body?: unknown };
       const status = typeof err?.status === "number" ? err.status : 502;
@@ -655,108 +733,6 @@ export async function POST(req: Request) {
       
       return NextResponse.json({ error: userMsg }, { status });
     }
-    const data = (result?.data || {}) as any;
-    const candidateUrl: string | null = data?.images?.[0]?.url || data?.image?.url || data?.url || null;
-    if (!candidateUrl) return NextResponse.json({ error: "Generation failed. Please try again in a moment." }, { status: 502 });
-
-  // Fetch and persist to R2 under unified library folder
-    const createdIso = new Date().toISOString();
-    const userKeyPrefix = `${userRoot}/library/`;
-    await ensureFolder(userKeyPrefix);
-
-    const fileRes = await fetch(candidateUrl);
-    if (!fileRes.ok) return NextResponse.json({ error: "Generation failed. Please try again in a moment." }, { status: 502 });
-    const arrayBuffer = await fileRes.arrayBuffer();
-    const ext = (() => {
-      const ct = fileRes.headers.get("content-type") || "";
-      if (ct.includes("png")) return "png";
-      if (ct.includes("webp")) return "webp";
-      return "jpg";
-    })();
-    const safeSlug = (String(template?.slug || template?.name || "template").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")) || "template";
-    const fileName = `${createdIso.replace(/[:.]/g, "-")}-${safeSlug}.${ext}`;
-    const outKey = `${userKeyPrefix}${fileName}`;
-    
-    // Resolve user plan for storage validation
-    let effectivePlan: string | null = user.plan ?? null;
-    try {
-      const dbForPlan = await getSurreal();
-      const resPlan = await dbForPlan.query("SELECT plan FROM user WHERE email = $email LIMIT 1;", { email: user.email });
-      const rowPlan = Array.isArray(resPlan) && Array.isArray(resPlan[0]) ? (resPlan[0][0] as { plan?: string | null } | undefined) : undefined;
-      if (rowPlan && "plan" in rowPlan) effectivePlan = rowPlan.plan || effectivePlan || null;
-    } catch {}
-    
-    // Validate storage space before saving
-    const validation = await validateStorageSpace(user.email, arrayBuffer.byteLength, effectivePlan);
-    if (!validation.ok) {
-      return NextResponse.json({ error: validation.error || "Storage limit exceeded" }, { status: 413 });
-    }
-    
-    await r2.send(new PutObjectCommand({ Bucket: bucket, Key: outKey, Body: new Uint8Array(arrayBuffer), ContentType: fileRes.headers.get("content-type") || "image/jpeg" }));
-
-    // Charge credits idempotently now that we have a successful generation and stored artifact
-    try {
-      await chargeCreditsOnce(user.email, GENERATION_CREDITS_PER_IMAGE, "generation", outKey);
-    } catch {
-      // Roll back stored artifact if user cannot be charged
-      try { await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: outKey })); } catch {}
-      return NextResponse.json({ error: "INSUFFICIENT_CREDITS" }, { status: 402 });
-    }
-
-  // Response includes storage key and signed view url
-    const { url: viewUrl } = await createViewUrl(outKey);
-    
-    // Track template generation (fire-and-forget)
-    try {
-      // Check if this is user's first template generation by looking at credit transaction history
-      const rid = await getUserRecordIdByEmail(user.email);
-      if (rid) {
-        const genRes = await db.query(
-          "SELECT id FROM credit_txn WHERE user = $rid AND reason = 'charge:generation' LIMIT 1;",
-          { rid }
-        );
-        const hasGeneratedBefore = Array.isArray(genRes) && Array.isArray(genRes[0]) && genRes[0].length > 0;
-        
-        if (!hasGeneratedBefore) {
-          // First-ever template - activation event!
-          console.log('[ACTIVATION] First template generated by:', user.email);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to check first template:', err);
-    }
-    
-    // Track library image usage (fire-and-forget)
-    try {
-      const userImageKeys = body.userImageKeys || [];
-      const libraryImageKeys = userImageKeys.filter(key => 
-        key.includes('/library/') || key.startsWith('library/')
-      );
-      
-      if (libraryImageKeys.length > 0) {
-        const now = new Date().toISOString();
-        // Update lastUsed for each library image used in this generation
-        // Keys sent from frontend are relative (e.g., "library/image.jpg")
-        // but database stores full keys (e.g., "users/{userId}/library/image.jpg")
-        for (const imageKey of libraryImageKeys) {
-          try {
-            const fullKey = imageKey.startsWith('users/') ? imageKey : `${userRoot}/${imageKey}`;
-            const result = await db.query(
-              "UPDATE library_image SET lastUsed = $lastUsed WHERE key = $key AND email = $email;",
-              { key: fullKey, email: user.email, lastUsed: now }
-            );
-            console.log(`Updated lastUsed for ${fullKey}:`, result);
-          } catch (updateErr) {
-            console.error(`Failed to update lastUsed for ${imageKey}:`, updateErr);
-          }
-        }
-        console.log(`Updated lastUsed for ${libraryImageKeys.length} library image(s)`);
-      }
-    } catch (err) {
-      console.error('Failed to track library image usage:', err);
-    }
-    
-    return NextResponse.json({ key: outKey, url: viewUrl });
   } catch (err) {
     try { console.error("/api/templates/generate error", err); } catch {}
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

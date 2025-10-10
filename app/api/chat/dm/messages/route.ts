@@ -303,7 +303,7 @@ export async function POST(request: Request) {
         messageId,
         messageText: text.substring(0, 200),
         dmKey: key,
-        type: mentions.length > 0 ? "mention" : "mention", // DMs are always treated as direct mentions
+        type: mentions.length > 0 ? "mention" : "dm",
         read: false,
         created_at: new Date().toISOString(),
       });

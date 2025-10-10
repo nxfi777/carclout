@@ -15,7 +15,7 @@ type Notification = {
   messageText: string;
   channel?: string;
   dmKey?: string;
-  type: "mention" | "everyone";
+  type: "mention" | "everyone" | "dm";
   created_at: string;
 };
 
@@ -195,7 +195,7 @@ export function ChatNotifications() {
                           {notif.senderName}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {notif.type === "everyone" ? "mentioned @everyone" : "mentioned you"}
+                          {notif.type === "everyone" ? "mentioned @everyone" : notif.type === "dm" ? "sent you a message" : "mentioned you"}
                         </span>
                       </div>
                       {notif.channel && (

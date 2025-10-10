@@ -41,7 +41,7 @@ export async function generateVideoBlurHash(
     const { width, height, duration } = await extractFirstFrame(videoPath, framePath);
 
     // Generate blurhash from the extracted frame
-    const { data, info } = await sharp(framePath)
+    const { data, info } = await sharp(framePath, { rotate: false })
       .resize(32, 32, { fit: 'inside' })
       .ensureAlpha()
       .raw()

@@ -18,6 +18,7 @@ export type DockItemData = {
   onClick: () => void;
   className?: string;
   href?: string;
+  badge?: number;
 };
 
 export type DockProps = {
@@ -254,7 +255,7 @@ export default function Dock({
           {items.map((item, index) => (
             <ContextMenu key={index}>
               <ContextMenuTrigger asChild>
-                <button type="button" className="pointer-events-auto bg-transparent p-0 border-0 overflow-visible">
+                <button type="button" className="pointer-events-auto bg-transparent p-0 border-0 overflow-visible relative">
                   <DockItem
                     onClick={item.onClick}
                     className={`${item.className || ''}`}
@@ -268,6 +269,11 @@ export default function Dock({
                     <DockIcon>{item.icon}</DockIcon>
                     <DockLabel>{item.label}</DockLabel>
                   </DockItem>
+                  {item.badge && item.badge > 0 ? (
+                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center w-5 h-5 text-[0.65rem] font-semibold text-white bg-indigo-500 rounded-full z-10 pointer-events-none">
+                      {item.badge}
+                    </span>
+                  ) : null}
                 </button>
               </ContextMenuTrigger>
               <ContextMenuContent className="w-48">

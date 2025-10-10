@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import Cropper, { type Area } from "react-easy-crop";
+import { Cropper, CropperRef, RectangleStencil, ImageRestriction } from "react-advanced-cropper";
+import "react-advanced-cropper/dist/style.css";
+import "react-advanced-cropper/dist/themes/corners.css";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -40,10 +42,8 @@ export default function ProfileDialog() {
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | undefined>(undefined);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cropperRef = useRef<CropperRef>(null);
   const [isCropping, setIsCropping] = useState(false);
-  const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [pendingDeleteVehicle, setPendingDeleteVehicle] = useState<Vehicle | null>(null);
@@ -143,10 +143,15 @@ export default function ProfileDialog() {
       if (image) {
         const form = new FormData();
         let uploadBlob: Blob = image;
-        if (croppedAreaPixels && imagePreviewUrl) {
+        if (isCropping && cropperRef.current && imagePreviewUrl) {
           try {
-            const blob = await getCroppedImage(imagePreviewUrl, croppedAreaPixels, image.type || "image/jpeg");
-            if (blob) uploadBlob = blob;
+            const canvas = cropperRef.current.getCanvas();
+            if (canvas) {
+              const blob = await new Promise<Blob | null>((resolve) => {
+                canvas.toBlob((blob) => resolve(blob), image.type || "image/jpeg", 0.95);
+              });
+              if (blob) uploadBlob = blob;
+            }
           } catch {}
         }
         form.append("file", uploadBlob, image.name || "avatar.jpg");
@@ -216,17 +221,18 @@ export default function ProfileDialog() {
       const objectUrl = URL.createObjectURL(file);
       setImagePreviewUrl(objectUrl);
       setIsCropping(true);
-      setZoom(1);
-      setCrop({ x: 0, y: 0 });
-      setCroppedAreaPixels(null);
     }
   }
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!isCropping || !imagePreviewUrl || !croppedAreaPixels) return;
-      const blob = await getCroppedImage(imagePreviewUrl, croppedAreaPixels, (image?.type || "image/jpeg"), { width: 128, height: 128 });
+      if (!isCropping || !imagePreviewUrl || !cropperRef.current) return;
+      const canvas = cropperRef.current.getCanvas();
+      if (!canvas) return;
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), image?.type || "image/jpeg", 0.95);
+      });
       if (cancelled || !blob) return;
       const url = URL.createObjectURL(blob);
       setAvatarPreviewUrl((prev) => {
@@ -235,45 +241,7 @@ export default function ProfileDialog() {
       });
     })();
     return () => { cancelled = true; };
-  }, [isCropping, imagePreviewUrl, croppedAreaPixels, image]);
-
-  
-
-  function getCroppedImage(
-    imageSrc: string,
-    crop: Area,
-    mime: string,
-    resize?: { width: number; height: number }
-  ): Promise<Blob | null> {
-    return new Promise((resolve) => {
-      const image = new Image();
-      image.crossOrigin = "anonymous";
-      image.onload = () => {
-        const canvas = document.createElement("canvas");
-        const outW = resize?.width ? Math.max(1, Math.round(resize.width)) : Math.max(1, Math.round(crop.width));
-        const outH = resize?.height ? Math.max(1, Math.round(resize.height)) : Math.max(1, Math.round(crop.height));
-        canvas.width = outW;
-        canvas.height = outH;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return resolve(null);
-        ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(
-          image,
-          Math.max(0, Math.round(crop.x)),
-          Math.max(0, Math.round(crop.y)),
-          Math.max(1, Math.round(crop.width)),
-          Math.max(1, Math.round(crop.height)),
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        );
-        canvas.toBlob((blob) => resolve(blob), mime || "image/jpeg", 0.95);
-      };
-      image.onerror = () => resolve(null);
-      image.src = imageSrc;
-    });
-  }
+  }, [isCropping, imagePreviewUrl, image]);
 
   function sanitizeInstagramHandle(input: string): string {
     const withoutAt = input.toLowerCase().replace(/^@+/, "");
@@ -386,40 +354,46 @@ export default function ProfileDialog() {
               onChange={onFileChange}
             />
             {isCropping && imagePreviewUrl ? (
-              <div className="mt-3">
-                <div className="relative w-full max-w-sm h-64 bg-black/40 rounded-md overflow-hidden">
+              <div className="mt-3 space-y-3">
+                <div className="relative w-full max-w-md mx-auto bg-black/40 rounded-md overflow-hidden" style={{ height: '20rem' }}>
                   <Cropper
-                    image={imagePreviewUrl}
-                    crop={crop}
-                    zoom={zoom}
-                    aspect={1}
-                    onCropChange={setCrop}
-                    onZoomChange={setZoom}
-                    onCropComplete={(_, areaPixels) => setCroppedAreaPixels(areaPixels)}
+                    ref={cropperRef}
+                    src={imagePreviewUrl}
+                    className="h-full w-full"
+                    stencilComponent={RectangleStencil}
+                    stencilProps={{
+                      aspectRatio: 1,
+                      movable: true,
+                      resizable: true,
+                      handlers: true,
+                      lines: true,
+                      grid: true,
+                    }}
+                    backgroundWrapperProps={{
+                      scaleImage: true,
+                      moveImage: true,
+                    }}
+                    imageRestriction={ImageRestriction.stencil}
                   />
                 </div>
-                <div className="mt-3 flex items-center gap-3">
-                  <input
-                    type="range"
-                    min={1}
-                    max={3}
-                    step={0.01}
-                    value={zoom}
-                    onChange={(e) => setZoom(parseFloat(e.target.value))}
-                    className="w-48"
-                  />
+                <div className="flex items-center gap-3 justify-end">
                   <Button type="button" variant="outline" onClick={() => { setIsCropping(false); }}>
                     Cancel
                   </Button>
                   <Button
                     type="button"
                     onClick={async () => {
-                      if (!imagePreviewUrl || !croppedAreaPixels || !image) return setIsCropping(false);
+                      if (!imagePreviewUrl || !cropperRef.current || !image) return setIsCropping(false);
                       try {
-                        const blob = await getCroppedImage(imagePreviewUrl, croppedAreaPixels, image.type || "image/jpeg");
-                        if (blob) {
-                          const url = URL.createObjectURL(blob);
-                          setImagePreviewUrl(url);
+                        const canvas = cropperRef.current.getCanvas();
+                        if (canvas) {
+                          const blob = await new Promise<Blob | null>((resolve) => {
+                            canvas.toBlob((blob) => resolve(blob), image.type || "image/jpeg", 0.95);
+                          });
+                          if (blob) {
+                            const url = URL.createObjectURL(blob);
+                            setImagePreviewUrl(url);
+                          }
                         }
                       } finally {
                         setIsCropping(false);

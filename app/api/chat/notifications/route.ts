@@ -11,7 +11,7 @@ type NotificationRow = {
   messageText: string;
   channel?: string;
   dmKey?: string;
-  type: "mention" | "everyone";
+  type: "mention" | "everyone" | "dm";
   read: boolean;
   created_at: string;
 };

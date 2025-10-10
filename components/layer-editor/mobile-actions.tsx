@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDesignerActions } from "@/components/layer-editor/DesignerActionsContext";
-import ElectricBorder from "@/components/electric-border";
 import { cn } from "@/lib/utils";
 
 export default function MobileActions({
@@ -112,10 +111,65 @@ function ActionButton({ action, wide }: { action: import("@/components/layer-edi
   );
 
   if (action.electric) {
+    const color = "#8b5cf6"; // indigo/purple
+    const thickness = 2;
+    const borderRadius = wide ? "rounded-md" : "rounded-full";
+    
     return (
-      <ElectricBorder key={action.key} color="#8b5cf6" speed={1} chaos={0.6} thickness={2} className={wide ? "rounded-md" : "rounded-full"}>
-        {content}
-      </ElectricBorder>
+      <div key={action.key} className={cn("relative isolate overflow-visible z-0", borderRadius)}>
+        <div className={cn("absolute inset-0 pointer-events-none rounded-[inherit] z-[2]")}>
+          <div className="absolute inset-0 rounded-[inherit]">
+            {/* Main stroke */}
+            <div 
+              className="absolute inset-0 box-border rounded-[inherit]"
+              style={{
+                borderWidth: thickness,
+                borderStyle: "solid",
+                borderColor: color,
+              }}
+            />
+            {/* Clipped glows */}
+            <div className="absolute inset-0 overflow-hidden rounded-[inherit]">
+              {/* Glow 1 */}
+              <div 
+                className="absolute inset-0 box-border rounded-[inherit]"
+                style={{
+                  borderWidth: thickness,
+                  borderStyle: "solid",
+                  borderColor: `rgba(139, 92, 246, 0.6)`,
+                  filter: `blur(${0.5 + thickness * 0.25}px)`,
+                  opacity: 0.5,
+                }}
+              />
+              {/* Glow 2 */}
+              <div 
+                className="absolute inset-0 box-border rounded-[inherit]"
+                style={{
+                  borderWidth: thickness,
+                  borderStyle: "solid",
+                  borderColor: color,
+                  filter: `blur(${2 + thickness * 0.5}px)`,
+                  opacity: 0.5,
+                }}
+              />
+              {/* Background glow */}
+              <div 
+                className="absolute inset-0 rounded-[inherit]"
+                style={{
+                  transform: "scale(1.08)",
+                  filter: "blur(32px)",
+                  opacity: 0.3,
+                  zIndex: -1,
+                  background: `linear-gradient(-30deg, rgba(139, 92, 246, 0.8), transparent, ${color})`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="relative h-full rounded-[inherit] z-[1]">
+          {content}
+        </div>
+      </div>
     );
   }
 
