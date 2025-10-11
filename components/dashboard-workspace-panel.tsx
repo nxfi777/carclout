@@ -2069,7 +2069,8 @@ function requestDelete(it: Item) {
                             ) : null}
                             {it.type==='file' && /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name) ? (
                               <>
-                                {(() => {
+                                {/* UPSCALE HIDDEN FOR NOW */}
+                                {false && (() => {
                                   // Hide upscale button if video is already at max resolution or already upscaled
                                   if (it.name.includes('upscaled') || it.name.includes('2x')) return null;
 
@@ -2241,7 +2242,8 @@ function requestDelete(it: Item) {
                               ) : null}
                               {it.type==='file' && /\.(mp4|mov|webm|avi|mkv)$/i.test(it.name) ? (
                                 <>
-                                  {(() => {
+                                  {/* UPSCALE HIDDEN FOR NOW */}
+                                  {false && (() => {
                                     // Hide upscale button if video is already at max resolution or already upscaled
                                     if (it.name.includes('upscaled') || it.name.includes('2x')) return null;
                                     
@@ -2331,10 +2333,13 @@ function requestDelete(it: Item) {
                   const isImage = /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(preview.name);
                   
                   // Find the current item to check dimensions for videos
-                  const currentItem = items.find(it => it.name === preview.name);
+                  const _currentItem = items.find(it => it.name === preview.name);
                   
+                  // UPSCALE HIDDEN FOR NOW
                   // For videos, hide upscale if at max resolution or already upscaled
                   if (isVideo) {
+                    return null; // Hide upscale button for all videos
+                    /* Original code - commented out for now
                     if (preview.name.includes('upscaled') || preview.name.includes('2x')) {
                       return null; // Hide upscale button
                     }
@@ -2351,7 +2356,6 @@ function requestDelete(it: Item) {
                       <div className="relative isolate overflow-visible z-0 rounded-md w-full sm:w-auto">
                         <div className="absolute inset-0 pointer-events-none rounded-[inherit] z-[2]">
                           <div className="absolute inset-0 rounded-[inherit]">
-                            {/* Main stroke */}
                             <div 
                               className="absolute inset-0 box-border rounded-[inherit]"
                               style={{
@@ -2360,7 +2364,6 @@ function requestDelete(it: Item) {
                                 borderColor: "#8b5cf6",
                               }}
                             />
-                            {/* Clipped glows */}
                             <div className="absolute inset-0 overflow-hidden rounded-[inherit]">
                               <div 
                                 className="absolute inset-0 box-border rounded-[inherit]"
@@ -2414,6 +2417,7 @@ function requestDelete(it: Item) {
                         </div>
                       </div>
                     );
+                    */
                   }
                   
                   // For images, show upscale button

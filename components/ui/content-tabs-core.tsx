@@ -2238,7 +2238,8 @@ export function TemplatesTabContent(){
                         </div>
                       )}
                       {/* Upscale button - available for all users with indigo styling */}
-                      {animResultKey && !String(animResultKey).includes('upscaled') && !String(animResultKey).includes('2x') && !showingUpscaled && !upscaledVideoKey && canUpscaleVideo ? (
+                      {/* HIDDEN FOR NOW */}
+                      {false && animResultKey && !String(animResultKey).includes('upscaled') && !String(animResultKey).includes('2x') && !showingUpscaled && !upscaledVideoKey && canUpscaleVideo ? (
                         <div className="flex flex-col gap-1 flex-1 sm:flex-none">
                           <Button 
                             size="sm" 
@@ -2360,7 +2361,8 @@ export function TemplatesTabContent(){
                         </div>
                       ) : null}
                       {/* Toggle button - switch between original and upscaled */}
-                      {originalVideoKey && upscaledVideoKey && (
+                      {/* HIDDEN FOR NOW */}
+                      {false && originalVideoKey && upscaledVideoKey && (
                         <Button 
                           size="sm" 
                           variant="outline" 
