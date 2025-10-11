@@ -116,9 +116,21 @@ export async function POST(req: Request) {
     if (isTemplateAsset && isConvertibleImage) {
       try {
         console.log(`Converting template asset to webp: ${fileName}`);
-        buffer = await sharp(buffer, { autoOrient: false })
-          .webp({ quality: 90 })
-          .toBuffer() as Buffer;
+        let sharpInstance = sharp(buffer, { autoOrient: false });
+        
+        // Resize thumbnails to max 800px width (only if larger, maintain aspect ratio)
+        const isThumbnail = key.includes('templates/thumbnails/');
+        if (isThumbnail) {
+          const metadata = await sharpInstance.metadata();
+          if (metadata.width && metadata.width > 800) {
+            console.log(`  Resizing thumbnail from ${metadata.width}px to 800px max width`);
+            sharpInstance = sharpInstance.resize(800, null, { withoutEnlargement: true });
+          }
+        }
+        
+        // Apply webp conversion
+        buffer = await sharpInstance.webp({ quality: 90 }).toBuffer() as Buffer;
+        
         // Update key to use .webp extension
         finalKey = key.replace(/\.(jpe?g|png|gif|bmp)$/i, '.webp');
         finalContentType = 'image/webp';

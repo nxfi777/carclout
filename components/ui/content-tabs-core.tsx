@@ -28,6 +28,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { getViewUrl, getViewUrls } from '@/lib/view-url-client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Masonry from 'react-masonry-css';
 import CreditDepletionDrawer from '@/components/credit-depletion-drawer';
 import { useCreditDepletion } from '@/lib/use-credit-depletion';
 import { useAsyncVideoGeneration } from '@/lib/use-async-video-generation';
@@ -1053,12 +1054,38 @@ export function TemplatesTabContent(){
         const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string; blurhash?: string }> = Array.isArray(obj?.items) ? obj.items : [];
         const files = arr.filter((it)=> String(it?.type) === 'file');
         const imageFiles = files.filter((it)=> { const s = String(it?.key || it?.name || '').toLowerCase(); return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s); });
-        // Sort by most recent first
+        
+        // Get last used timestamps from localStorage
+        const getLastUsed = (key: string): number => {
+          try {
+            const stored = localStorage.getItem('carclout:library:lastUsed');
+            if (!stored) return 0;
+            const data = JSON.parse(stored) as Record<string, number>;
+            return data[key] || 0;
+          } catch {
+            return 0;
+          }
+        };
+        
+        // Sort by most recently used first, then by lastModified
         imageFiles.sort((a, b) => {
+          const aKey = a.key || `library/${String(a?.name || '')}`;
+          const bKey = b.key || `library/${String(b?.name || '')}`;
+          const aUsed = getLastUsed(aKey);
+          const bUsed = getLastUsed(bKey);
+          
+          // If both have usage timestamps, sort by most recent usage
+          if (aUsed && bUsed) return bUsed - aUsed;
+          // If only one has usage, prioritize it
+          if (aUsed) return -1;
+          if (bUsed) return 1;
+          
+          // Fall back to lastModified
           const aTime = a.lastModified ? new Date(a.lastModified).getTime() : 0;
           const bTime = b.lastModified ? new Date(b.lastModified).getTime() : 0;
           return bTime - aTime;
         });
+        
         const keys = imageFiles.map((it)=> it.key || `library/${String(it?.name || '')}`);
         if (!keys.length) { if (!aborted) setLibraryItems([]); return; }
         const urls: Record<string,string> = await getViewUrls(keys);
@@ -1082,7 +1109,38 @@ export function TemplatesTabContent(){
       const arr: Array<{ type?: string; name?: string; key?: string; lastModified?: string; blurhash?: string; lastUsed?: string }> = Array.isArray(obj?.items) ? obj.items : [];
       const files = arr.filter((it)=> String(it?.type) === 'file');
       const imageFiles = files.filter((it)=> { const s = String(it?.key || it?.name || '').toLowerCase(); return /\.(png|jpe?g|webp|gif|avif|svg)$/.test(s); });
-      // API already sorts by lastUsed (most recent usage) then lastModified
+      
+      // Get last used timestamps from localStorage
+      const getLastUsed = (key: string): number => {
+        try {
+          const stored = localStorage.getItem('carclout:library:lastUsed');
+          if (!stored) return 0;
+          const data = JSON.parse(stored) as Record<string, number>;
+          return data[key] || 0;
+        } catch {
+          return 0;
+        }
+      };
+      
+      // Sort by most recently used first, then by lastModified
+      imageFiles.sort((a, b) => {
+        const aKey = a.key || `library/${String(a?.name || '')}`;
+        const bKey = b.key || `library/${String(b?.name || '')}`;
+        const aUsed = getLastUsed(aKey);
+        const bUsed = getLastUsed(bKey);
+        
+        // If both have usage timestamps, sort by most recent usage
+        if (aUsed && bUsed) return bUsed - aUsed;
+        // If only one has usage, prioritize it
+        if (aUsed) return -1;
+        if (bUsed) return 1;
+        
+        // Fall back to lastModified
+        const aTime = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+        const bTime = b.lastModified ? new Date(b.lastModified).getTime() : 0;
+        return bTime - aTime;
+      });
+      
       const keys = imageFiles.map((it)=> it.key || `library/${String(it?.name || '')}`);
       if (!keys.length) { setLibraryItems([]); return; }
       const urls: Record<string,string> = await getViewUrls(keys);
@@ -1096,10 +1154,53 @@ export function TemplatesTabContent(){
     } finally { setLibraryLoading(false); }
   }
 
+  // Track library image usage for sorting
+  function trackLibraryUsage(keys: string[]) {
+    try {
+      // Filter for library images only
+      const libraryKeys = keys.filter(k => libraryItems.some(item => item.key === k));
+      if (!libraryKeys.length) return;
+      
+      const stored = localStorage.getItem('carclout:library:lastUsed');
+      const data: Record<string, number> = stored ? JSON.parse(stored) : {};
+      
+      const now = Date.now();
+      libraryKeys.forEach(key => {
+        data[key] = now;
+      });
+      
+      localStorage.setItem('carclout:library:lastUsed', JSON.stringify(data));
+      
+      // Re-sort library items in state
+      setLibraryItems(prev => {
+        const sorted = [...prev].sort((a, b) => {
+          const aUsed = data[a.key] || 0;
+          const bUsed = data[b.key] || 0;
+          if (aUsed && bUsed) return bUsed - aUsed;
+          if (aUsed) return -1;
+          if (bUsed) return 1;
+          return 0;
+        });
+        return sorted;
+      });
+    } catch (err) {
+      console.error('Failed to track library usage:', err);
+    }
+  }
+
   function toggleSelect(k: string) {
     const existsNow = selectedImageKeys.includes(k);
     if (!existsNow && selectedImageKeys.length >= requiredImages) {
-      try { toast.error('Deselect an image first'); } catch {}
+      try { 
+        toast.error('Deselect an image first', {
+          action: {
+            label: 'Deselect Last',
+            onClick: () => {
+              setSelectedImageKeys((prev) => prev.slice(0, -1));
+            }
+          }
+        }); 
+      } catch {}
       return;
     }
     setSelectedImageKeys((prev)=> {
@@ -1217,12 +1318,15 @@ export function TemplatesTabContent(){
 
   const grid = (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-stretch">
+      <Masonry
+        breakpointCols={{ default: 4, 1280: 4, 1024: 3, 640: 2 }}
+        className="flex -ml-4 w-auto"
+        columnClassName="pl-4 bg-clip-padding"
+      >
         {displayedItems.map((it, idx)=> (
-          <div key={idx} className="h-full">
+          <div key={idx} className="mb-4">
             <TemplateCard
               data={{ id: it.id, name: it.name, description: it.desc, slug: it.slug, thumbUrl: it.thumbUrl, blurhash: it.blurhash, createdAt: it.createdAt, favoriteCount: it.favoriteCount, isFavorited: it.isFavorited, videoUrl: ((): string | undefined => { try { const v = it.video as { previewKey?: string } | null | undefined; const key = v?.previewKey; if (!key) return undefined; const cached = typeof window !== 'undefined' ? sessionStorage.getItem(`carclout:vprev:${key}`) : null; if (cached) { const obj = JSON.parse(cached) as { url?: string; ts?: number }; const ttl = 10*60*1000; if (obj?.url && obj?.ts && Date.now()-obj.ts < ttl) return obj.url; } return undefined; } catch { return undefined; } })(), proOnly: Boolean((it as Record<string, unknown>).proOnly), isVideoTemplate: Boolean(it.video?.enabled), status: it.status }}
-              className="h-full"
               showNewBadge={true}
               showLike={true}
               showFavoriteCount={true}
@@ -1241,7 +1345,7 @@ export function TemplatesTabContent(){
             />
           </div>
         ))}
-      </div>
+      </Masonry>
       {/* Sentinel for infinite scroll */}
       {hasMore && (
         <div ref={sentinelRef} className="py-8 text-center">
@@ -1868,6 +1972,13 @@ export function TemplatesTabContent(){
           setActiveUrl(result.url);
           setActiveKey(result.key);
           setUpscales([]);
+          
+          // Track library image usage for sorting
+          try {
+            trackLibraryUsage(selectedKeys);
+          } catch (err) {
+            console.error('Failed to track library usage:', err);
+          }
           
           try {
             if (result.key) {
@@ -2620,12 +2731,76 @@ export function TemplatesTabContent(){
                       if (res.status === 400 && (data?.error === 'UPSCALE_AT_MAX')) { toast.error('Already at maximum resolution.'); return; }
                       if (res.status === 400 && (data?.error === 'UPSCALE_DIM_OVERFLOW')) { toast.error('Upscale would exceed the 4K limit.'); return; }
                       if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { toast.error('This image was already upscaled. Use the original.'); return; }
-                      if (!res.ok || !data?.url || !data?.key) { toast.error(data?.error || 'Upscale failed'); return; }
-                      const entry = { key: String(data.key), url: String(data.url) };
-                      setUpscales((prev)=> [...prev, entry]);
-                      setActiveKey(entry.key);
-                      setActiveUrl(entry.url);
-                    } finally { setUpscaleBusy(false); }
+                      if (!res.ok) { toast.error(data?.error || 'Upscale failed'); return; }
+                      
+                      // Handle async response - job has been queued
+                      if (data?.status === 'pending' && data?.jobId) {
+                        const jobId = data.jobId;
+                        console.log(`[upscale] Job queued: ${jobId}`);
+                        
+                        // Show toast notification
+                        toast.success('Upscaling... it will appear in your library soon');
+                        
+                        // Poll for completion
+                        const pollInterval = setInterval(async () => {
+                          try {
+                            const statusResponse = await fetch(`/api/tools/status?jobId=${jobId}`);
+                            if (!statusResponse.ok) {
+                              clearInterval(pollInterval);
+                              setUpscaleBusy(false);
+                              return;
+                            }
+                            
+                            const statusResult = await statusResponse.json();
+                            console.log(`[upscale] Job ${jobId} status:`, statusResult.status);
+                            
+                            if (statusResult.status === 'completed') {
+                              clearInterval(pollInterval);
+                              
+                              // Use the key to construct proper API URL
+                              const upscaledKey = statusResult.key;
+                              const upscaledUrl = `/api/storage/file?key=${encodeURIComponent(upscaledKey)}`;
+                              
+                              const entry = { key: upscaledKey, url: upscaledUrl };
+                              setUpscales((prev)=> [...prev, entry]);
+                              setActiveKey(entry.key);
+                              setActiveUrl(entry.url);
+                              setUpscaleBusy(false);
+                              
+                              // Refresh credits
+                              try {
+                                window.dispatchEvent(new CustomEvent('credits-refresh'));
+                              } catch {}
+                              
+                            } else if (statusResult.status === 'failed') {
+                              clearInterval(pollInterval);
+                              setUpscaleBusy(false);
+                              toast.error(statusResult.error || 'Upscale failed');
+                            }
+                          } catch (pollError) {
+                            console.error('Error polling upscale status:', pollError);
+                            clearInterval(pollInterval);
+                            setUpscaleBusy(false);
+                          }
+                        }, 2000);
+                        
+                        return; // Keep busy state true while polling
+                      }
+                      
+                      // Fallback: Handle old synchronous response format
+                      if (data?.url && data?.key) {
+                        const entry = { key: String(data.key), url: String(data.url) };
+                        setUpscales((prev)=> [...prev, entry]);
+                        setActiveKey(entry.key);
+                        setActiveUrl(entry.url);
+                        setUpscaleBusy(false);
+                      } else {
+                        setUpscaleBusy(false);
+                      }
+                    } catch (e) {
+                      console.error('Upscale error:', e);
+                      setUpscaleBusy(false);
+                    }
                   }}>{upscales.length ? 'Upscale again' : 'Upscale'}
                   </Button>
                   <Button className="flex-1 sm:flex-none min-w-[9rem]" onClick={async()=>{
@@ -2861,15 +3036,23 @@ export function TemplatesTabContent(){
                               </Button>
                             </div>
                             {libraryLoading ? (
-                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                {Array.from({ length: 8 }).map((_, i)=> (<Skeleton key={`wkl-${i}`} className="w-full aspect-square" />))}
-                              </div>
+                              <Masonry
+                                breakpointCols={{ default: 4, 768: 3, 640: 2 }}
+                                className="flex -ml-3 w-auto"
+                                columnClassName="pl-3 bg-clip-padding"
+                              >
+                                {Array.from({ length: 8 }).map((_, i)=> (<Skeleton key={`wkl-${i}`} className="w-full aspect-square mb-3" />))}
+                              </Masonry>
                             ) : (
-                              <ul className="flex flex-wrap gap-3 pb-2">
+                              <Masonry
+                                breakpointCols={{ default: 4, 768: 3, 640: 2 }}
+                                className="flex -ml-3 w-auto"
+                                columnClassName="pl-3 bg-clip-padding"
+                              >
                                 {libraryItems.map((it)=> (
                                   <ContextMenu key={it.key}>
                                     <ContextMenuTrigger asChild>
-                                      <li className="relative focus:outline-none shrink sm:shrink-0 w-36 sm:w-44 cursor-pointer">
+                                      <div className="relative focus:outline-none mb-3 cursor-pointer">
                                         <button type="button" className="block w-full h-full" onClick={()=> { setSource('upload'); toggleSelect(it.key); }}>
                                           <div className={`w-full rounded ${selectedImageKeys.includes(it.key) ? 'ring-2 ring-primary' : 'border border-[color:var(--border)]'}`}>
                                             <div className="rounded overflow-hidden relative bg-black/20">
@@ -2898,7 +3081,7 @@ export function TemplatesTabContent(){
                                             </div>
                                           </div>
                                         </button>
-                                      </li>
+                                      </div>
                                     </ContextMenuTrigger>
                                     <ContextMenuContent className="w-48">
                                       <ContextMenuItem
@@ -2913,7 +3096,7 @@ export function TemplatesTabContent(){
                                     </ContextMenuContent>
                                   </ContextMenu>
                                 ))}
-                              </ul>
+                              </Masonry>
                             )}
                           </TabsContent>
                         ) : null}

@@ -228,10 +228,69 @@ export function DashboardWorkspacePanel({ scope }: { scope?: 'user' | 'admin' } 
       if (res.status === 400 && (data?.error === 'UPSCALE_AT_MAX')) { toast.error('Already at maximum resolution.'); return; }
       if (res.status === 400 && (data?.error === 'UPSCALE_DIM_OVERFLOW')) { toast.error('Upscale would exceed the 4K limit.'); return; }
       if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { toast.error('This image was already upscaled. Use the original.'); return; }
-      if (!res.ok || !data?.key) { toast.error(data?.error || 'Upscale failed'); return; }
-      await refresh(undefined, { force: true });
-      setTreeVersion(v=>v+1);
-    } catch {} finally { setUpscaleBusy(false); }
+      if (!res.ok) { toast.error(data?.error || 'Upscale failed'); return; }
+      
+      // Handle async response - job has been queued
+      if (data?.status === 'pending' && data?.jobId) {
+        const jobId = data.jobId;
+        console.log(`[upscale] Job queued: ${jobId}`);
+        
+        // Show toast notification
+        toast.success('Upscaling... it will appear in your library soon');
+        
+        // Poll for completion
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await fetch(`/api/tools/status?jobId=${jobId}`);
+            if (!statusResponse.ok) {
+              clearInterval(pollInterval);
+              setUpscaleBusy(false);
+              return;
+            }
+            
+            const statusResult = await statusResponse.json();
+            console.log(`[upscale] Job ${jobId} status:`, statusResult.status);
+            
+            if (statusResult.status === 'completed') {
+              clearInterval(pollInterval);
+              
+              // Refresh the workspace to show the new upscaled image
+              await refresh(undefined, { force: true });
+              setTreeVersion(v=>v+1);
+              setUpscaleBusy(false);
+              
+              // Refresh credits
+              try {
+                window.dispatchEvent(new CustomEvent('credits-refresh'));
+              } catch {}
+              
+            } else if (statusResult.status === 'failed') {
+              clearInterval(pollInterval);
+              setUpscaleBusy(false);
+              toast.error(statusResult.error || 'Upscale failed');
+            }
+          } catch (pollError) {
+            console.error('Error polling upscale status:', pollError);
+            clearInterval(pollInterval);
+            setUpscaleBusy(false);
+          }
+        }, 2000);
+        
+        return; // Keep busy state true while polling
+      }
+      
+      // Fallback: Handle old synchronous response format
+      if (data?.key) {
+        await refresh(undefined, { force: true });
+        setTreeVersion(v=>v+1);
+        setUpscaleBusy(false);
+      } else {
+        setUpscaleBusy(false);
+      }
+    } catch (e) {
+      console.error('Upscale error:', e);
+      setUpscaleBusy(false);
+    }
   }
 
   async function doVideoUpscale(key: string) {

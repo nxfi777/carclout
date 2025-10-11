@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 const HEARTBEAT_INTERVAL_MS = 55_000; // 55s to avoid edge cases with 60s server rate limit
 const HEARTBEAT_MIN_GAP_MS = 50_000; // 50s minimum gap to ensure rate limit compliance
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes of inactivity before going idle
 
 type PresenceStatus = "online" | "idle" | "dnd" | "invisible";
 
@@ -31,6 +32,8 @@ export default function PresenceController({ email }: { email?: string | null })
   const latestVisibilityRef = useRef<"visible" | "hidden">(typeof document !== "undefined" && document.visibilityState === "hidden" ? "hidden" : "visible");
   const lastHeartbeatRef = useRef<number>(0);
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
   const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -102,27 +105,54 @@ export default function PresenceController({ email }: { email?: string | null })
       return current === "online" || current === "idle";
     };
 
+    const resetIdleTimer = () => {
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      lastActivityRef.current = Date.now();
+      
+      // Only set idle timer if currently online and auto-update is enabled
+      if (shouldAutoUpdate() && latestStatusRef.current === "online") {
+        idleTimerRef.current = setTimeout(() => {
+          if (shouldAutoUpdate()) {
+            updateStatus("idle", "inactivity-timeout");
+          }
+        }, IDLE_TIMEOUT_MS);
+      }
+    };
+
+    const handleActivity = () => {
+      if (!shouldAutoUpdate()) return;
+      
+      // If idle, switch back to online
+      if (latestStatusRef.current === "idle") {
+        updateStatus("online", "activity");
+      }
+      
+      // Reset the idle timer
+      resetIdleTimer();
+    };
+
     const handleVisibility = () => {
       const currentEmail = emailRef.current;
       if (!currentEmail || !shouldAutoUpdate()) return;
       const state = document.visibilityState;
       const was = latestVisibilityRef.current;
       latestVisibilityRef.current = state === "hidden" ? "hidden" : "visible";
-      if (state === "hidden" && was !== "hidden") {
-        updateStatus("idle", "visibility:hidden");
-      } else if (state === "visible" && was !== "visible") {
+      
+      // Only go idle after tab hidden for extended period, not immediately
+      if (state === "visible" && was !== "visible") {
         updateStatus("online", "visibility:visible");
+        resetIdleTimer();
       }
-    };
-
-    const handleFocus = () => {
-      if (!shouldAutoUpdate()) return;
-      updateStatus("online", "focus");
-    };
-
-    const handleBlur = () => {
-      if (!shouldAutoUpdate()) return;
-      updateStatus("idle", "blur");
+      // When tab becomes hidden, just reset the idle timer but don't immediately change status
+      else if (state === "hidden" && was !== "hidden") {
+        if (idleTimerRef.current) {
+          clearTimeout(idleTimerRef.current);
+          idleTimerRef.current = null;
+        }
+      }
     };
 
     // Listen to manual status changes from PresenceMenu to sync latestStatusRef
@@ -172,6 +202,8 @@ export default function PresenceController({ email }: { email?: string | null })
       updateStatus(latestStatusRef.current as PresenceStatus, "auto", true);
       // Don't send immediate heartbeat - let the interval handle it
       startHeartbeat();
+      // Start idle timer
+      resetIdleTimer();
     };
 
     const destroy = () => {
@@ -179,8 +211,14 @@ export default function PresenceController({ email }: { email?: string | null })
         clearInterval(heartbeatTimerRef.current);
         heartbeatTimerRef.current = null;
       }
-      window.removeEventListener("focus", handleFocus, true);
-      window.removeEventListener("blur", handleBlur, true);
+      if (idleTimerRef.current) {
+        clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      window.removeEventListener("mousemove", handleActivity, true);
+      window.removeEventListener("keydown", handleActivity, true);
+      window.removeEventListener("click", handleActivity, true);
+      window.removeEventListener("scroll", handleActivity, true);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("presence-updated-local", handleManualPresenceUpdate as EventListener);
@@ -191,8 +229,11 @@ export default function PresenceController({ email }: { email?: string | null })
 
     init();
 
-    window.addEventListener("focus", handleFocus, true);
-    window.addEventListener("blur", handleBlur, true);
+    // Use passive listeners for better performance on activity events
+    window.addEventListener("mousemove", handleActivity, { passive: true, capture: true });
+    window.addEventListener("keydown", handleActivity, { passive: true, capture: true });
+    window.addEventListener("click", handleActivity, { passive: true, capture: true });
+    window.addEventListener("scroll", handleActivity, { passive: true, capture: true });
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("beforeunload", handleBeforeUnload);
     window.addEventListener("presence-updated-local", handleManualPresenceUpdate as EventListener);

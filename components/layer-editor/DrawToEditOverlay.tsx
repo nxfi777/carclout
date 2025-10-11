@@ -35,9 +35,22 @@ export default function DrawToEditOverlay() {
   });
   const previousBackgroundUrlRef = useRef<string | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const processingJobRef = useRef<boolean>(false);
 
   const isBrushTool = state.tool === 'brush';
   const annotation = state.drawToEditAnnotation;
+  
+  // Cleanup polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      processingJobRef.current = false;
+    };
+  }, []);
 
   // Load background image and set canvas to match its dimensions and position
   useEffect(() => {
@@ -684,31 +697,123 @@ export default function DrawToEditOverlay() {
         throw new Error(errorMessage);
       }
       
-      // Apply the result
-      dispatch({
-        type: 'apply_draw_to_edit_result',
-        newBackgroundUrl: result.resultUrl,
-        originalImageDataUrl,
-      });
+      // Handle async response - job has been queued
+      if (result.status === 'pending' && result.jobId) {
+        const jobId = result.jobId;
+        const credits = result.credits;
+        console.log(`[draw-to-edit] Job queued: ${jobId}, credits: ${credits}`);
+        
+        // Clear any existing polling interval
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+        
+        // Reset processing flag
+        processingJobRef.current = false;
+        
+        // Poll for completion
+        pollIntervalRef.current = setInterval(async () => {
+          try {
+            // Skip if we're already processing a completion
+            if (processingJobRef.current) {
+              return;
+            }
+            
+            const statusResponse = await fetch(`/api/tools/status?jobId=${jobId}`);
+            if (!statusResponse.ok) {
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+              setIsGenerating(false);
+              toast.error('Failed to check job status');
+              return;
+            }
+            
+            const statusResult = await statusResponse.json();
+            console.log(`[draw-to-edit] Job ${jobId} status:`, statusResult.status);
+            
+            if (statusResult.status === 'completed') {
+              // Set flag to prevent duplicate processing
+              processingJobRef.current = true;
+              
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+              
+              // Use the key to construct proper API URL instead of direct R2 URL
+              const resultUrl = statusResult.key 
+                ? `/api/storage/file?key=${encodeURIComponent(statusResult.key)}`
+                : statusResult.url;
+              
+              // Apply the result
+              dispatch({
+                type: 'apply_draw_to_edit_result',
+                newBackgroundUrl: resultUrl,
+                originalImageDataUrl,
+              });
 
-      // Update car mask if it was re-cut
-      if (result.newCarMaskUrl) {
-        dispatch({ type: 'set_mask', url: result.newCarMaskUrl });
+              setShowPromptDialog(false);
+              setPrompt('');
+              setPreviewImageUrl(null);
+              dispatch({ type: 'set_tool', tool: 'select' });
+              setIsGenerating(false);
+              
+              // Refresh credits
+              try {
+                window.dispatchEvent(new CustomEvent('credits-refresh'));
+              } catch {}
+              
+            } else if (statusResult.status === 'failed') {
+              if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+              }
+              setIsGenerating(false);
+              toast.error(statusResult.error || 'Generation failed');
+            }
+            // Otherwise keep polling (status is 'pending' or 'processing')
+          } catch (pollError) {
+            console.error('Error polling job status:', pollError);
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            setIsGenerating(false);
+            toast.error('Failed to check job status');
+          }
+        }, 2000); // Poll every 2 seconds
+        
+        return; // Don't execute the old sync code below, keep isGenerating true while polling
       }
+      
+      // Fallback: Handle old synchronous response format (shouldn't happen anymore)
+      if (result.resultUrl) {
+        dispatch({
+          type: 'apply_draw_to_edit_result',
+          newBackgroundUrl: result.resultUrl,
+          originalImageDataUrl,
+        });
 
-      toast.success(
-        result.hasCarOverlap 
-          ? `Edit applied! Car re-cut for ${result.creditsUsed} credits.`
-          : `Edit applied for ${result.creditsUsed} credits!`
-      );
-      setShowPromptDialog(false);
-      setPrompt('');
-      setPreviewImageUrl(null);
-      dispatch({ type: 'set_tool', tool: 'select' });
+        // Update car mask if it was re-cut
+        if (result.newCarMaskUrl) {
+          dispatch({ type: 'set_mask', url: result.newCarMaskUrl });
+        }
+
+        setShowPromptDialog(false);
+        setPrompt('');
+        setPreviewImageUrl(null);
+        dispatch({ type: 'set_tool', tool: 'select' });
+        setIsGenerating(false);
+      } else {
+        // Unknown response format
+        setIsGenerating(false);
+      }
     } catch (error) {
       console.error('Draw-to-edit error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate edit');
-    } finally {
       setIsGenerating(false);
     }
   }, [prompt, annotation, state.backgroundUrl, state.carMaskUrl, dispatch, creditDepletion]);

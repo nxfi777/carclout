@@ -560,22 +560,81 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
       if (res.status === 400 && (data?.error === 'UPSCALE_AT_MAX')) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Already at maximum resolution.'); } catch {} setUpscaling(false); return; }
       if (res.status === 400 && (data?.error === 'UPSCALE_DIM_OVERFLOW')) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('Upscale would exceed the 4K limit.'); } catch {} setUpscaling(false); return; }
       if (res.status === 400 && (data?.error === 'ALREADY_UPSCALED')) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.('This image was already upscaled.'); } catch {} setUpscaling(false); return; }
-      if (!res.ok || !data?.key) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.(String((data as { error?: string })?.error || 'Upscale failed')); } catch {} setUpscaling(false); return; }
+      if (!res.ok) { try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.(String((data as { error?: string })?.error || 'Upscale failed')); } catch {} setUpscaling(false); return; }
       
-      // Use the CORS-enabled proxy URL instead of direct R2 URL
-      // This ensures download and draw-to-edit work properly
-      const upscaledKey = String(data.key);
-      const upscaledUrl = `/api/storage/file?key=${encodeURIComponent(upscaledKey)}`;
-      
-      // Update the canvas with the upscaled image (enables undo/redo)
-      // Note: We don't call onReplaceBgKey here because that would change the bgKey prop
-      // and remount the Designer, wiping out the undo/redo history.
-      // The upscale is already saved to the library server-side.
-      if (upscaledUrl && dispatchRef.current) {
-        dispatchRef.current({ type: 'set_bg', url: upscaledUrl });
-        setBgUrl(upscaledUrl);
+      // Handle async response - job has been queued
+      if (data?.status === 'pending' && data?.jobId) {
+        const jobId = data.jobId;
+        console.log(`[upscale] Job queued: ${jobId}`);
+        
+        // Show toast notification
+        try { (window as unknown as { toast?: { success?: (m: string)=>void } })?.toast?.success?.('Upscaling... it will appear in your library soon'); } catch {}
+        
+        // Poll for completion
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await fetch(`/api/tools/status?jobId=${jobId}`);
+            if (!statusResponse.ok) {
+              clearInterval(pollInterval);
+              setUpscaling(false);
+              return;
+            }
+            
+            const statusResult = await statusResponse.json();
+            console.log(`[upscale] Job ${jobId} status:`, statusResult.status);
+            
+            if (statusResult.status === 'completed') {
+              clearInterval(pollInterval);
+              
+              // Use the key to construct proper API URL
+              const upscaledKey = statusResult.key;
+              const upscaledUrl = `/api/storage/file?key=${encodeURIComponent(upscaledKey)}`;
+              
+              // Update the canvas with the upscaled image
+              if (upscaledUrl && dispatchRef.current) {
+                dispatchRef.current({ type: 'set_bg', url: upscaledUrl });
+                setBgUrl(upscaledUrl);
+              }
+              
+              setUpscaling(false);
+              
+              // Refresh credits
+              try {
+                window.dispatchEvent(new CustomEvent('credits-refresh'));
+              } catch {}
+              
+            } else if (statusResult.status === 'failed') {
+              clearInterval(pollInterval);
+              setUpscaling(false);
+              try { (window as unknown as { toast?: { error?: (m: string)=>void } })?.toast?.error?.(statusResult.error || 'Upscale failed'); } catch {}
+            }
+          } catch (pollError) {
+            console.error('Error polling upscale status:', pollError);
+            clearInterval(pollInterval);
+            setUpscaling(false);
+          }
+        }, 2000);
+        
+        return; // Keep upscaling state true while polling
       }
-    } catch {} finally { setUpscaling(false); }
+      
+      // Fallback: Handle old synchronous response format (shouldn't happen anymore)
+      if (data?.key) {
+        const upscaledKey = String(data.key);
+        const upscaledUrl = `/api/storage/file?key=${encodeURIComponent(upscaledKey)}`;
+        
+        if (upscaledUrl && dispatchRef.current) {
+          dispatchRef.current({ type: 'set_bg', url: upscaledUrl });
+          setBgUrl(upscaledUrl);
+        }
+        setUpscaling(false);
+      } else {
+        setUpscaling(false);
+      }
+    } catch (e) {
+      console.error('Upscale error:', e);
+      setUpscaling(false);
+    }
   }, [bgKey, bgUrl, upscaling, creditDepletion]);
 
   const actions = React.useMemo(() => {
@@ -613,18 +672,20 @@ function DesignerComponent({ bgKey, bgBlurhash, rembg, isolateCutout, onClose, o
         section: "primary",
       });
     }
-    // Check if already upscaled by looking at the current background URL or original bgKey
+    // Only show upscale button if not already upscaled
     const isAlreadyUpscaled = /-upscaled-\d+x\./i.test(bgKey) || (bgUrl && /-upscaled-\d+x\./i.test(bgUrl));
-    list.push({
-      key: "upscale",
-      label: upscaling ? "Upscaling…" : "Upscale",
-      onSelect: upscaleBackground,
-      disabled: !!(upscaling || isAlreadyUpscaled),
-      variant: "outline",
-      electric: true,
-      loading: upscaling,
-      section: "primary",
-    });
+    if (!isAlreadyUpscaled) {
+      list.push({
+        key: "upscale",
+        label: upscaling ? "Upscaling…" : "Upscale",
+        onSelect: upscaleBackground,
+        disabled: upscaling,
+        variant: "outline",
+        electric: true,
+        loading: upscaling,
+        section: "primary",
+      });
+    }
     if (showAnimate && onAnimate) {
       list.push({
         key: "animate",

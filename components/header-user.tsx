@@ -6,7 +6,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import HeaderCredits from "./header-credits";
 import { signOut } from "next-auth/react";
 import { LogOut, CarFront } from "lucide-react";
-import PresenceMenu from "./presence-menu";
 
 export default function HeaderUser({
   name,
@@ -106,9 +105,9 @@ export default function HeaderUser({
               </div>
             </div>
           </DropdownMenuTrigger>
-          <div className="absolute right-0 bottom-0 translate-x-[20%] translate-y-[20%] z-1 pointer-events-auto">
+          {/* <div className="absolute right-0 bottom-0 translate-x-[20%] translate-y-[20%] z-1 pointer-events-auto">
             <PresenceMenu email={email} variant="dot" />
-          </div>
+          </div> */}
         </div>
         <DropdownMenuContent align="end" className="min-w-64">
           {/* Desktop credits summary inside dropdown */}

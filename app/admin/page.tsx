@@ -28,6 +28,7 @@ import { AspectRatioSelector } from "@/components/admin/aspect-ratio-selector";
 import Lottie from "lottie-react";
 import fireAnimation from "@/public/fire.json";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import Masonry from "react-masonry-css";
 import Image from "next/image";
 
 //
@@ -1641,9 +1642,13 @@ function TemplatesTab() {
         </div>
       </div>
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-stretch">
+        <Masonry
+          breakpointCols={{ default: 4, 1280: 4, 1024: 3, 640: 2 }}
+          className="flex -ml-4 w-auto"
+          columnClassName="pl-4 bg-clip-padding"
+        >
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="rounded-lg overflow-hidden bg-white/5 border border-[color:var(--border)]">
+            <div key={i} className="mb-4 rounded-lg overflow-hidden bg-white/5 border border-[color:var(--border)]">
               <Skeleton className="w-full aspect-[3/4]" />
               <div className="p-2">
                 <Skeleton className="h-4 w-2/5" />
@@ -1653,7 +1658,7 @@ function TemplatesTab() {
               </div>
             </div>
           ))}
-          <div className="hidden lg:block rounded-lg overflow-hidden bg-white/5 border border-[color:var(--border)]">
+          <div className="hidden lg:block mb-4 rounded-lg overflow-hidden bg-white/5 border border-[color:var(--border)]">
             <Skeleton className="w-full aspect-[3/4]" />
             <div className="p-2">
               <Skeleton className="h-4 w-2/5" />
@@ -1662,7 +1667,7 @@ function TemplatesTab() {
               </div>
             </div>
           </div>
-          <div className="hidden lg:block rounded-lg overflow-hidden bg-white/5 border border-[color:var(--border)]">
+          <div className="hidden lg:block mb-4 rounded-lg overflow-hidden bg-white/5 border border-[color:var(--border)]">
             <Skeleton className="w-full aspect-[3/4]" />
             <div className="p-2">
               <Skeleton className="h-4 w-2/5" />
@@ -1671,15 +1676,19 @@ function TemplatesTab() {
               </div>
             </div>
           </div>
-        </div>
+        </Masonry>
       ) : templates.length === 0 ? (
         <div className="text-sm text-white/60">No templates yet. Create one to get started.</div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 items-stretch">
+        <Masonry
+          breakpointCols={{ default: 4, 1280: 4, 1024: 3, 640: 2 }}
+          className="flex -ml-4 w-auto"
+          columnClassName="pl-4 bg-clip-padding"
+        >
           {templates.map((t: TemplateDisplay)=> (
             <ContextMenu key={t.id || t.slug}>
               <ContextMenuTrigger asChild>
-                <div className="relative">
+                <div className="mb-4">
                   <TemplateCard
                     data={{ id: t.id, name: t.name, description: t.description, slug: t.slug, thumbUrl: t.thumbUrl, blurhash: t.blurhash, createdAt: (t as unknown as { created_at?: string })?.created_at, favoriteCount: (t as { favoriteCount?: number })?.favoriteCount, proOnly: !!t.proOnly, isVideoTemplate: Boolean(t.video?.enabled), status: t.status }}
                     showNewBadge={true}
@@ -1702,7 +1711,7 @@ function TemplatesTab() {
               </ContextMenuContent>
             </ContextMenu>
           ))}
-        </div>
+        </Masonry>
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
